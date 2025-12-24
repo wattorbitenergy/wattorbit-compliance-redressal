@@ -1,34 +1,34 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
-const User = require('./models/User');
-require('dotenv').config();
+const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
+const User = require("./models/User");
+require("dotenv").config();
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/wattorbit_redressal';
+const MONGO_URI = process.env.MONGO_URI;
 
-async function createAdmin() {
-    try {
-        await mongoose.connect(MONGO_URI);
-        console.log('Connected to MongoDB');
+async function createOrUpdateAdmin() {
+  try {
+    await mongoose.connect(MONGO_URI);
+    console.log("Connected to MongoDB");
 
-        const existingAdmin = await User.findOne({ username: process.env.ADMIN_USERNAME || 'admin' });
-        if (existingAdmin) {
-            console.log('Admin user already exists');
-        } else {
-            const admin = new User({
-                username: process.env.ADMIN_USERNAME || 'admin',
-                password: process.env.ADMIN_PASSWORD, // Pulled from .env and hashed by hook
-                role: 'admin',
-                isApproved: true
-            });
-            await admin.save();
-            console.log('Admin user created successfully using environment variables.');
-        }
+    const hashedPassword = await bcrypt.hash(process.env.ADMIN_PASSWORD, 10);
 
-    } catch (err) {
-        console.error('Error:', err);
-    } finally {
-        await mongoose.disconnect();
-    }
+    const admin = await User.findOneAndUpdate(
+      { username: process.env.ADMIN_USERNAME || "admin" },
+      {
+        password: hashedPassword,
+        role: "admin",
+        isApproved: true
+      },
+      { upsert: true, new: true }
+    );
+
+    console.log("✅ Admin password UPDATED successfully");
+
+  } catch (err) {
+    console.error("Error:", err);
+  } finally {
+    await mongoose.disconnect();
+  }
 }
 
-createAdmin();
+createOrUpdateAdmin();
