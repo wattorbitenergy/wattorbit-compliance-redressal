@@ -33,15 +33,22 @@ mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 })
             const adminUsername = process.env.ADMIN_USERNAME || 'admin';
             const existingAdmin = await User.findOne({ username: adminUsername });
 
-            if (!existingAdmin && process.env.ADMIN_PASSWORD) {
-                const admin = new User({
-                    username: adminUsername,
-                    password: process.env.ADMIN_PASSWORD,
-                    role: 'admin',
-                    isApproved: true
-                });
-                await admin.save();
-                console.log('Admin user auto-created successfully.');
+            if (!existingAdmin) {
+                if (process.env.ADMIN_PASSWORD) {
+                    const admin = new User({
+                        username: adminUsername,
+                        password: process.env.ADMIN_PASSWORD,
+                        role: 'admin',
+                        isApproved: true
+                    });
+                    await admin.save();
+                    console.log('Admin user auto-created successfully.');
+                }
+            } else if (process.env.ADMIN_PASSWORD) {
+                // Update existing admin password to match current environment variable
+                existingAdmin.password = process.env.ADMIN_PASSWORD;
+                await existingAdmin.save();
+                console.log('Admin password updated to match environment variables.');
             }
         } catch (adminErr) {
             console.error('Admin auto-creation failed:', adminErr.message);
