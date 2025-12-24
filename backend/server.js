@@ -82,16 +82,6 @@ app.get('/api/user-check', async (req, res) => {
     }
 });
 
-app.get('/api/auth/debug-users', async (req, res) => {
-    try {
-        const User = require('./models/User');
-        const users = await User.find().select('username role isApproved');
-        res.json(users);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-});
-
 // Import Routes
 const complaintRoutes = require('./routes/complaintRoutes');
 const cityRoutes = require('./routes/cityRoutes');
