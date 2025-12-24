@@ -3,16 +3,55 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
+const rateLimit = require('express-rate-limit');
+const axios = require('axios');
 const User = require('../models/User');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'wattorbit_super_secret_123';
+/* =========================
+   ENV & SECURITY CHECK
+========================= */
+if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET not defined in environment variables');
+}
 
-// @route POST /api/auth/register
+const JWT_SECRET = process.env.JWT_SECRET;
+
+/* =========================
+   RATE LIMITER
+========================= */
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: { message: 'Too many attempts. Try again later.' }
+});
+
+/* =========================
+   JWT VERIFY MIDDLEWARE
+========================= */
+const verifyToken = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        return res.status(401).json({ message: 'Authorization header missing' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (err) {
+        return res.status(401).json({ message: 'Invalid or expired token' });
+    }
+};
+
+/* =========================
+   REGISTER USER
+========================= */
 router.post('/register', async (req, res) => {
     try {
-        const { username, password, role, city, phone, email } = req.body;
+        let { username, password, role, city, phone, email } = req.body;
+        username = username.toLowerCase().trim();
 
-        // Prevent registering as admin via public API
         if (role === 'admin') {
             return res.status(403).json({ message: 'Admin registration restricted' });
         }
@@ -23,26 +62,32 @@ router.post('/register', async (req, res) => {
         }
 
         const user = new User({
-            username, // Email or Phone
+            username,
             password,
             role,
             city,
             phone,
             email,
-            isApproved: false // Requires admin approval
+            isApproved: false
         });
 
         await user.save();
-        res.status(201).json({ message: 'Registration successful! Please wait for Admin approval.' });
+        res.status(201).json({
+            message: 'Registration successful. Await admin approval.'
+        });
+
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
 
-// @route POST /api/auth/login
-router.post('/login', async (req, res) => {
+/* =========================
+   LOGIN
+========================= */
+router.post('/login', authLimiter, async (req, res) => {
     try {
-        const { username, password } = req.body;
+        let { username, password } = req.body;
+        username = username.toLowerCase().trim();
 
         const user = await User.findOne({ username });
         if (!user) {
@@ -50,7 +95,7 @@ router.post('/login', async (req, res) => {
         }
 
         if (!user.isApproved && user.role !== 'admin') {
-            return res.status(403).json({ message: 'Account is pending approval. Please contact Admin.' });
+            return res.status(401).json({ message: 'Invalid credentials' });
         }
 
         const isMatch = await user.comparePassword(password);
@@ -74,137 +119,185 @@ router.post('/login', async (req, res) => {
                 phone: user.phone
             }
         });
+
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
 
-// @route GET /api/auth/users (Admin/Engineer only)
-router.get('/users', async (req, res) => {
+/* =========================
+   GET USERS (ADMIN / ENGINEER)
+========================= */
+router.get('/users', verifyToken, async (req, res) => {
     try {
-        // In a real app, add middleware to verify Token and Admin Role here
-        // For simplicity assuming the caller has a valid token which we check via headers usually
-        // But here we rely on frontend protection + data filter.
-        // Adding basic filtering:
+        if (!['admin', 'engineer'].includes(req.user.role)) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
         const { role } = req.query;
-        const filter = {};
-        if (role) filter.role = role;
+        const filter = role ? { role } : {};
 
         const users = await User.find(filter).select('-password');
         res.json(users);
+
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
 
-// @route PATCH /api/auth/approve/:id
-router.patch('/approve/:id', async (req, res) => {
+/* =========================
+   APPROVE USER (ADMIN)
+========================= */
+router.patch('/approve/:id', verifyToken, async (req, res) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Admin access required' });
+    }
+
     try {
-        const user = await User.findByIdAndUpdate(req.params.id, { isApproved: true }, { new: true });
+        const user = await User.findByIdAndUpdate(
+            req.params.id,
+            { isApproved: true },
+            { new: true }
+        ).select('-password');
+
         res.json(user);
+
     } catch (err) {
         res.status(400).json({ message: err.message });
     }
 });
 
-// @route POST /api/auth/forgot-password
-router.post('/forgot-password', async (req, res) => {
+/* =========================
+   FORGOT PASSWORD
+========================= */
+router.post('/forgot-password', authLimiter, async (req, res) => {
     try {
         const { username } = req.body;
-        const user = await User.findOne({ username });
+        const normalized = username.toLowerCase().trim();
+
+        const user = await User.findOne({ username: normalized });
         if (!user) {
-            return res.status(404).json({ message: 'User not found' });
+            return res.json({ message: 'If user exists, reset instructions sent.' });
         }
 
-        const token = crypto.randomBytes(20).toString('hex');
-        user.resetPasswordToken = token;
-        user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+        const resetToken = crypto.randomBytes(20).toString('hex');
+        const hashedToken = crypto
+            .createHash('sha256')
+            .update(resetToken)
+            .digest('hex');
 
+        user.resetPasswordToken = hashedToken;
+        user.resetPasswordExpires = Date.now() + 60 * 60 * 1000;
         await user.save();
 
-        // Send password reset email using nodemailer
+        /* EMAIL */
         const transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST,
-            port: parseInt(process.env.SMTP_PORT) || 587,
-            secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
+            port: parseInt(process.env.SMTP_PORT),
+            secure: process.env.SMTP_SECURE === 'true',
             auth: {
                 user: process.env.SMTP_USER,
-                pass: process.env.SMTP_PASS,
-            },
+                pass: process.env.SMTP_PASS
+            }
         });
 
-        // Determine recipient email (fallback to username if it looks like an email)
-        const recipient = user.email || (username.includes('@') ? username : null);
-        const supportEmails = ['support@wattorbit.in']; // updated to Titan SMTP email
-        const toEmails = recipient ? [recipient, ...supportEmails] : supportEmails;
-        if (!recipient) {
-            console.warn('No email address available for password reset; token logged to console.');
-            console.log(`Password reset token for ${username}: ${token}`);
-        } else {
+        if (user.email) {
             await transporter.sendMail({
-                from: process.env.SMTP_FROM || process.env.SMTP_USER,
-                to: toEmails,
-                subject: 'WattOrbit Password Reset Request',
-                text: `You requested a password reset. Use the following token to reset your password (valid for 1 hour): ${token}`,
-                html: `<p>You requested a password reset.</p><p>Use the following token to reset your password (valid for 1 hour): <b>${token}</b></p>`,
+                from: process.env.SMTP_FROM,
+                to: user.email,
+                subject: 'WattOrbit Password Reset',
+                html: `
+                    <p>Password reset requested.</p>
+                    <p><b>Reset Token:</b> ${resetToken}</p>
+                    <p>Valid for 1 hour.</p>
+                `
             });
         }
 
-        // SMS notification (optional) - Fast2SMS
+        /* SMS (ADMIN ALERT) */
         if (process.env.FAST2SMS_API_KEY && process.env.WHATSAPP_ADMIN_NUMBER) {
-            const axios = require('axios');
-            const message = `Password reset requested for ${username}. Token: ${token}`;
-            try {
-                await axios.get(`https://www.fast2sms.com/dev/bulkV2`, {
-                    params: {
-                        authorization: process.env.FAST2SMS_API_KEY,
-                        route: 'q',
-                        message: message,
-                        numbers: process.env.WHATSAPP_ADMIN_NUMBER.replace(/\+/g, '')
+            await axios.post(
+                'https://www.fast2sms.com/dev/bulkV2',
+                {
+                    route: 'q',
+                    message: `Password reset requested for ${normalized}`,
+                    numbers: process.env.WHATSAPP_ADMIN_NUMBER.replace(/\+/g, '')
+                },
+                {
+                    headers: {
+                        authorization: process.env.FAST2SMS_API_KEY
                     }
-                });
-            } catch (smsErr) {
-                console.error('Fast2SMS notification failed:', smsErr.message);
-            }
+                }
+            );
         }
 
+        res.json({ message: 'Password reset instructions sent.' });
 
-        res.json({ message: 'Password reset email sent successfully.' });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
 
-// Middleware to verify JWT and attach user
-const verifyToken = (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ message: 'Authorization header missing' });
-    const token = authHeader.split(' ')[1];
+/* =========================
+   RESET PASSWORD (TOKEN)
+========================= */
+router.post('/reset-password', async (req, res) => {
     try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        req.user = decoded;
-        next();
-    } catch (err) {
-        return res.status(401).json({ message: 'Invalid token' });
-    }
-};
+        const { token, newPassword } = req.body;
+        if (!token || !newPassword) {
+            return res.status(400).json({ message: 'Token and password required' });
+        }
 
-// @route PATCH /api/auth/admin-reset-password/:id
-// Admin can reset any user's password
+        const hashedToken = crypto
+            .createHash('sha256')
+            .update(token)
+            .digest('hex');
+
+        const user = await User.findOne({
+            resetPasswordToken: hashedToken,
+            resetPasswordExpires: { $gt: Date.now() }
+        });
+
+        if (!user) {
+            return res.status(400).json({ message: 'Invalid or expired token' });
+        }
+
+        user.password = newPassword;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpires = undefined;
+
+        await user.save();
+        res.json({ message: 'Password reset successful' });
+
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+/* =========================
+   ADMIN RESET PASSWORD
+========================= */
 router.patch('/admin-reset-password/:id', verifyToken, async (req, res) => {
     if (req.user.role !== 'admin') {
         return res.status(403).json({ message: 'Admin privileges required' });
     }
+
     const { newPassword } = req.body;
     if (!newPassword) {
-        return res.status(400).json({ message: 'New password is required' });
+        return res.status(400).json({ message: 'New password required' });
     }
+
     try {
         const user = await User.findById(req.params.id);
-        if (!user) return res.status(404).json({ message: 'User not found' });
-        user.password = newPassword; // pre-save hook will hash it
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        user.password = newPassword;
         await user.save();
+
         res.json({ message: 'Password reset by admin successful' });
+
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
