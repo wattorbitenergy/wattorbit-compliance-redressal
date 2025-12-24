@@ -4,71 +4,88 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+/* =====================
+   MIDDLEWARE
+===================== */
 app.use(helmet());
-app.use(cors());
+
+app.use(cors({
+    origin: process.env.CORS_ORIGIN || '*',
+    credentials: true
+}));
+
 app.use(express.json());
 
-
-// Log all requests
+/* =====================
+   REQUEST LOGGER
+===================== */
 app.use((req, res, next) => {
-    console.log(`${req.method} ${req.url}`);
+    const start = Date.now();
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+    res.on('finish', () => {
+        console.log(
+            `[${new Date().toISOString()}] ${ip} ${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - start}ms`
+        );
+    });
+
     next();
 });
 
-// MongoDB Connection
+/* =====================
+   MONGODB CONNECTION
+===================== */
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/wattorbit_redressal';
 
 mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 })
     .then(async () => {
         console.log('MongoDB connected to:', MONGO_URI.includes('localhost') ? 'LOCAL' : 'CLOUD');
 
-        // Auto-create admin on startup for environments without shell access
+        /* =====================
+           ADMIN AUTO-CREATION
+        ===================== */
         try {
             const User = require('./models/User');
             const adminUsername = process.env.ADMIN_USERNAME || 'admin';
-            const existingAdmin = await User.findOne({ username: adminUsername });
 
-            if (!existingAdmin) {
-                if (process.env.ADMIN_PASSWORD) {
-                    const admin = new User({
-                        username: adminUsername,
-                        password: process.env.ADMIN_PASSWORD,
-                        role: 'admin',
-                        isApproved: true
-                    });
-                    await admin.save();
-                    console.log('Admin user auto-created successfully.');
-                }
-            } else if (process.env.ADMIN_PASSWORD) {
-                // Update existing admin password to match current environment variable
-                existingAdmin.password = process.env.ADMIN_PASSWORD;
-                await existingAdmin.save();
-                console.log('Admin password updated to match environment variables.');
+            const adminExists = await User.findOne({ username: adminUsername });
+
+            if (!adminExists && process.env.ADMIN_PASSWORD) {
+                await User.create({
+                    username: adminUsername,
+                    password: process.env.ADMIN_PASSWORD,
+                    role: 'admin',
+                    isApproved: true
+                });
+                console.log('Admin user auto-created successfully.');
+            } else {
+                console.log('Admin user already exists.');
             }
         } catch (adminErr) {
             console.error('Admin auto-creation failed:', adminErr.message);
         }
     })
-    .catch(err => console.error('MongoDB connection error:', err));
+    .catch(err => {
+        console.error('MongoDB connection error:', err.message);
+        process.exit(1);
+    });
 
-// Routes Placeholder
+/* =====================
+   ROUTES
+===================== */
 app.get('/', (req, res) => {
-    res.send('Wattorbit Compliance API Running');
+    res.send('WattOrbit Compliance API Running');
 });
 
-// Database Status Route
 app.get('/api/db-test', (req, res) => {
     const state = mongoose.connection.readyState;
     const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
     res.json({
         status: states[state],
-        dbName: mongoose.connection.name,
-        uri_length: MONGO_URI.length
+        dbName: mongoose.connection.name
     });
 });
 
@@ -82,25 +99,27 @@ app.get('/api/user-check', async (req, res) => {
     }
 });
 
-// Import Routes
-const complaintRoutes = require('./routes/complaintRoutes');
-const cityRoutes = require('./routes/cityRoutes');
-const authRoutes = require('./routes/authRoutes');
+/* =====================
+   IMPORT ROUTES
+===================== */
+app.use('/api/complaints', require('./routes/complaintRoutes'));
+app.use('/api/cities', require('./routes/cityRoutes'));
+app.use('/api/auth', require('./routes/authRoutes'));
 
-app.use('/api/complaints', complaintRoutes);
-app.use('/api/cities', cityRoutes);
-app.use('/api/auth', authRoutes);
-
-// Global Error Handler
+/* =====================
+   GLOBAL ERROR HANDLER
+===================== */
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({
-        message: 'Something went wrong!',
+        message: 'Internal server error',
         error: process.env.NODE_ENV === 'production' ? {} : err.stack
     });
 });
 
+/* =====================
+   START SERVER
+===================== */
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
-
