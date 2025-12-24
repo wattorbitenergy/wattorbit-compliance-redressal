@@ -24,7 +24,29 @@ app.use((req, res, next) => {
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/wattorbit_redressal';
 
 mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 })
-    .then(() => console.log('MongoDB connected to:', MONGO_URI.includes('localhost') ? 'LOCAL' : 'CLOUD'))
+    .then(async () => {
+        console.log('MongoDB connected to:', MONGO_URI.includes('localhost') ? 'LOCAL' : 'CLOUD');
+
+        // Auto-create admin on startup for environments without shell access
+        try {
+            const User = require('./models/User');
+            const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+            const existingAdmin = await User.findOne({ username: adminUsername });
+
+            if (!existingAdmin && process.env.ADMIN_PASSWORD) {
+                const admin = new User({
+                    username: adminUsername,
+                    password: process.env.ADMIN_PASSWORD,
+                    role: 'admin',
+                    isApproved: true
+                });
+                await admin.save();
+                console.log('Admin user auto-created successfully.');
+            }
+        } catch (adminErr) {
+            console.error('Admin auto-creation failed:', adminErr.message);
+        }
+    })
     .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes Placeholder
