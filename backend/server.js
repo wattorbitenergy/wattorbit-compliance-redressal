@@ -42,6 +42,18 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/wattorbit_
 
 mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 })
     .then(async () => {
+
+// TEMPORARY ADMIN PASSWORD SYNC (REMOVE AFTER FIX)
+const User = require('./models/User');
+const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+
+const admin = await User.findOne({ username: adminUsername });
+
+if (admin && process.env.ADMIN_PASSWORD) {
+    admin.password = process.env.ADMIN_PASSWORD;
+    await admin.save();
+    console.log('Admin password force-reset from env (temporary)');
+}
         console.log('MongoDB connected to:', MONGO_URI.includes('localhost') ? 'LOCAL' : 'CLOUD');
 
         /* =====================
