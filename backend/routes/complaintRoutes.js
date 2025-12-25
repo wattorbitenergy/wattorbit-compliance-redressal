@@ -19,6 +19,14 @@ const transporter = nodemailer.createTransport({
     pass: process.env.SMTP_PASS
   }
 });
+transporter.verify((err, success) => {
+  if (err) {
+    console.error('SMTP VERIFY FAILED:', err.message);
+  } else {
+    console.log('SMTP SERVER READY');
+  }
+});
+
 
 /* ======================================================
    GET: Track complaint by ID / Phone / ObjectId
@@ -129,37 +137,39 @@ router.post('/', async (req, res) => {
     const savedComplaint = await complaint.save();
 
     /* ============================
-       ACKNOWLEDGEMENT EMAIL
-    ============================ */
-    if (savedComplaint.email) {
-      try {
-        await transporter.sendMail({
-          from: process.env.SMTP_FROM,
-          to: savedComplaint.email,
-          subject: `Complaint Registered – ${savedComplaint.complaintId}`,
-          html: `
-            <p>Dear ${savedComplaint.customerName},</p>
+   ACKNOWLEDGEMENT EMAIL (NON-BLOCKING)
+============================ */
+if (savedComplaint.email) {
+  transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to: savedComplaint.email,
+    subject: `Complaint Registered – ${savedComplaint.complaintId}`,
+    html: `
+      <p>Dear ${savedComplaint.customerName},</p>
 
-            <p>Your <b>${savedComplaint.type}</b> has been successfully registered.</p>
+      <p>Your <b>${savedComplaint.type}</b> has been successfully registered.</p>
 
-            <p>
-              <b>Ticket ID:</b> ${savedComplaint.complaintId}<br/>
-              <b>City:</b> ${savedComplaint.city}<br/>
-              <b>Issue:</b> ${savedComplaint.issueType}
-            </p>
+      <p>
+        <b>Ticket ID:</b> ${savedComplaint.complaintId}<br/>
+        <b>City:</b> ${savedComplaint.city}<br/>
+        <b>Issue:</b> ${savedComplaint.issueType}
+      </p>
 
-            <p>Our support team will contact you shortly.</p>
+      <p>Our support team will contact you shortly.</p>
 
-            <p>
-              Regards,<br/>
-              <b>WattOrbit Support Team</b>
-            </p>
-          `
-        });
-      } catch (emailErr) {
-        console.error('Acknowledgement email failed:', emailErr.message);
-      }
-    }
+      <p>
+        Regards,<br/>
+        <b>WattOrbit Support Team</b>
+      </p>
+    `
+  })
+  .then(() => {
+    console.log('Acknowledgement email sent');
+  })
+  .catch(err => {
+    console.error('Acknowledgement email failed:', err.message);
+  });
+}
 
     /* ============================
        ADMIN SMS (OPTIONAL)
