@@ -2,12 +2,26 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const axios = require('axios');
+const nodemailer = require('nodemailer');
 
 const Complaint = require('../models/Complaint');
 const Counter = require('../models/Counter');
 
+/* ============================
+   SMTP TRANSPORTER
+============================ */
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: process.env.SMTP_PORT,
+  secure: false, // true only for 465
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  }
+});
+
 /* ======================================================
-   GET: Track complaint by Complaint ID / Phone / ObjectId
+   GET: Track complaint by ID / Phone / ObjectId
 ====================================================== */
 router.get('/track', async (req, res) => {
   const { query } = req.query;
@@ -41,7 +55,10 @@ router.get('/track', async (req, res) => {
 ============================ */
 router.get('/', async (req, res) => {
   try {
-    const complaints = await Complaint.find().sort({ createdAt: -1 });
+    const complaints = await Complaint.find()
+      .sort({ createdAt: -1 })
+      .lean();
+
     res.json(complaints);
   } catch (err) {
     console.error('Fetch error:', err);
@@ -50,7 +67,10 @@ router.get('/', async (req, res) => {
 });
 
 /* ======================================================
-   POST: Create new Complaint / Service Request
+   POST: Create Complaint / Service Request
+   FORMAT:
+   Complaint       → WCR-2025-1001
+   Service Request → WSR-2025-1001
 ====================================================== */
 router.post('/', async (req, res) => {
   try {
@@ -65,27 +85,38 @@ router.post('/', async (req, res) => {
       description
     } = req.body;
 
-    // 🔒 Required field validation
+    // Required validation
     if (!customerName || !phone || !city || !issueType) {
       return res.status(400).json({
         message: 'customerName, phone, city, and issueType are required'
       });
     }
 
-    const ticketType = type === 'Service Request' ? 'Service Request' : 'Complaint';
-    const prefix = ticketType === 'Service Request' ? 'WSR' : 'WCR';
-    const counterName = ticketType === 'Service Request' ? 'serviceId' : 'complaintId';
+    const isService = type === 'Service Request';
+    const prefix = isService ? 'WSR' : 'WCR';
+    const year = new Date().getFullYear();
 
-    // Generate sequential ID
-    const counter = await Counter.findByIdAndUpdate(
-      counterName,
-      { $inc: { seq: 1 } },
-      { new: true, upsert: true }
-    );
+    const counterKey = isService
+      ? `serviceId-${year}`
+      : `complaintId-${year}`;
+
+    // Safe counter handling (NO duplicate error)
+    let counter = await Counter.findById(counterKey);
+    if (!counter) {
+      counter = await Counter.create({
+        _id: counterKey,
+        seq: 1000
+      });
+    }
+
+    counter.seq += 1;
+    await counter.save();
+
+    const generatedId = `${prefix}-${year}-${counter.seq}`;
 
     const complaint = new Complaint({
-      complaintId: `${prefix}-${counter.seq}`,
-      type: ticketType,
+      complaintId: generatedId,
+      type: isService ? 'Service Request' : 'Complaint',
       customerName,
       phone,
       email,
@@ -95,34 +126,69 @@ router.post('/', async (req, res) => {
       description
     });
 
-    const newComplaint = await complaint.save();
+    const savedComplaint = await complaint.save();
 
-    // 🔔 Optional SMS notification (Admin)
+    /* ============================
+       ACKNOWLEDGEMENT EMAIL
+    ============================ */
+    if (savedComplaint.email) {
+      try {
+        await transporter.sendMail({
+          from: process.env.SMTP_FROM,
+          to: savedComplaint.email,
+          subject: `Complaint Registered – ${savedComplaint.complaintId}`,
+          html: `
+            <p>Dear ${savedComplaint.customerName},</p>
+
+            <p>Your <b>${savedComplaint.type}</b> has been successfully registered.</p>
+
+            <p>
+              <b>Ticket ID:</b> ${savedComplaint.complaintId}<br/>
+              <b>City:</b> ${savedComplaint.city}<br/>
+              <b>Issue:</b> ${savedComplaint.issueType}
+            </p>
+
+            <p>Our support team will contact you shortly.</p>
+
+            <p>
+              Regards,<br/>
+              <b>WattOrbit Support Team</b>
+            </p>
+          `
+        });
+      } catch (emailErr) {
+        console.error('Acknowledgement email failed:', emailErr.message);
+      }
+    }
+
+    /* ============================
+       ADMIN SMS (OPTIONAL)
+    ============================ */
     if (process.env.FAST2SMS_API_KEY && process.env.WHATSAPP_ADMIN_NUMBER) {
       try {
         await axios.get('https://www.fast2sms.com/dev/bulkV2', {
           params: {
             authorization: process.env.FAST2SMS_API_KEY,
             route: 'q',
-            message: `New ${ticketType} created. ID: ${newComplaint.complaintId}. Customer: ${newComplaint.customerName}`,
+            message: `New ${savedComplaint.type} created. ID: ${savedComplaint.complaintId}`,
             numbers: process.env.WHATSAPP_ADMIN_NUMBER.replace(/\+/g, '')
           }
         });
       } catch (smsErr) {
-        console.error('Fast2SMS create notification failed:', smsErr.message);
+        console.error('Fast2SMS create failed:', smsErr.message);
       }
     }
 
-    res.status(201).json(newComplaint);
+    res.status(201).json(savedComplaint);
 
   } catch (err) {
-    console.error('Create complaint error:', err);
+    console.error('Create error:', err);
     res.status(500).json({ message: err.message });
   }
 });
 
 /* ======================================================
-   PATCH: Update complaint (Admin)
+   PATCH: Update Complaint (Admin)
 ====================================================== */
 router.patch('/:id', async (req, res) => {
   try {
@@ -142,54 +208,13 @@ router.patch('/:id', async (req, res) => {
         assignedTechnicianPhone,
         rescheduleReason,
         remark,
-        updatedAt: new Date() // ensures timeline update
+        updatedAt: new Date()
       },
       { new: true, runValidators: true }
     );
 
     if (!updatedComplaint) {
       return res.status(404).json({ message: 'Complaint not found' });
-    }
-
-    // 🔔 Optional SMS notifications
-    if (process.env.FAST2SMS_API_KEY) {
-      try {
-        let updates = [];
-        if (status) updates.push(`Status: ${status}`);
-        if (assignedTechnician) updates.push(`Assigned: ${assignedTechnician}`);
-        const updateText = updates.length ? updates.join(' | ') : 'Updated';
-
-        // Notify admin
-        if (process.env.WHATSAPP_ADMIN_NUMBER) {
-          await axios.get('https://www.fast2sms.com/dev/bulkV2', {
-            params: {
-              authorization: process.env.FAST2SMS_API_KEY,
-              route: 'q',
-              message: `Ticket ${updatedComplaint.complaintId} update: ${updateText}`,
-              numbers: process.env.WHATSAPP_ADMIN_NUMBER.replace(/\+/g, '')
-            }
-          });
-        }
-
-        // Notify technician
-        if (assignedTechnicianPhone) {
-          const techNumber = assignedTechnicianPhone
-            .replace(/\+/g, '')
-            .replace(/^91/, '');
-
-          await axios.get('https://www.fast2sms.com/dev/bulkV2', {
-            params: {
-              authorization: process.env.FAST2SMS_API_KEY,
-              route: 'q',
-              message: `You are assigned ticket ${updatedComplaint.complaintId}. Status: ${status || 'Pending'}`,
-              numbers: techNumber
-            }
-          });
-        }
-
-      } catch (smsErr) {
-        console.error('Fast2SMS update notification failed:', smsErr.message);
-      }
     }
 
     res.json(updatedComplaint);
