@@ -41,47 +41,11 @@ app.use((req, res, next) => {
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/wattorbit_redressal';
 
 mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 })
-    .then(async () => {
-
-// TEMPORARY ADMIN PASSWORD SYNC (REMOVE AFTER FIX)
-const User = require('./models/User');
-const adminUsername = process.env.ADMIN_USERNAME || 'admin';
-
-const admin = await User.findOne({ username: adminUsername });
-
-if (admin && process.env.ADMIN_PASSWORD) {
-    admin.password = process.env.ADMIN_PASSWORD;
-    await admin.save();
-    console.log('Admin password force-reset from env (temporary)');
-}
+    .then(() => {
         console.log('MongoDB connected to:', MONGO_URI.includes('localhost') ? 'LOCAL' : 'CLOUD');
-
-        /* =====================
-           ADMIN AUTO-CREATION
-        ===================== */
-        try {
-            const User = require('./models/User');
-            const adminUsername = process.env.ADMIN_USERNAME || 'admin';
-
-            const adminExists = await User.findOne({ username: adminUsername });
-
-            if (!adminExists && process.env.ADMIN_PASSWORD) {
-                await User.create({
-                    username: adminUsername,
-                    password: process.env.ADMIN_PASSWORD,
-                    role: 'admin',
-                    isApproved: true
-                });
-                console.log('Admin user auto-created successfully.');
-            } else {
-                console.log('Admin user already exists.');
-            }
-        } catch (adminErr) {
-            console.error('Admin auto-creation failed:', adminErr.message);
-        }
     })
     .catch(err => {
-        console.error('MongoDB connection error:', err.message);
+        console.error('MongoDB connection failed:', err.message);
         process.exit(1);
     });
 
@@ -112,7 +76,7 @@ app.get('/api/user-check', async (req, res) => {
 });
 
 /* =====================
-   IMPORT ROUTES
+   API ROUTES
 ===================== */
 app.use('/api/complaints', require('./routes/complaintRoutes'));
 app.use('/api/cities', require('./routes/cityRoutes'));

@@ -1,145 +1,203 @@
 const express = require('express');
 const router = express.Router();
-const Complaint = require('../models/Complaint');
-
-const Counter = require('../models/Counter');
+const mongoose = require('mongoose');
 const axios = require('axios');
 
-// GET track complaint by ID or Phone
+const Complaint = require('../models/Complaint');
+const Counter = require('../models/Counter');
+
+/* ======================================================
+   GET: Track complaint by Complaint ID / Phone / ObjectId
+====================================================== */
 router.get('/track', async (req, res) => {
-    const { query } = req.query;
-    if (!query) return res.status(400).json({ message: "Query parameter required" });
+  const { query } = req.query;
+  if (!query) {
+    return res.status(400).json({ message: 'Query parameter required' });
+  }
 
-    try {
-        // Search by complaintId first, then Phone, then ObjectId
-        let complaints = await Complaint.find({ complaintId: query });
+  try {
+    let complaints = await Complaint.find({ complaintId: query });
 
-        if (complaints.length === 0) {
-            complaints = await Complaint.find({ phone: query });
-        }
-
-        // For backward compatibility or direct ID usage
-        if (complaints.length === 0 && require('mongoose').Types.ObjectId.isValid(query)) {
-            complaints = await Complaint.find({ _id: query });
-        }
-
-        res.json(complaints);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
+    if (complaints.length === 0) {
+      complaints = await Complaint.find({ phone: query });
     }
+
+    if (
+      complaints.length === 0 &&
+      mongoose.Types.ObjectId.isValid(query)
+    ) {
+      complaints = await Complaint.find({ _id: query });
+    }
+
+    res.json(complaints);
+  } catch (err) {
+    console.error('Track error:', err);
+    res.status(500).json({ message: err.message });
+  }
 });
 
-// GET all complaints
+/* ============================
+   GET: All complaints
+============================ */
 router.get('/', async (req, res) => {
-    try {
-        const complaints = await Complaint.find();
-        res.json(complaints);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
+  try {
+    const complaints = await Complaint.find().sort({ createdAt: -1 });
+    res.json(complaints);
+  } catch (err) {
+    console.error('Fetch error:', err);
+    res.status(500).json({ message: err.message });
+  }
 });
 
-// POST new complaint
-// POST new ticket (Complaint or Service Request)
+/* ======================================================
+   POST: Create new Complaint / Service Request
+====================================================== */
 router.post('/', async (req, res) => {
-    try {
-        const { type } = req.body;
-        const prefix = type === 'Service Request' ? 'WSR' : 'WCR';
-        const counterName = type === 'Service Request' ? 'serviceId' : 'complaintId';
+  try {
+    const {
+      type,
+      customerName,
+      phone,
+      email,
+      city,
+      address,
+      issueType,
+      description
+    } = req.body;
 
-        // Generate Sequence
-        const counter = await Counter.findByIdAndUpdate(
-            counterName,
-            { $inc: { seq: 1 } },
-            { new: true, upsert: true }
-        );
-
-        const complaint = new Complaint({
-            complaintId: `${prefix}-${counter.seq}`,
-            type: type || 'Complaint',
-            customerName: req.body.customerName,
-            phone: req.body.phone,
-            email: req.body.email,
-            city: req.body.city,
-            address: req.body.address,
-            issueType: req.body.issueType,
-            description: req.body.description
-        });
-
-        const newComplaint = await complaint.save();
-        // SMS notification on creation (optional) - Fast2SMS
-        if (process.env.FAST2SMS_API_KEY && process.env.WHATSAPP_ADMIN_NUMBER) {
-            const message = `New ${type || 'Complaint'} created. ID: ${newComplaint.complaintId}. Customer: ${newComplaint.customerName}`;
-            try {
-                await axios.get(`https://www.fast2sms.com/dev/bulkV2`, {
-                    params: {
-                        authorization: process.env.FAST2SMS_API_KEY,
-                        route: 'q', // transactional route
-                        message: message,
-                        numbers: process.env.WHATSAPP_ADMIN_NUMBER.replace(/\+/g, '')
-                    }
-                });
-            } catch (smsErr) {
-                console.error('Fast2SMS creation notification failed:', smsErr.message);
-            }
-        }
-        res.status(201).json(newComplaint);
-    } catch (err) {
-        console.error('Error saving ticket:', err);
-        res.status(500).json({ message: err.message });
+    // 🔒 Required field validation
+    if (!customerName || !phone || !city || !issueType) {
+      return res.status(400).json({
+        message: 'customerName, phone, city, and issueType are required'
+      });
     }
+
+    const ticketType = type === 'Service Request' ? 'Service Request' : 'Complaint';
+    const prefix = ticketType === 'Service Request' ? 'WSR' : 'WCR';
+    const counterName = ticketType === 'Service Request' ? 'serviceId' : 'complaintId';
+
+    // Generate sequential ID
+    const counter = await Counter.findByIdAndUpdate(
+      counterName,
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+
+    const complaint = new Complaint({
+      complaintId: `${prefix}-${counter.seq}`,
+      type: ticketType,
+      customerName,
+      phone,
+      email,
+      city,
+      address,
+      issueType,
+      description
+    });
+
+    const newComplaint = await complaint.save();
+
+    // 🔔 Optional SMS notification (Admin)
+    if (process.env.FAST2SMS_API_KEY && process.env.WHATSAPP_ADMIN_NUMBER) {
+      try {
+        await axios.get('https://www.fast2sms.com/dev/bulkV2', {
+          params: {
+            authorization: process.env.FAST2SMS_API_KEY,
+            route: 'q',
+            message: `New ${ticketType} created. ID: ${newComplaint.complaintId}. Customer: ${newComplaint.customerName}`,
+            numbers: process.env.WHATSAPP_ADMIN_NUMBER.replace(/\+/g, '')
+          }
+        });
+      } catch (smsErr) {
+        console.error('Fast2SMS create notification failed:', smsErr.message);
+      }
+    }
+
+    res.status(201).json(newComplaint);
+
+  } catch (err) {
+    console.error('Create complaint error:', err);
+    res.status(500).json({ message: err.message });
+  }
 });
 
-// PUT update complaint (Admin)
+/* ======================================================
+   PATCH: Update complaint (Admin)
+====================================================== */
 router.patch('/:id', async (req, res) => {
-    try {
-        const { status, assignedTechnician, assignedTechnicianPhone, pendingReason } = req.body;
-        const updatedComplaint = await Complaint.findByIdAndUpdate(
-            req.params.id,
-            { status, assignedTechnician, assignedTechnicianPhone, pendingReason },
-            { new: true }
-        );
+  try {
+    const {
+      status,
+      assignedTechnician,
+      assignedTechnicianPhone,
+      rescheduleReason,
+      remark
+    } = req.body;
 
-        // SMS notification on update (optional) - Fast2SMS
-        if (process.env.FAST2SMS_API_KEY && process.env.WHATSAPP_ADMIN_NUMBER) {
-            let updates = [];
-            if (status) updates.push(`Status: ${status}`);
-            if (assignedTechnician) updates.push(`Assigned: ${assignedTechnician}`);
-            const updateMsg = updates.length ? updates.join(' | ') : 'Updated';
-            const message = `Ticket ${updatedComplaint.complaintId} update: ${updateMsg}`;
+    const updatedComplaint = await Complaint.findByIdAndUpdate(
+      req.params.id,
+      {
+        status,
+        assignedTechnician,
+        assignedTechnicianPhone,
+        rescheduleReason,
+        remark,
+        updatedAt: new Date() // ensures timeline update
+      },
+      { new: true, runValidators: true }
+    );
 
-            try {
-                // Notify Admin
-                await axios.get(`https://www.fast2sms.com/dev/bulkV2`, {
-                    params: {
-                        authorization: process.env.FAST2SMS_API_KEY,
-                        route: 'q',
-                        message: message,
-                        numbers: process.env.WHATSAPP_ADMIN_NUMBER.replace(/\+/g, '')
-                    }
-                });
+    if (!updatedComplaint) {
+      return res.status(404).json({ message: 'Complaint not found' });
+    }
 
-                // Also notify technician if assigned
-                if (assignedTechnicianPhone) {
-                    const techNumber = assignedTechnicianPhone.replace(/\+/g, '').replace(/^91/, '');
-                    await axios.get(`https://www.fast2sms.com/dev/bulkV2`, {
-                        params: {
-                            authorization: process.env.FAST2SMS_API_KEY,
-                            route: 'q',
-                            message: `You've been assigned ticket ${updatedComplaint.complaintId}. Status: ${status || 'Pending'}`,
-                            numbers: techNumber
-                        }
-                    });
-                }
-            } catch (smsErr) {
-                console.error('Fast2SMS update notification failed:', smsErr.message);
+    // 🔔 Optional SMS notifications
+    if (process.env.FAST2SMS_API_KEY) {
+      try {
+        let updates = [];
+        if (status) updates.push(`Status: ${status}`);
+        if (assignedTechnician) updates.push(`Assigned: ${assignedTechnician}`);
+        const updateText = updates.length ? updates.join(' | ') : 'Updated';
+
+        // Notify admin
+        if (process.env.WHATSAPP_ADMIN_NUMBER) {
+          await axios.get('https://www.fast2sms.com/dev/bulkV2', {
+            params: {
+              authorization: process.env.FAST2SMS_API_KEY,
+              route: 'q',
+              message: `Ticket ${updatedComplaint.complaintId} update: ${updateText}`,
+              numbers: process.env.WHATSAPP_ADMIN_NUMBER.replace(/\+/g, '')
             }
+          });
         }
 
-        res.json(updatedComplaint);
-    } catch (err) {
-        res.status(400).json({ message: err.message });
+        // Notify technician
+        if (assignedTechnicianPhone) {
+          const techNumber = assignedTechnicianPhone
+            .replace(/\+/g, '')
+            .replace(/^91/, '');
+
+          await axios.get('https://www.fast2sms.com/dev/bulkV2', {
+            params: {
+              authorization: process.env.FAST2SMS_API_KEY,
+              route: 'q',
+              message: `You are assigned ticket ${updatedComplaint.complaintId}. Status: ${status || 'Pending'}`,
+              numbers: techNumber
+            }
+          });
+        }
+
+      } catch (smsErr) {
+        console.error('Fast2SMS update notification failed:', smsErr.message);
+      }
     }
+
+    res.json(updatedComplaint);
+
+  } catch (err) {
+    console.error('Update error:', err);
+    res.status(400).json({ message: err.message });
+  }
 });
 
 module.exports = router;

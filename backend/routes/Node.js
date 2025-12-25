@@ -11,8 +11,8 @@ const transporter = nodemailer.createTransport({
 });
 
 transporter.sendMail({
-  from: "info@wattorbit.in",
-  to: "support@wattorbit.in",
+  from: "support@wattorbit.in",
+  to: "surajsur2007@gmail.com",
   subject: "Titan SMTP Test",
   text: "SMTP working successfully"
 });
