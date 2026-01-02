@@ -9,6 +9,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
+const cityRoutes = require("./routes/cityRoutes");
 
 /* =====================
    ENV CHECK (SAFE LOG)
@@ -105,7 +106,7 @@ app.use((req, res, next) => {
    MONGODB CONNECTION
 ===================== */
 const MONGO_URI =
-  process.env.MONGO_URI || 'mongodb://localhost:27017/wattorbit_redressal';
+  process.env.MONGO_URI || 'mongodb://localhost:27017/wcrm_dev';
 
 mongoose
   .connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 })
