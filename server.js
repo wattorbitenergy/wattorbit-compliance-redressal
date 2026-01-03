@@ -44,6 +44,9 @@ const allowedOrigins = [
   "http://localhost",
   "https://localhost",
   "https://wattorbit.in",
+   "https://wattorbit.com",
+    "https://www.wattorbit.com",
+
   "https://wattorbit-compliance-redressal.onrender.com",
   "https://wattorbit-redressal.onrender.com",
   "https://wattorbit--website.web.app",
