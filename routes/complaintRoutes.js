@@ -8,6 +8,22 @@ const jwt = require('jsonwebtoken');
 const Complaint = require('../models/Complaint');
 const Counter = require('../models/Counter');
 const User = require('../models/User');
+const admin = require('firebase-admin'); // For FCM
+
+// Helper: Safely send FCM
+const sendFCM = async (topic, title, body) => {
+  if (admin.apps.length) {
+    try {
+      await admin.messaging().send({
+        topic,
+        notification: { title, body }
+      });
+      console.log(`FCM Sent to '${topic}': ${title}`);
+    } catch (e) {
+      console.error(`FCM Fail for '${topic}':`, e.message);
+    }
+  }
+};
 
 /* ============================
    MIDDLEWARE: VERIFY TOKEN
@@ -325,6 +341,10 @@ router.post('/', async (req, res) => {
       }
     }
 
+    // FCM Notification: New Ticket Created -> Notify Admin & Techs
+    sendFCM('admin', 'New Ticket Created', `ID: ${saved.complaintId} | ${saved.issueType} by ${saved.customerName}`);
+    sendFCM('technician', 'New Job Available', `ID: ${saved.complaintId} | Location: ${saved.city}`);
+
     res.status(201).json(saved);
   } catch (err) {
     console.error('Create error:', err);
@@ -366,20 +386,40 @@ router.patch('/:id', verifyToken, async (req, res) => {
     );
 
     // Status Update Email
-    if (status && oldComplaint.status !== status && updated.email) {
-      const subject = `Update on Ticket ${updated.complaintId} - Status: ${status}`;
-      const html = `
-        <p>Dear ${updated.customerName},</p>
-        <p>The status of your ticket <b>${updated.complaintId}</b> has been updated.</p>
-        <p>
-            <b>New Status:</b> <span style="color: blue; font-weight: bold;">${status}</span><br>
-            ${updated.assignedTechnician ? `<b>Assigned Technician:</b> ${updated.assignedTechnician}<br>` : ''}
-            ${remark ? `<b>Remark:</b> ${remark}<br>` : ''}
-        </p>
-        <p>Thank you for choosing WattOrbit.</p>
-        <p style="color: gray; font-size: 12px;">This is an automated message. Please do not reply.</p>
-      `;
-      sendEmail(updated.email, subject, html);
+    if (status && oldComplaint.status !== status) {
+      // 1. Notify User via Email (Existing)
+      if (updated.email) {
+        const subject = `Update on Ticket ${updated.complaintId} - Status: ${status}`;
+        const html = `
+          <p>Dear ${updated.customerName},</p>
+          <p>The status of your ticket <b>${updated.complaintId}</b> has been updated.</p>
+          <p>
+              <b>New Status:</b> <span style="color: blue; font-weight: bold;">${status}</span><br>
+              ${updated.assignedTechnician ? `<b>Assigned Technician:</b> ${updated.assignedTechnician}<br>` : ''}
+              ${remark ? `<b>Remark:</b> ${remark}<br>` : ''}
+          </p>
+          <p>Thank you for choosing WattOrbit.</p>
+          <p style="color: gray; font-size: 12px;">This is an automated message. Please do not reply.</p>
+        `;
+        sendEmail(updated.email, subject, html);
+      }
+
+      // 2. FCM Notification (Real-time App Update)
+      // Notify Admin
+      sendFCM('admin', 'Ticket Status Updated', `${updated.complaintId} is now ${status}`);
+
+      // Notify Specific User (Topic: user_PHONE_NUMBER) - Sanitized
+      if (updated.phone) {
+        const userTopic = `user_${updated.phone.replace(/\D/g, '')}`; // e.g. user_9876543210
+        sendFCM(userTopic, 'Complaint Update', `Your ticket ${updated.complaintId} is ${status}`);
+      }
+
+      // Notify Technician if assigned
+      if (updated.assignedTechnician) {
+        // Ideally we'd notify the specific tech, but we don't have their token/topic easily mapped here unless we use username/phone
+        // Assumption: Techs subscribe to their username or phone? Let's use generic 'technician' for now or skip specific tech targeting to avoid spam.
+        // Actually, let's try assuming tech username is distinct enough or we just notify admins.
+      }
     }
 
     res.json(updated);

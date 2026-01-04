@@ -44,11 +44,26 @@ const verifyToken = (req, res, next) => {
 };
 
 /* =========================
+   PUBLIC: LIST ORGANISATIONS
+   Used for registration dropdown
+========================= */
+router.get('/public-organisations', async (req, res) => {
+  try {
+    const orgs = await User.find({ role: 'organisation', isApproved: true })
+      .select('name city username _id')
+      .sort({ name: 1 });
+    res.json(orgs);
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to fetch organisations' });
+  }
+});
+
+/* =========================
    REGISTER USER
 ========================= */
 router.post('/register', async (req, res) => {
   try {
-    let { username, password, city, phone, email, role, name } = req.body;
+    let { username, password, city, phone, email, role, name, organisationId } = req.body;
 
     if (!username || !password) {
       return res.status(400).json({ message: 'Username and password are required' });
@@ -78,6 +93,9 @@ router.post('/register', async (req, res) => {
     // Security: Do not allow 'admin' registration via public API.
     const safeRole = (role === 'admin') ? 'user' : (role || 'user');
 
+    // Auto-approve 'user' role (Customers). Others require vetting.
+    const autoApprove = safeRole === 'user';
+
     const user = new User({
       username,
       name,
@@ -86,16 +104,18 @@ router.post('/register', async (req, res) => {
       city,
       phone,
       role: safeRole,
-      isApproved: false
+      isApproved: autoApprove,
+      organisationId: organisationId || undefined
     });
 
     await user.save();
 
     res.status(201).json({
-      message: 'Registration successful. Await admin approval.'
+      message: autoApprove ? 'Registration successful.' : 'Registration successful. Await admin approval.'
     });
 
   } catch (err) {
+    console.error("Register Error:", err);
     res.status(500).json({ message: 'Registration failed' });
   }
 });
@@ -123,7 +143,12 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user._id, username: user.username, role: user.role },
+      {
+        id: user._id,
+        username: user.username,
+        role: user.role,
+        organisationId: user.organisationId || (user.role === 'organisation' ? user._id : undefined)
+      },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -133,7 +158,8 @@ router.post('/login', authLimiter, async (req, res) => {
       user: {
         id: user._id,
         username: user.username,
-        role: user.role
+        role: user.role,
+        name: user.name
       }
     });
 
@@ -143,22 +169,32 @@ router.post('/login', authLimiter, async (req, res) => {
 });
 
 /* =========================
-   GET USERS (ADMIN & ENGINEER)
+   GET USERS (ADMIN, ENGINEER, ORG)
 ========================= */
 router.get('/users', verifyToken, async (req, res) => {
-  // Allow Admin AND Engineer to fetch users (Engineers need to find Technicians)
-  if (req.user.role !== 'admin' && req.user.role !== 'engineer') {
+  // Allow Admin, Engineer, and Organisation to fetch users
+  const { role, id } = req.user;
+
+  if (!['admin', 'engineer', 'organisation'].includes(role)) {
     return res.status(403).json({ message: 'Access denied' });
   }
 
   try {
+    let query = {};
+    if (role === 'organisation') {
+      // Organisation only sees their OWN users
+      query = { organisationId: id };
+    }
+
     const users = await User.find(
-      {},
+      query,
       {
         username: 1,
         role: 1,
         isApproved: 1,
-        createdAt: 1
+        createdAt: 1,
+        name: 1,
+        organisationId: 1
       }
     ).sort({ createdAt: -1 });
 
@@ -178,13 +214,15 @@ router.patch('/approve/:id', verifyToken, async (req, res) => {
   }
 
   try {
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      { isApproved: true },
-      { new: true }
-    ).select('-password');
+    // Check if target is admin (redundant as admins are auto-approved, but safe)
+    const target = await User.findById(req.params.id);
+    if (!target) return res.status(404).json({ message: 'User not found' });
+    if (target.role === 'admin') return res.status(403).json({ message: 'Cannot modify system admin' });
 
-    res.json(user);
+    target.isApproved = true;
+    await target.save();
+
+    res.json({ message: 'User approved' });
   } catch {
     res.status(400).json({ message: 'Approval failed' });
   }
@@ -215,7 +253,7 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
         const transporter = nodemailer.createTransport({
           host: process.env.SMTP_HOST,
           port: Number(process.env.SMTP_PORT),
-          secure: Number(process.env.SMTP_PORT) === 465, // Auto-detect secure based on port
+          secure: Number(process.env.SMTP_PORT) === 465,
           auth: {
             user: process.env.SMTP_USER,
             pass: process.env.SMTP_PASS
@@ -223,11 +261,24 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
           tls: { rejectUnauthorized: false }
         });
 
+        const origin = req.get('origin') || process.env.FRONTEND_URL || 'http://localhost:5173';
+        const resetUrl = `${origin}/reset-password?token=${resetToken}`;
+
         await transporter.sendMail({
-          from: process.env.SMTP_FROM || process.env.SMTP_USER,
+          from: `"WattOrbit Security" <${process.env.SMTP_USER}>`,
           to: user.email,
-          subject: 'WattOrbit Password Reset',
-          text: `Reset Token: ${resetToken} (valid 1 hour)`
+          subject: 'WattOrbit Password Reset Request',
+          html: `
+            <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <h2 style="color: #0F172A;">Password Reset</h2>
+              <p>You requested a password reset for your WattOrbit ID: <b>${username}</b>.</p>
+              <p>Click the button below to reset your password (valid for 1 hour):</p>
+              <a href="${resetUrl}" style="display: inline-block; background-color: #2563EB; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 20px 0;">Reset Password</a>
+              <p style="font-size: 12px; color: #666;">Or copy this link: <br/><a href="${resetUrl}">${resetUrl}</a></p>
+              <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+              <p style="font-size: 11px; color: #999;">If you didn't request this, purely ignore this email.</p>
+            </div>
+          `
         });
       } catch (e) {
         console.error('SMTP failed:', e.message);
@@ -290,6 +341,9 @@ router.patch('/admin-reset-password/:id', verifyToken, async (req, res) => {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
+    // Protect Admin
+    if (user.role === 'admin') return res.status(403).json({ message: 'Cannot modify system admin' });
+
     user.password = req.body.newPassword;
     await user.save();
 
@@ -298,6 +352,7 @@ router.patch('/admin-reset-password/:id', verifyToken, async (req, res) => {
     res.status(500).json({ message: 'Admin reset failed' });
   }
 });
+
 /* =========================
    SET USER ROLE (ADMIN ONLY)
 ========================= */
@@ -307,7 +362,6 @@ router.patch('/set-role/:id', verifyToken, async (req, res) => {
   }
 
   const { role, organisationId } = req.body;
-
   const allowedRoles = ['user', 'engineer', 'technician', 'organisation'];
 
   if (!allowedRoles.includes(role)) {
@@ -315,15 +369,21 @@ router.patch('/set-role/:id', verifyToken, async (req, res) => {
   }
 
   try {
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      { role, organisationId: organisationId || undefined },
-      { new: true }
-    ).select('-password');
+    const targetUser = await User.findById(req.params.id);
+    if (!targetUser) return res.status(404).json({ message: 'User not found' });
+
+    // Protect Admin from role change
+    if (targetUser.role === 'admin') {
+      return res.status(403).json({ message: 'Cannot modify system admin' });
+    }
+
+    targetUser.role = role;
+    targetUser.organisationId = organisationId || undefined;
+    await targetUser.save();
 
     res.json({
       message: 'Role updated successfully',
-      user
+      user: targetUser
     });
   } catch (err) {
     res.status(400).json({ message: 'Failed to update role' });

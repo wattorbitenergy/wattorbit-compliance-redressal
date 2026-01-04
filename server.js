@@ -10,6 +10,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const cityRoutes = require("./routes/cityRoutes");
+const notificationRoutes = require('./routes/notificationRoutes');
 
 /* =====================
    ENV CHECK (SAFE LOG)
@@ -44,8 +45,8 @@ const allowedOrigins = [
   "http://localhost",
   "https://localhost",
   "https://wattorbit.in",
-   "https://wattorbit.com",
-    "https://www.wattorbit.com",
+  "https://wattorbit.com",
+  "https://www.wattorbit.com",
 
   "https://wattorbit-compliance-redressal.onrender.com",
   "https://wattorbit-redressal.onrender.com",
@@ -157,6 +158,7 @@ app.get('/api/user-check', async (req, res) => {
 app.use('/api/complaints', require('./routes/complaintRoutes'));
 app.use('/api/cities', require('./routes/cityRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/notifications', require('./routes/notificationRoutes'));
 
 /* =====================
    GLOBAL ERROR HANDLER
