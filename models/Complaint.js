@@ -34,8 +34,14 @@ const complaintSchema = new mongoose.Schema(
     description: String,
     status: {
       type: String,
-      enum: ['Pending', 'In Progress', 'Resolved', 'Scheduled'],
-      default: 'Pending'
+      enum: [
+        'Created-Unassigned',
+        'Assigned',
+        'In Progress',
+        'Pending with Remark',
+        'Resolved'
+      ],
+      default: 'Created-Unassigned'
     },
     assignedTechnician: String,
     assignedTechnicianPhone: String,

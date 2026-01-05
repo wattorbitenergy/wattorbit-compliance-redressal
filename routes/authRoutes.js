@@ -150,7 +150,7 @@ router.post('/login', authLimiter, async (req, res) => {
         organisationId: user.organisationId || (user.role === 'organisation' ? user._id : undefined)
       },
       JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '30d' }
     );
 
     res.json({
@@ -234,9 +234,17 @@ router.patch('/approve/:id', verifyToken, async (req, res) => {
 router.post('/forgot-password', authLimiter, async (req, res) => {
   try {
     const username = req.body.username?.toLowerCase().trim();
-    const user = await User.findOne({ username });
+    // Support lookup by username, email, OR phone
+    const user = await User.findOne({
+      $or: [
+        { username: username },
+        { email: username },
+        { phone: username }
+      ]
+    });
 
     if (!user) {
+      console.log(`Forgot Password: No user found for identifier: ${username}`);
       return res.json({ message: 'If user exists, reset instructions sent.' });
     }
 
@@ -248,7 +256,12 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
     await user.save();
 
     /* EMAIL (NON-BLOCKING) */
-    if (user.email && process.env.SMTP_HOST) {
+    if (!user.email) {
+      console.log(`Forgot Password: User ${username} has no email address configured.`);
+    } else if (!process.env.SMTP_HOST) {
+      console.log(`Forgot Password: SMTP_HOST is not configured in environment variables.`);
+    } else {
+      console.log(`Forgot Password: Attempting to send reset email to ${user.email} via ${process.env.SMTP_HOST}`);
       try {
         const transporter = nodemailer.createTransport({
           host: process.env.SMTP_HOST,
@@ -280,8 +293,10 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
             </div>
           `
         });
+        console.log(`Forgot Password: Reset email successfully dispatched to ${user.email}`);
       } catch (e) {
-        console.error('SMTP failed:', e.message);
+        console.error('Forgot Password: SMTP delivery failed:', e.message);
+        console.error('SMTP Stack:', e.stack);
       }
     }
 

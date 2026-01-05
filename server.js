@@ -159,6 +159,7 @@ app.use('/api/complaints', require('./routes/complaintRoutes'));
 app.use('/api/cities', require('./routes/cityRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
+app.use('/api/test-notification', require('./routes/testNotificationRoutes'));
 
 /* =====================
    GLOBAL ERROR HANDLER

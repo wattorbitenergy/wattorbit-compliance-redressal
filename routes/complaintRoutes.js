@@ -376,12 +376,18 @@ router.patch('/:id', verifyToken, async (req, res) => {
       return res.status(403).json({ message: 'Unauthorized' });
     }
 
+    // Auto-fetch technician phone if assignedTechnician is provided
+    let updateData = { ...req.body, updatedAt: new Date() };
+    if (assignedTechnician && (assignedTechnician !== oldComplaint.assignedTechnician)) {
+      const techUser = await User.findOne({ username: assignedTechnician });
+      if (techUser && techUser.phone) {
+        updateData.assignedTechnicianPhone = techUser.phone;
+      }
+    }
+
     const updated = await Complaint.findByIdAndUpdate(
       req.params.id,
-      {
-        ...req.body,
-        updatedAt: new Date()
-      },
+      updateData,
       { new: true, runValidators: true }
     );
 
@@ -414,11 +420,10 @@ router.patch('/:id', verifyToken, async (req, res) => {
         sendFCM(userTopic, 'Complaint Update', `Your ticket ${updated.complaintId} is ${status}`);
       }
 
-      // Notify Technician if assigned
-      if (updated.assignedTechnician) {
-        // Ideally we'd notify the specific tech, but we don't have their token/topic easily mapped here unless we use username/phone
-        // Assumption: Techs subscribe to their username or phone? Let's use generic 'technician' for now or skip specific tech targeting to avoid spam.
-        // Actually, let's try assuming tech username is distinct enough or we just notify admins.
+      // 3. Notify Technician if assigned or reassigned
+      if (updated.assignedTechnician && (oldComplaint.assignedTechnician !== updated.assignedTechnician)) {
+        const techTopic = `tech_${updated.assignedTechnician}`;
+        sendFCM(techTopic, 'New Assignment', `You have been assigned to Ticket ${updated.complaintId}`);
       }
     }
 
