@@ -46,8 +46,7 @@ const verifyToken = (req, res, next) => {
 /* ============================
    SMTP TRANSPORTER
 ============================ */
-// 465 = SSL (secure: true), 587/25 = STARTTLS (secure: false)
-// 465 = SSL (secure: true), 587/25 = STARTTLS (secure: false)
+// 465 = SSL (secure: true), 587/2525 = STARTTLS (secure: false)
 const isSecure = Number(process.env.SMTP_PORT) === 465;
 
 const transporter = nodemailer.createTransport({
@@ -58,9 +57,14 @@ const transporter = nodemailer.createTransport({
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
   },
-  connectionTimeout: 10000, // 10 seconds timeout
-  greetingTimeout: 10000,
-  socketTimeout: 10000
+  tls: {
+    // Mailjet/Render often require this for STARTTLS on port 587
+    rejectUnauthorized: false,
+    ciphers: 'SSLv3'
+  },
+  connectionTimeout: 20000, // Increased to 20s for Render cold starts
+  greetingTimeout: 20000,
+  socketTimeout: 20000
 });
 
 // Verify connection configuration

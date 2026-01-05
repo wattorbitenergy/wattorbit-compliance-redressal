@@ -280,9 +280,12 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
             user: process.env.SMTP_USER,
             pass: process.env.SMTP_PASS
           },
-          tls: { rejectUnauthorized: false },
-          connectionTimeout: 10000,
-          greetingTimeout: 10000
+          tls: {
+            rejectUnauthorized: false,
+            ciphers: 'SSLv3'
+          },
+          connectionTimeout: 20000,
+          greetingTimeout: 20000
         });
 
         const origin = req.get('origin') || process.env.FRONTEND_URL || 'http://localhost:5173';
