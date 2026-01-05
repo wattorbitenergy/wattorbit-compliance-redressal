@@ -47,22 +47,27 @@ const verifyToken = (req, res, next) => {
    SMTP TRANSPORTER
 ============================ */
 // 465 = SSL (secure: true), 587/25 = STARTTLS (secure: false)
-const isSecure = process.env.SMTP_PORT == 465;
+// 465 = SSL (secure: true), 587/25 = STARTTLS (secure: false)
+const isSecure = Number(process.env.SMTP_PORT) === 465;
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: process.env.SMTP_PORT,
+  port: Number(process.env.SMTP_PORT),
   secure: isSecure,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
-  }
+  },
+  connectionTimeout: 10000, // 10 seconds timeout
+  greetingTimeout: 10000,
+  socketTimeout: 10000
 });
 
 // Verify connection configuration
 transporter.verify((err, success) => {
   if (err) {
     console.error('SMTP VERIFY FAILED:', err.message);
+    console.error('PRO-TIP: If using Gmail, use App Passwords. If Render, try Port 465 (secure) or 587 (unsecure).');
   } else {
     console.log(`SMTP SERVER READY (Secure: ${isSecure})`);
   }

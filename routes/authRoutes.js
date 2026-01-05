@@ -256,12 +256,21 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
     await user.save();
 
     /* EMAIL (NON-BLOCKING) */
-    if (!user.email) {
-      console.log(`Forgot Password: User ${username} has no email address configured.`);
+    let targetEmail = user.email;
+
+    // Fallback: If no email in profile, but the identifier looks like an email, use that
+    const isEmailFormat = (str) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str);
+    if (!targetEmail && isEmailFormat(username)) {
+      console.log(`Forgot Password: Profile for ${username} has no email. Falling back to identifier as email.`);
+      targetEmail = username;
+    }
+
+    if (!targetEmail) {
+      console.log(`Forgot Password: User ${username} has no email address configured and identifier is not an email.`);
     } else if (!process.env.SMTP_HOST) {
       console.log(`Forgot Password: SMTP_HOST is not configured in environment variables.`);
     } else {
-      console.log(`Forgot Password: Attempting to send reset email to ${user.email} via ${process.env.SMTP_HOST}`);
+      console.log(`Forgot Password: Attempting to send reset email to ${targetEmail} via ${process.env.SMTP_HOST}`);
       try {
         const transporter = nodemailer.createTransport({
           host: process.env.SMTP_HOST,
@@ -271,7 +280,9 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
             user: process.env.SMTP_USER,
             pass: process.env.SMTP_PASS
           },
-          tls: { rejectUnauthorized: false }
+          tls: { rejectUnauthorized: false },
+          connectionTimeout: 10000,
+          greetingTimeout: 10000
         });
 
         const origin = req.get('origin') || process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -279,7 +290,7 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
 
         await transporter.sendMail({
           from: `"WattOrbit Security" <${process.env.SMTP_USER}>`,
-          to: user.email,
+          to: targetEmail,
           subject: 'WattOrbit Password Reset Request',
           html: `
             <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -293,10 +304,9 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
             </div>
           `
         });
-        console.log(`Forgot Password: Reset email successfully dispatched to ${user.email}`);
+        console.log(`Forgot Password: Reset email successfully dispatched to ${targetEmail}`);
       } catch (e) {
         console.error('Forgot Password: SMTP delivery failed:', e.message);
-        console.error('SMTP Stack:', e.stack);
       }
     }
 
