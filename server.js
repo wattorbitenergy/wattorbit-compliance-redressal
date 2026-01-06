@@ -23,6 +23,19 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 /* =====================
+   RATE LIMITING (GLOBAL)
+===================== */
+const rateLimit = require('express-rate-limit');
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests from this IP, please try again after 15 minutes." }
+});
+app.use('/api/', limiter);
+
+/* =====================
    TRUST PROXY (RENDER)
 ===================== */
 app.set('trust proxy', 1);
@@ -47,7 +60,6 @@ const allowedOrigins = [
   "https://wattorbit.in",
   "https://wattorbit.com",
   "https://www.wattorbit.com",
-
   "https://wattorbit-compliance-redressal.onrender.com",
   "https://wattorbit-redressal.onrender.com",
   "https://wattorbit--website.web.app",
@@ -78,12 +90,6 @@ app.use(
 );
 
 /* =====================
-   PREFLIGHT HANDLER
-===================== */
-app.use(cors());
-
-
-/* =====================
    BODY PARSER
 ===================== */
 app.use(express.json());
@@ -98,9 +104,12 @@ app.use((req, res, next) => {
     req.socket.remoteAddress;
 
   res.on('finish', () => {
-    console.log(
-      `[${new Date().toISOString()}] ${ip} ${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - start}ms`
-    );
+    // Only log in non-production or for errors
+    if (process.env.NODE_ENV !== 'production' || res.statusCode >= 400) {
+      console.log(
+        `[${new Date().toISOString()}] ${ip} ${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - start}ms`
+      );
+    }
   });
 
   next();
@@ -127,30 +136,16 @@ mongoose
 
 /* =====================
    HEALTH ROUTES
-===================== */
+==================== */
 app.get('/', (req, res) => {
   res.send('✅ WattOrbit Compliance API Running');
 });
 
-app.get('/api/db-test', (req, res) => {
-  const state = mongoose.connection.readyState;
-  const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
-
-  res.json({
-    status: states[state],
-    dbName: mongoose.connection.name
-  });
-});
-
-app.get('/api/user-check', async (req, res) => {
-  try {
-    const User = require('./models/User');
-    const count = await User.countDocuments();
-    res.json({ count });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
+/* ====================
+   DIAGNOSTIC (INTERNAL)
+   Disabled public access to user checks
+==================== */
+// app.get('/api/user-check', async (req, res) => { ... });
 
 /* =====================
    API ROUTES
@@ -159,20 +154,23 @@ app.use('/api/complaints', require('./routes/complaintRoutes'));
 app.use('/api/cities', require('./routes/cityRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
-app.use('/api/test-notification', require('./routes/testNotificationRoutes'));
+
+// Production Security: Only enable test routes in non-prod
+if (process.env.NODE_ENV !== 'production') {
+  app.use('/api/test-notification', require('./routes/testNotificationRoutes'));
+}
 
 /* =====================
    GLOBAL ERROR HANDLER
 ===================== */
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  // Log full error for server logs
+  console.error('❌ GLOBAL ERROR:', err.message);
 
-  res.status(500).json({
-    message: 'Internal server error',
-    error:
-      process.env.NODE_ENV === 'production'
-        ? {}
-        : err.message
+  // Hide stack traces in production
+  res.status(err.status || 500).json({
+    message: err.message || 'Internal server error',
+    error: process.env.NODE_ENV === 'production' ? {} : err
   });
 });
 

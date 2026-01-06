@@ -418,4 +418,97 @@ router.patch('/set-role/:id', verifyToken, async (req, res) => {
   }
 });
 
+/* =========================
+   GET PROFILE (BY ID)
+========================= */
+router.get('/profile/:id', verifyToken, async (req, res) => {
+  const { id: requesterId, role: requesterRole } = req.user;
+  const targetId = req.params.id;
+
+  try {
+    const targetUser = await User.findById(targetId).select('-password');
+    if (!targetUser) return res.status(404).json({ message: 'User not found' });
+
+    // Permission Check
+    let canView = false;
+    if (requesterRole === 'admin') {
+      canView = true;
+    } else if (requesterId === targetId) {
+      canView = true;
+    } else if (requesterRole === 'organisation') {
+      if (targetUser.organisationId && targetUser.organisationId.toString() === requesterId) {
+        canView = true;
+      }
+    }
+
+    if (!canView) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    res.json(targetUser);
+
+  } catch (err) {
+    res.status(500).json({ message: 'Sync failed' });
+  }
+});
+
+/* =========================
+   UPDATE PROFILE (USER, ADMIN, ORG)
+========================= */
+router.patch('/update-profile/:id', verifyToken, async (req, res) => {
+  const { id: requesterId, role: requesterRole } = req.user;
+  const targetId = req.params.id;
+
+  try {
+    const targetUser = await User.findById(targetId);
+    if (!targetUser) return res.status(404).json({ message: 'User not found' });
+
+    // Permission Check
+    let canUpdate = false;
+    if (requesterRole === 'admin') {
+      canUpdate = true;
+    } else if (requesterId === targetId) {
+      canUpdate = true;
+    } else if (requesterRole === 'organisation') {
+      // Org can only update users belonging to them
+      if (targetUser.organisationId && targetUser.organisationId.toString() === requesterId) {
+        canUpdate = true;
+      }
+    }
+
+    if (!canUpdate) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // Fields allowed to be updated
+    const { name, email, phone, city } = req.body;
+    if (name) targetUser.name = name;
+    if (email) targetUser.email = email.toLowerCase().trim();
+    if (phone) targetUser.phone = phone.trim();
+    if (city) targetUser.city = city;
+
+    await targetUser.save();
+
+    res.json({
+      message: 'Profile updated successfully',
+      user: {
+        id: targetUser._id,
+        username: targetUser.username,
+        name: targetUser.name,
+        email: targetUser.email,
+        phone: targetUser.phone,
+        city: targetUser.city,
+        role: targetUser.role
+      }
+    });
+
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({ message: 'Email or phone already in use' });
+    }
+    res.status(400).json({ message: 'Update failed' });
+  }
+});
+
 module.exports = router;
+
