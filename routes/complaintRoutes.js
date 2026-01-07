@@ -250,19 +250,28 @@ router.get('/:id/whatsapp/technician', verifyToken, async (req, res) => {
   }
 });
 
-// 3. Admin/Engineer -> User or Technician
+// 3. Admin/Engineer/Technician -> Target (User/Technician/Admin)
 router.get('/:id/whatsapp/target/:roleName', verifyToken, async (req, res) => {
   try {
     const { role } = req.user;
-    if (role !== 'admin' && role !== 'engineer') {
+    const { roleName } = req.params;
+
+    // Security Check
+    if (role !== 'admin' && role !== 'engineer' && role !== 'technician') {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const { roleName } = req.params;
+    // Technicians can only contact admin or the user via this or other specific endpoints
+    if (role === 'technician' && roleName !== 'admin') {
+      return res.status(403).json({ message: 'Technicians can only contact HQ' });
+    }
+
     const complaint = await Complaint.findById(req.params.id);
     if (!complaint) return res.status(404).json({ message: 'Complaint not found' });
 
     let targetPhone = '';
+    let message = `Hello, regarding Complaint ID ${complaint.complaintId || complaint._id}`;
+
     if (roleName === 'user') {
       targetPhone = complaint.phone;
     } else if (roleName === 'technician') {
@@ -270,13 +279,16 @@ router.get('/:id/whatsapp/target/:roleName', verifyToken, async (req, res) => {
       const tech = await User.findOne({ username: complaint.assignedTechnician });
       if (!tech) return res.status(404).json({ message: 'Technician not found' });
       targetPhone = tech.phone;
+    } else if (roleName === 'admin') {
+      // Escalation to Admin
+      targetPhone = '917379092670';
+      message = `Escalation for ID ${complaint.complaintId || complaint._id}`;
     } else {
       return res.status(400).json({ message: 'Invalid target role' });
     }
 
     if (!targetPhone) return res.status(404).json({ message: 'Phone number not available' });
 
-    const message = `Hello, regarding Complaint ID ${complaint.complaintId}`;
     const waUrl = `https://wa.me/${targetPhone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`;
 
     res.json({ waUrl });
@@ -425,7 +437,7 @@ router.patch('/:id', verifyToken, async (req, res) => {
 
       // Notify Specific User (Topic: user_PHONE_NUMBER) - Sanitized
       if (updated.phone) {
-        const userTopic = `user_${updated.phone.replace(/\D/g, '')}`; // e.g. user_9876543210
+        const userTopic = `user_${updated.phone.replace(/\D/g, '')}`; // Format: user_<digits>
         sendFCM(userTopic, 'Complaint Update', `Your ticket ${updated.complaintId} is ${status}`);
       }
 
