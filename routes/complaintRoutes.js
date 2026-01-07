@@ -98,7 +98,17 @@ const sendEmail = async (to, subject, html) => {
 ============================ */
 router.get('/', verifyToken, async (req, res) => {
   try {
-    const { role, username, email, phone, organisationId } = req.user;
+    let { role, username, email, phone, organisationId, id } = req.user;
+
+    // 🛡️ ROBUSTNESS: If token is stale (missing phone/email), fetch fresh from DB
+    if (role === 'user' && (!phone || !email)) {
+      const freshUser = await User.findById(id || req.user._id);
+      if (freshUser) {
+        phone = freshUser.phone;
+        email = freshUser.email;
+      }
+    }
+
     let query = {};
 
     switch (role) {

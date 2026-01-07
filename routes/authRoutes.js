@@ -147,6 +147,8 @@ router.post('/login', authLimiter, async (req, res) => {
         id: user._id,
         username: user.username,
         role: user.role,
+        email: user.email,     // ✅ Added email to token
+        phone: user.phone,     // ✅ Added phone to token (Critical for complaint filtering)
         organisationId: user.organisationId || (user.role === 'organisation' ? user._id : undefined)
       },
       JWT_SECRET,
@@ -159,7 +161,9 @@ router.post('/login', authLimiter, async (req, res) => {
         id: user._id,
         username: user.username,
         role: user.role,
-        name: user.name
+        name: user.name,
+        email: user.email,     // ✅ Exposed to frontend local storage
+        phone: user.phone      // ✅ Exposed to frontend local storage (Critical for notifications)
       }
     });
 
