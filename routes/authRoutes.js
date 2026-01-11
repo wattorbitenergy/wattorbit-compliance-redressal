@@ -70,8 +70,31 @@ router.post('/register', async (req, res) => {
     });
 
     await user.save();
+
+    // Notify Admin of new registration
+    if (!autoApprove && process.env.ADMIN_EMAIL) {
+      const origin = req.get('origin') || process.env.FRONTEND_URL || 'https://wattorbit.com';
+      await mailer.sendMail({
+        to: process.env.ADMIN_EMAIL,
+        subject: 'New User Registration - Action Required',
+        html: `
+          <h2>New User Pending Approval</h2>
+          <p>A new user has registered and requires approval.</p>
+          <p>
+            <b>User:</b> ${username}<br/>
+            <b>Role:</b> ${role}<br/>
+            <b>Name:</b> ${name || 'N/A'}<br/>
+            <b>Phone:</b> ${phone || 'N/A'}
+          </p>
+          <p>Click below to manage users:</p>
+          <a href="${origin}/admin/users">Manage Users</a>
+        `
+      });
+    }
+
     res.status(201).json({ message: autoApprove ? 'Registered successfully' : 'Awaiting approval' });
-  } catch {
+  } catch (error) {
+    console.error("Registration error:", error);
     res.status(500).json({ message: 'Registration failed' });
   }
 });
