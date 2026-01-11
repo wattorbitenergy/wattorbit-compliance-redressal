@@ -16,7 +16,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
    ENV CHECK (SAFE LOG)
 ===================== */
 console.log('Environment Check:');
-console.log('SMTP_HOST:', process.env.SMTP_HOST ? 'Loaded' : 'Missing');
+console.log('MAILJET_API:', process.env.MAILJET_API_KEY ? 'Loaded' : 'Missing');
 console.log('MONGO_URI:', process.env.MONGO_URI ? 'Loaded' : 'Missing');
 
 const app = express();

@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const axios = require('axios');
-const nodemailer = require('nodemailer');
+
 const jwt = require('jsonwebtoken');
 
 const Complaint = require('../models/Complaint');
@@ -46,47 +46,15 @@ const verifyToken = (req, res, next) => {
 /* ============================
    SMTP TRANSPORTER
 ============================ */
-// 465 = SSL (secure: true), 587/2525 = STARTTLS (secure: false)
-const isSecure = Number(process.env.SMTP_PORT) === 465;
+const mailer = require('./Node');
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT),
-  secure: isSecure,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  },
-  tls: {
-    // Mailjet/Render often require this for STARTTLS on port 587
-    rejectUnauthorized: false,
-    ciphers: 'SSLv3'
-  },
-  connectionTimeout: 20000, // Increased to 20s for Render cold starts
-  greetingTimeout: 20000,
-  socketTimeout: 20000
-});
-
-// Verify connection configuration
-transporter.verify((err, success) => {
-  if (err) {
-    console.error('SMTP VERIFY FAILED:', err.message);
-    console.error('PRO-TIP: If using Gmail, use App Passwords. If Render, try Port 465 (secure) or 587 (unsecure).');
-  } else {
-    console.log(`SMTP SERVER READY (Secure: ${isSecure})`);
-  }
-});
-
+/* ============================
+   EMAIL HELPER (MAILJET)
+============================ */
 const sendEmail = async (to, subject, html) => {
-  if (!to || !process.env.SMTP_USER) return;
+  if (!to) return;
   try {
-    await transporter.sendMail({
-      from: `"WattOrbit Support" <${process.env.SMTP_USER}>`,
-      replyTo: "no-reply@wattorbit.in",
-      to,
-      subject,
-      html
-    });
+    await mailer.sendMail({ to, subject, html });
     console.log(`Email sent to ${to}: ${subject}`);
   } catch (err) {
     console.error('Email send failed:', err.message);
