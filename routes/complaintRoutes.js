@@ -46,7 +46,7 @@ const verifyToken = (req, res, next) => {
 /* ============================
    SMTP TRANSPORTER
 ============================ */
-const mailer = require('./Node');
+const mailer = require('./mailer');
 
 /* ============================
    EMAIL HELPER (MAILJET)

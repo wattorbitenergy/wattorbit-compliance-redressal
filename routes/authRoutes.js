@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const User = require('../models/User');
-const mailer = require('./node');   // 🔥 Mailjet API (SMTP-free)
+const mailer = require('./mailer');   // 🔥 Mailjet API (SMTP-free)
 
 /* =========================
    ENV CHECK
