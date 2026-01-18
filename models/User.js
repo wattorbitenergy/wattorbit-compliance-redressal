@@ -4,9 +4,9 @@ const bcrypt = require('bcryptjs');
 const userSchema = new mongoose.Schema({
     username: {
         type: String,
-        required: true,
         unique: true,
-        trim: true
+        trim: true,
+        sparse: true // Allows multiple null/missing values while keeping uniqueness for non-nulls
     },
     name: {
         type: String,
@@ -38,9 +38,10 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    fcmToken: String,
     resetPasswordToken: String,
     resetPasswordExpires: Date
-});
+}, { timestamps: true });
 
 /* =====================
    PASSWORD HASHING

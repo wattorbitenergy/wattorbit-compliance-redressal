@@ -81,18 +81,13 @@ router.get('/', verifyToken, async (req, res) => {
 
     switch (role) {
       case 'admin':
-      case 'engineer':
-        // Admin and Engineer see all
+        // Admin sees all
         query = {};
         break;
 
-      case 'technician':
-        // Technician sees ONLY assigned to them
-        query = { assignedTechnician: username };
-        break;
-
-      case 'organisation':
-        // Organisation sees ONLY their users' data
+      case 'engineer':
+        // If Engineer belongs to an Organisation, restrict to that Org's Users.
+        // Independent Engineers see everything.
         if (organisationId) {
           const orgUsers = await User.find({ organisationId }).select('phone email');
           const phones = orgUsers.map(u => u.phone).filter(Boolean);
@@ -104,6 +99,33 @@ router.get('/', verifyToken, async (req, res) => {
             ]
           };
         } else {
+          query = {};
+        }
+        break;
+
+      case 'technician':
+        // Technician sees ONLY assigned to them.
+        // This ensures individual technicians don't have access to general organisational pools.
+        query = { assignedTechnician: username };
+        break;
+
+      case 'organisation':
+        // Organisation sees ONLY their users' data
+        // If organisationId is present (Sub-user), use it. If not, I am the Org (use my ID).
+        const targetOrgId = organisationId || id;
+
+        if (targetOrgId) {
+          const orgUsers = await User.find({ organisationId: targetOrgId }).select('phone email');
+          const phones = orgUsers.map(u => u.phone).filter(Boolean);
+          const emails = orgUsers.map(u => u.email).filter(Boolean);
+          query = {
+            $or: [
+              { phone: { $in: phones } },
+              { email: { $in: emails } }
+            ]
+          };
+        } else {
+          // Fallback if no org ID resolution (should not happen for valid org)
           query = { $or: [{ phone }, { email }] };
         }
         break;
@@ -127,6 +149,74 @@ router.get('/', verifyToken, async (req, res) => {
 
   } catch (err) {
     console.error('Fetch error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/* ============================
+   GET: Fetch Single Complaint (Secured RBAC)
+============================ */
+router.get('/:id/details', verifyToken, async (req, res) => {
+  try {
+    const { role, username, email, phone, organisationId } = req.user;
+    const { id } = req.params;
+    let complaint = null;
+
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      complaint = await Complaint.findById(id);
+    }
+
+    if (!complaint) {
+      complaint = await Complaint.findOne({ complaintId: id });
+    }
+
+    if (!complaint) return res.status(404).json({ message: 'Complaint not found' });
+
+    // Authorization Check
+    let authorized = false;
+
+    switch (role) {
+      case 'admin':
+        authorized = true;
+        break;
+
+      case 'engineer':
+        if (organisationId) {
+          const orgUsers = await User.find({ organisationId }).select('phone email');
+          const phones = orgUsers.map(u => u.phone).filter(Boolean);
+          const emails = orgUsers.map(u => u.email).filter(Boolean);
+          authorized = phones.includes(complaint.phone) || emails.includes(complaint.email);
+        } else {
+          authorized = true;
+        }
+        break;
+
+      case 'technician':
+        authorized = complaint.assignedTechnician === username;
+        break;
+
+      case 'organisation':
+        if (organisationId) {
+          const orgUsers = await User.find({ organisationId }).select('phone email');
+          const phones = orgUsers.map(u => u.phone).filter(Boolean);
+          const emails = orgUsers.map(u => u.email).filter(Boolean);
+          authorized = phones.includes(complaint.phone) || emails.includes(complaint.email);
+        } else {
+          authorized = (complaint.phone === phone) || (complaint.email === email);
+        }
+        break;
+
+      case 'user':
+        authorized = (complaint.phone === phone) || (complaint.email === email);
+        break;
+    }
+
+    if (!authorized) {
+      return res.status(403).json({ message: 'Access denied: You do not have permission to view this ticket' });
+    }
+
+    res.json(complaint);
+  } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
@@ -307,7 +397,7 @@ router.post('/', async (req, res) => {
 
     const saved = await complaint.save();
 
-    // Acknowledgement Email
+    // 1. Acknowledgement Email to Customer
     if (saved.email) {
       const subject = `Complaint Registered – ${saved.complaintId}`;
       const html = `
@@ -322,6 +412,23 @@ router.post('/', async (req, res) => {
         <p style="color: gray; font-size: 12px;">This is an automated message. Please do not reply.</p>
       `;
       sendEmail(saved.email, subject, html);
+    }
+
+    // 2. Notification Email to ADMIN
+    if (process.env.ADMIN_EMAIL) {
+      const adminHtml = `
+        <h3>New Ticket Alert</h3>
+        <p>A new ${saved.type} has been created.</p>
+        <ul>
+          <li><b>ID:</b> ${saved.complaintId}</li>
+          <li><b>Customer:</b> ${saved.customerName}</li>
+          <li><b>City:</b> ${saved.city}</li>
+          <li><b>Issue By:</b> ${saved.issueType}</li>
+          <li><b>Description:</b> ${saved.description || 'N/A'}</li>
+        </ul>
+        <p><a href="${process.env.FRONTEND_URL || 'https://wattorbit.com'}/admin">View in Dashboard</a></p>
+      `;
+      sendEmail(process.env.ADMIN_EMAIL, "New Ticket Created: " + saved.complaintId, adminHtml);
     }
 
     // Admin SMS via Fast2SMS (Optional)
@@ -370,6 +477,15 @@ router.patch('/:id', verifyToken, async (req, res) => {
       // Technicians can only update status/remark, not reassign
       if (assignedTechnician && assignedTechnician !== username) {
         return res.status(403).json({ message: 'Cannot reassign from technician role' });
+      }
+    } else if (role === 'organisation') {
+      // Organisation can only update complaints of their own users
+      if (req.user.organisationId) {
+        const orgUsers = await User.find({ organisationId: req.user.organisationId }).select('phone email');
+        const phones = orgUsers.map(u => u.phone).filter(Boolean);
+        const emails = orgUsers.map(u => u.email).filter(Boolean);
+        const isOwned = phones.includes(oldComplaint.phone) || emails.includes(oldComplaint.email);
+        if (!isOwned) return res.status(403).json({ message: 'Access denied: Not your organisation ticket' });
       }
     } else if (role !== 'admin' && role !== 'engineer') {
       return res.status(403).json({ message: 'Unauthorized' });

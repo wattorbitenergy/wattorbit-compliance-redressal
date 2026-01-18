@@ -6,6 +6,7 @@ const mailer = require('./mailer'); // REPLACED nodemailer with Mailjet mailer
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const User = require('../models/User');
+const Config = require('../models/Config');
 
 /* =========================
    ENV CHECK
@@ -14,6 +15,25 @@ if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET not defined');
 }
 const JWT_SECRET = process.env.JWT_SECRET;
+const admin = require('firebase-admin');
+
+/* =========================
+   FIREBASE ADMIN INIT
+========================= */
+try {
+  if (!admin.apps.length) {
+    const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
+      ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+      : require('../serviceAccountKey.json');
+
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    console.log("Firebase Admin Initialized for Auth");
+  }
+} catch (e) {
+  console.warn("Firebase Init Failed in Auth: Ensure serviceAccountKey.json exists", e.message);
+}
 
 /* =========================
    RATE LIMITER
@@ -65,26 +85,28 @@ router.post('/register', async (req, res) => {
   try {
     let { username, password, city, phone, email, role, name, organisationId } = req.body;
 
-    if (!username || !password) {
-      return res.status(400).json({ message: 'Username and password are required' });
+    if (!password) {
+      return res.status(400).json({ message: 'Password is required' });
     }
 
-    username = username.toLowerCase().trim();
+    if (!username && !email && !phone) {
+      return res.status(400).json({ message: 'At least one identifier (Username, Email, or Phone) is required' });
+    }
+
+    if (username) username = username.toLowerCase().trim();
     if (email) email = email.toLowerCase().trim();
     if (phone) phone = phone.trim();
 
-    // Check for existing user by username, email, OR phone
-    // We want to prevent re-registration if email or phone is already taken
-    const existingUser = await User.findOne({
-      $or: [
-        { username },
-        { email: email || "non-existent-email-placeholder" },
-        { phone: phone || "non-existent-phone-placeholder" }
-      ]
-    });
+    // Check for existing user by provided identifiers
+    const query = [];
+    if (username) query.push({ username });
+    if (email) query.push({ email });
+    if (phone) query.push({ phone });
+
+    const existingUser = await User.findOne({ $or: query });
 
     if (existingUser) {
-      if (existingUser.username === username) return res.status(409).json({ message: 'Username already taken' });
+      if (username && existingUser.username === username) return res.status(409).json({ message: 'Username already taken' });
       if (email && existingUser.email === email) return res.status(409).json({ message: 'Email already registered' });
       if (phone && existingUser.phone === phone) return res.status(409).json({ message: 'Phone number already registered' });
       return res.status(409).json({ message: 'User already exists' });
@@ -95,6 +117,11 @@ router.post('/register', async (req, res) => {
 
     // Auto-approve 'user' role (Customers). Others require vetting.
     const autoApprove = safeRole === 'user';
+
+    // Auto-generate username if not provided (use email or phone)
+    if (!username) {
+      username = (email || phone).toLowerCase().trim();
+    }
 
     const user = new User({
       username,
@@ -126,9 +153,17 @@ router.post('/register', async (req, res) => {
 router.post('/login', authLimiter, async (req, res) => {
   try {
     let { username, password } = req.body;
-    username = username.toLowerCase().trim();
+    const identifier = username.toLowerCase().trim();
 
-    const user = await User.findOne({ username });
+    // Search for user by username, email, or phone
+    const user = await User.findOne({
+      $or: [
+        { username: identifier },
+        { email: identifier },
+        { phone: identifier }
+      ]
+    });
+
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -155,6 +190,12 @@ router.post('/login', authLimiter, async (req, res) => {
       { expiresIn: '30d' }
     );
 
+    const { fcmToken } = req.body;
+    if (fcmToken) {
+      user.fcmToken = fcmToken;
+      await user.save();
+    }
+
     res.json({
       token,
       user: {
@@ -162,8 +203,8 @@ router.post('/login', authLimiter, async (req, res) => {
         username: user.username,
         role: user.role,
         name: user.name,
-        email: user.email,     // ✅ Exposed to frontend local storage
-        phone: user.phone      // ✅ Exposed to frontend local storage (Critical for notifications)
+        email: user.email,
+        phone: user.phone
       }
     });
 
@@ -172,20 +213,32 @@ router.post('/login', authLimiter, async (req, res) => {
   }
 });
 
+
 /* =========================
    GET USERS (ADMIN, ENGINEER, ORG)
 ========================= */
 router.get('/users', verifyToken, async (req, res) => {
   // Allow Admin, Engineer, and Organisation to fetch users
-  const { role, id } = req.user;
+  const { role, organisationId } = req.user;
 
-
+  // Security Check: Only Admin, Engineer, and Organisation can see user lists
+  const authorizedRoles = ['admin', 'engineer', 'organisation'];
+  if (!authorizedRoles.includes(role)) {
+    return res.status(403).json({ message: 'Access denied: Insufficient privileges to view user directory' });
+  }
 
   try {
     let query = {};
-    if (role === 'organisation') {
-      // Organisation only sees their OWN users
-      query = { organisationId: id };
+
+    // If the requester is an Organisation or an Engineer under an Organisation, restrict to that Org's users
+    if (role === 'organisation' || (role === 'engineer' && organisationId)) {
+      query = { organisationId: organisationId };
+    } else if (role === 'admin') {
+      // System Admin sees everyone
+      query = {};
+    } else {
+      // Independent Engineer sees everyone (System Engineer)
+      query = {};
     }
 
     const users = await User.find(
@@ -196,7 +249,9 @@ router.get('/users', verifyToken, async (req, res) => {
         isApproved: 1,
         createdAt: 1,
         name: 1,
-        organisationId: 1
+        organisationId: 1,
+        email: 1,
+        phone: 1
       }
     ).sort({ createdAt: -1 });
 
@@ -281,7 +336,7 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
           html: `
             <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
               <h2 style="color: #0F172A;">Password Reset</h2>
-              <p>You requested a password reset for your WattOrbit ID: <b>${username}</b>.</p>
+              <p>Please click below link to reset password for <b>ID: ${username}</b>.</p>
               <p>Click the button below to reset your password (valid for 1 hour):</p>
               <a href="${resetUrl}" style="display: inline-block; background-color: #2563EB; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 20px 0;">Reset Password</a>
               <p style="font-size: 12px; color: #666;">Or copy this link: <br/><a href="${resetUrl}">${resetUrl}</a></p>
@@ -465,11 +520,12 @@ router.patch('/update-profile/:id', verifyToken, async (req, res) => {
     }
 
     // Fields allowed to be updated
-    const { name, email, phone, city } = req.body;
+    const { name, email, phone, city, password } = req.body;
     if (name) targetUser.name = name;
     if (email) targetUser.email = email.toLowerCase().trim();
     if (phone) targetUser.phone = phone.trim();
     if (city) targetUser.city = city;
+    if (password) targetUser.password = password;
 
     await targetUser.save();
 

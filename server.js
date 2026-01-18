@@ -122,7 +122,7 @@ const MONGO_URI =
   process.env.MONGO_URI || 'mongodb://localhost:27017/wcrm_dev';
 
 mongoose
-  .connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 })
+  .connect(MONGO_URI)
   .then(() => {
     console.log(
       'MongoDB connected:',
@@ -153,6 +153,7 @@ app.get('/', (req, res) => {
 app.use('/api/complaints', require('./routes/complaintRoutes'));
 app.use('/api/cities', require('./routes/cityRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 
 // Production Security: Only enable test routes in non-prod

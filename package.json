@@ -13,6 +13,8 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@react-native-firebase/app": "^23.8.2",
+    "@react-native-firebase/auth": "^23.8.2",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
