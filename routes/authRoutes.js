@@ -161,4 +161,28 @@ router.post('/reset-password', async (req, res) => {
   res.json({ message: 'Password reset successful' });
 });
 
+/* =========================
+   GET ALL USERS (Unified Access)
+   Used by: Admin User Matrix, Technician Assignment Dropdowns
+========================= */
+router.get('/users', verifyToken, async (req, res) => {
+  try {
+    // Only allow specific internal roles
+    const allowedRoles = ['admin', 'organisation', 'engineer', 'technician'];
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ message: 'Access denied: Internal use only' });
+    }
+
+    // specific filtering for Organisation role if needed, but for now return all
+    // so the frontend can filter or show relevant data.
+    // Exclude password for security.
+    const users = await User.find({}).select('-password').sort({ createdAt: -1 });
+
+    res.json(users);
+  } catch (err) {
+    console.error('Fetch users error:', err);
+    res.status(500).json({ message: 'Failed to fetch users' });
+  }
+});
+
 module.exports = router;
