@@ -51,6 +51,11 @@ router.post('/register', async (req, res) => {
     if (email) email = email.toLowerCase().trim();
     if (phone) phone = phone.trim();
 
+    // Mandatory Fields Check
+    if (!email || !phone) {
+      return res.status(400).json({ message: 'Email and Phone number are required' });
+    }
+
     const exists = await User.findOne({ $or: [{ username }, { email }, { phone }] });
     if (exists) return res.status(409).json({ message: 'User already exists' });
 
@@ -82,7 +87,15 @@ router.post('/register', async (req, res) => {
 router.post('/login', authLimiter, async (req, res) => {
   try {
     const { username, password } = req.body;
-    const user = await User.findOne({ username: username.toLowerCase() });
+    // Multi-Identifier Login: Username, Email, or Phone
+    const identifier = username.toLowerCase().trim();
+    const user = await User.findOne({
+      $or: [
+        { username: identifier },
+        { email: identifier },
+        { phone: username.trim() } // Phone is case-sensitive (usually numbers), keep original case but trim
+      ]
+    });
     if (!user || !(await user.comparePassword(password))) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
