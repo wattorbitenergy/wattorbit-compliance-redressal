@@ -173,15 +173,53 @@ router.get('/users', verifyToken, async (req, res) => {
       return res.status(403).json({ message: 'Access denied: Internal use only' });
     }
 
-    // specific filtering for Organisation role if needed, but for now return all
-    // so the frontend can filter or show relevant data.
+    let query = {};
+
+    // Organisation Scope: Only see users belonging to them
+    if (req.user.role === 'organisation') {
+      // Assuming 'organisationId' in User model links them to the Org
+      // If the requester IS the organization, their ID is the organizationId for others
+      const myOrgId = req.user.organisationId || req.user.id;
+      query = { organisationId: myOrgId };
+    }
+
     // Exclude password for security.
-    const users = await User.find({}).select('-password').sort({ createdAt: -1 });
+    const users = await User.find(query).select('-password').sort({ createdAt: -1 });
 
     res.json(users);
   } catch (err) {
     console.error('Fetch users error:', err);
     res.status(500).json({ message: 'Failed to fetch users' });
+  }
+});
+
+/* =========================
+   ADMIN RESET PASSWORD
+========================= */
+router.patch('/admin-reset-password/:id', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 chars' });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Directly setting password triggers pre-save hook for hashing (usually)
+    user.password = newPassword;
+    await user.save();
+
+    res.json({ message: `Password reset for ${user.username}` });
+  } catch (err) {
+    console.error('Admin reset password error:', err);
+    res.status(500).json({ message: 'Failed to reset password' });
   }
 });
 
