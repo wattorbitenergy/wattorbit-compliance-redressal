@@ -25,6 +25,7 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.0.1",
+    "node-cron": "^4.2.1",
     "node-mailjet": "^6.0.11",
     "nodemailer": "^7.0.12",
     "twilio": "^5.11.1"

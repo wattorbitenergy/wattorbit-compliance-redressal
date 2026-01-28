@@ -104,12 +104,10 @@ app.use((req, res, next) => {
     req.socket.remoteAddress;
 
   res.on('finish', () => {
-    // Only log in non-production or for errors
-    if (process.env.NODE_ENV !== 'production' || res.statusCode >= 400) {
-      console.log(
-        `[${new Date().toISOString()}] ${ip} ${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - start}ms`
-      );
-    }
+    // Log ALL requests for debugging
+    console.log(
+      `[${new Date().toISOString()}] ${ip} ${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - start}ms`
+    );
   });
 
   next();
@@ -156,6 +154,16 @@ app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 
+// Service Management Routes
+app.use('/api/services', require('./routes/serviceRoutes'));
+app.use('/api/packages', require('./routes/packageRoutes'));
+app.use('/api/bookings', require('./routes/bookingRoutes'));
+app.use('/api/addresses', require('./routes/addressRoutes'));
+app.use('/api/payments', require('./routes/paymentRoutes'));
+app.use('/api/invoices', require('./routes/invoiceRoutes'));
+app.use('/api/feedback', require('./routes/feedbackRoutes'));
+app.use('/api/automation', require('./routes/automationRoutes'));
+
 // Production Security: Only enable test routes in non-prod
 if (process.env.NODE_ENV !== 'production') {
   app.use('/api/test-notification', require('./routes/testNotificationRoutes'));
@@ -180,4 +188,8 @@ app.use((err, req, res, next) => {
 ===================== */
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
+
+  // Initialize Cron Jobs
+  const initCronJobs = require('./cron/scheduler');
+  initCronJobs();
 });
