@@ -90,18 +90,18 @@ addressSchema.index({ userId: 1, isActive: 1 });
 addressSchema.index({ userId: 1, isDefault: 1 });
 
 // Ensure only one default address per user
-addressSchema.pre('save', async function (next) {
+addressSchema.pre('save', async function () {
     try {
         if (this.isDefault && this.isModified('isDefault')) {
-            await this.constructor.updateMany(
+            console.log('--- Address Pre-save: Unsetting previous defaults ---');
+            await mongoose.model('Address').updateMany(
                 { userId: this.userId, _id: { $ne: this._id } },
                 { $set: { isDefault: false } }
             );
         }
-        next();
     } catch (err) {
         console.error('❌ Address Pre-save Error:', err);
-        next(err);
+        throw err; // In async hooks, throw instead of calling next(err)
     }
 });
 

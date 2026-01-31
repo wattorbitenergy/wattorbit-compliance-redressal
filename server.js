@@ -145,10 +145,30 @@ app.get('/', (req, res) => {
 app.get('/api/heartbeat', (req, res) => {
   res.json({
     status: 'ok',
-    version: '1.0.5-debug',
+    version: '1.0.6-live-debug',
     timestamp: new Date().toISOString(),
-    message: 'Latest debugging tools are active'
+    message: 'Ultimate debugging tools are active'
   });
+});
+
+// Guaranteed Public Diagnostic POST Echo
+app.post('/api/debug-echo', (req, res) => {
+  res.json({
+    message: 'Echo from server.js',
+    body: req.body,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Guaranteed Public Database Test
+app.get('/api/debug-db', async (req, res) => {
+  const Address = require('./models/Address');
+  try {
+    const count = await Address.countDocuments();
+    res.json({ status: 'ok', count, message: 'Database connection verified from server.js' });
+  } catch (err) {
+    res.status(500).json({ status: 'error', error: err.message });
+  }
 });
 
 /* ====================
