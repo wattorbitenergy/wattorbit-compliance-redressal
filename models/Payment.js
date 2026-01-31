@@ -87,7 +87,7 @@ paymentSchema.index({ userId: 1, status: 1 });
 paymentSchema.index({ status: 1, createdAt: -1 });
 
 // Add to payment history on status change
-paymentSchema.pre('save', function (next) {
+paymentSchema.pre('save', async function () {
     if (this.isModified('status')) {
         this.paymentHistory.push({
             action: this.status.toLowerCase(),
@@ -95,7 +95,6 @@ paymentSchema.pre('save', function (next) {
             amount: this.amount
         });
     }
-    next();
 });
 
 module.exports = mongoose.model('Payment', paymentSchema);

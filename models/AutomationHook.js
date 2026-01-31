@@ -124,11 +124,10 @@ automationHookSchema.index({ triggerEvent: 1, isActive: 1 });
 automationHookSchema.index({ priority: -1 });
 
 // Limit execution logs to last 100 entries
-automationHookSchema.pre('save', function (next) {
+automationHookSchema.pre('save', async function () {
     if (this.executionLogs && this.executionLogs.length > 100) {
         this.executionLogs = this.executionLogs.slice(-100);
     }
-    next();
 });
 
 module.exports = mongoose.model('AutomationHook', automationHookSchema);

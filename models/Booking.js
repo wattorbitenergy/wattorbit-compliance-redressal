@@ -140,7 +140,7 @@ bookingSchema.index({ scheduledDate: 1 });
 bookingSchema.index({ status: 1, createdAt: -1 });
 
 // Add status to history before saving
-bookingSchema.pre('save', function (next) {
+bookingSchema.pre('save', async function () {
     if (this.isModified('status')) {
         this.statusHistory.push({
             status: this.status,
@@ -148,7 +148,6 @@ bookingSchema.pre('save', function (next) {
             notes: this.technicianNotes || this.customerNotes
         });
     }
-    next();
 });
 
 module.exports = mongoose.model('Booking', bookingSchema);
