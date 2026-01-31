@@ -36,12 +36,12 @@ async function generatePackageId() {
 
 /**
  * Generate booking ID
- * Format: 2K[YY][5-digit-sequence] (e.g., 2K2600001)
+ * Format: BKG-YYYY-NNNN (e.g., BKG-2026-0001)
  */
 async function generateBookingId() {
-    const yearDigits = new Date().getFullYear().toString().slice(-2);
-    const prefix = `2K${yearDigits}`;
-    return await getNextSequence('booking', prefix, 5, '');
+    const year = new Date().getFullYear();
+    const prefix = `BKG-${year}`;
+    return await getNextSequence('booking', prefix, 4, '-');
 }
 
 /**
