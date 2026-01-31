@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
-const Complaint = require('../models/Complaint');
+const Booking = require('../models/Booking');
 const Config = require('../models/Config');
 const mailer = require('./mailer');
 const jwt = require('jsonwebtoken');
@@ -57,46 +57,40 @@ router.post('/send-weekly-summary', verifyToken, async (req, res) => {
             let query = { createdAt: { $gte: start, $lte: end } };
 
             if (user.role === 'organisation') {
-                // Organisation: Only see tickets from their users
-                const orgUsers = await User.find({ organisationId: user._id }).select('phone email');
-                const phones = orgUsers.map(u => u.phone).filter(Boolean);
-                const emails = orgUsers.map(u => u.email).filter(Boolean);
-                query.$or = [
-                    { phone: { $in: phones } },
-                    { email: { $in: emails } }
-                ];
+                // Organisation: Only see bookings belonging to their organisation
+                query.organisationId = user._id;
             } else if (user.role === 'technician') {
-                // Technician: Only see tickets assigned to them
-                query.assignedTechnician = user.username;
+                // Technician: Only see bookings assigned to them
+                query.assignedTechnician = user._id;
             } else if (user.role === 'user') {
-                // User: Only see their own tickets
-                query.$or = [
-                    { phone: user.phone || "no-match" },
-                    { email: user.email || "no-match" }
-                ];
+                // User: Only see their own bookings
+                query.userId = user._id;
             }
-            // Admin/Engineer/Others: See ALL tickets (default query)
+            // Admin/Engineer: See ALL bookings (default query)
 
             // 3. Fetch Data
-            const complaints = await Complaint.find(query).sort({ createdAt: -1 });
+            const bookings = await Booking.find(query)
+                .populate('serviceId', 'name')
+                .populate('packageId', 'name')
+                .sort({ createdAt: -1 });
 
             // 4. Generate Stats
-            const total = complaints.length;
-            const resolved = complaints.filter(c => c.status === 'Resolved').length;
-            const pending = complaints.filter(c => c.status === 'Created-Unassigned' || c.status === 'Assigned').length;
-            const inProgress = total - resolved - pending;
+            const total = bookings.length;
+            const resolved = bookings.filter(b => b.status === 'Completed').length;
+            const pending = bookings.filter(b => ['Pending', 'Confirmed', 'Assigned'].includes(b.status)).length;
+            const inProgress = bookings.filter(b => b.status === 'In Progress').length;
 
             // 5. Build HTML
             const summaryHtml = `
               <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 10px; max-width: 600px;">
-                <h2 style="color: #1e3a8a;">WattOrbit - Weekly Ticket Summary</h2>
+                <h2 style="color: #1e3a8a;">WattOrbit - Weekly Booking Summary</h2>
                 <p style="color: #555;">Hello <b>${user.username}</b>,</p>
-                <p style="color: #555;">Here is the overview of complaint activity relevant to your account for the week of <b>${start.toLocaleDateString()} to ${end.toLocaleDateString()}</b>.</p>
+                <p style="color: #555;">Here is the overview of booking activity relevant to your account for the week of <b>${start.toLocaleDateString()} to ${end.toLocaleDateString()}</b>.</p>
                 
                 <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
                   <tr style="background-color: #f3f4f6;">
-                    <th style="padding: 10px; border: 1px solid #ddd;">Total Tickets</th>
-                    <th style="padding: 10px; border: 1px solid #ddd;">Resolved</th>
+                    <th style="padding: 10px; border: 1px solid #ddd;">Total Bookings</th>
+                    <th style="padding: 10px; border: 1px solid #ddd;">Completed</th>
                     <th style="padding: 10px; border: 1px solid #ddd;">Pending</th>
                     <th style="padding: 10px; border: 1px solid #ddd;">In Progress</th>
                   </tr>
@@ -110,12 +104,12 @@ router.post('/send-weekly-summary', verifyToken, async (req, res) => {
         
                 <h3 style="margin-top: 20px; color: #333;">Recent Highlights:</h3>
                 <ul style="color: #555; font-size: 13px;">
-                  ${complaints.length > 0
-                    ? complaints.slice(0, 5).map(c => `<li><b>${c.complaintId}</b>: ${c.status} (${c.type})</li>`).join('')
+                  ${bookings.length > 0
+                    ? bookings.slice(0, 5).map(b => `<li><b>${b.bookingId}</b>: ${b.status} (${b.serviceId?.name || 'Service'})</li>`).join('')
                     : '<li>No activity recorded this week.</li>'
                 }
                 </ul>
-                ${complaints.length > 5 ? `<p style="font-size: 12px; color: #888;">+ ${complaints.length - 5} more tickets...</p>` : ''}
+                ${bookings.length > 5 ? `<p style="font-size: 12px; color: #888;">+ ${bookings.length - 5} more bookings...</p>` : ''}
                 
                 <p style="margin-top: 30px; font-size: 12px; color: #999;">This report was generated manually by the Admin Team.</p>
               </div>
@@ -142,7 +136,7 @@ router.post('/send-weekly-summary', verifyToken, async (req, res) => {
 /* =================================================================
    GET/SET CONFIG (ADMIN ONLY)
    ================================================================= */
-router.get('/config/:key', async (req, res) => {
+router.get('/config/:key', verifyToken, async (req, res) => {
     try {
         const config = await Config.findOne({ key: req.params.key });
         res.json(config || { key: req.params.key, value: false });

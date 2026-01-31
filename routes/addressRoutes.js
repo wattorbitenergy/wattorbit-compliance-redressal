@@ -4,6 +4,28 @@ const Address = require('../models/Address');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 
+// Verify token middleware
+const verifyToken = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ message: 'Authorization header missing or invalid' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        // Ensure id is available even if signed differently (legacy or varied)
+        req.user = {
+            ...decoded,
+            id: decoded.id || decoded._id
+        };
+        next();
+    } catch (err) {
+        console.error('JWT Verify Error:', err.message);
+        return res.status(401).json({ message: 'Invalid or expired token' });
+    }
+};
+
 // 🚀 DEBUG MIDDLEWARE: Log every request to this router (MOVE TO TOP)
 router.use((req, res, next) => {
     console.log(`[AddressRouter] ${req.method} ${req.path}`, {
@@ -23,8 +45,11 @@ router.post('/ping-post', (req, res) => {
     res.json({ message: 'POST reaching address router', body: req.body, timestamp: new Date() });
 });
 
-// Diagnostic: Health Check
-router.get('/diagnostic/health', async (req, res) => {
+// Diagnostic: Health Check (Admin Only)
+router.get('/diagnostic/health', verifyToken, async (req, res) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Admin access required for diagnostics' });
+    }
     try {
         console.log('--- DIAGNOSTIC HEALTH CHECK START ---');
         const count = await Address.countDocuments();
@@ -58,28 +83,6 @@ router.get('/diagnostic/health', async (req, res) => {
         });
     }
 });
-
-// Verify token middleware
-const verifyToken = (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'Authorization header missing or invalid' });
-    }
-
-    const token = authHeader.split(' ')[1];
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        // Ensure id is available even if signed differently (legacy or varied)
-        req.user = {
-            ...decoded,
-            id: decoded.id || decoded._id
-        };
-        next();
-    } catch (err) {
-        console.error('JWT Verify Error:', err.message);
-        return res.status(401).json({ message: 'Invalid or expired token' });
-    }
-};
 
 // POST: Add new address
 router.post('/', verifyToken, async (req, res) => {

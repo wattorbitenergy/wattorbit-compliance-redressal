@@ -6,7 +6,7 @@ const Counter = require('../models/Counter');
  * @param {String} prefix - Prefix for the ID (e.g., 'SVC', 'BKG', 'PAY')
  * @returns {Promise<String>} - Generated ID (e.g., 'SVC-001')
  */
-async function getNextSequence(counterType, prefix = '') {
+async function getNextSequence(counterType, prefix = '', padding = 3, separator = '-') {
     const year = new Date().getFullYear();
     const counterId = `${counterType}-${year}`;
 
@@ -16,8 +16,8 @@ async function getNextSequence(counterType, prefix = '') {
         { new: true, upsert: true, setDefaultsOnInsert: true }
     );
 
-    const paddedSeq = String(counter.seq).padStart(3, '0');
-    return prefix ? `${prefix}-${paddedSeq}` : paddedSeq;
+    const paddedSeq = String(counter.seq).padStart(padding, '0');
+    return prefix ? `${prefix}${separator}${paddedSeq}` : paddedSeq;
 }
 
 /**
@@ -36,9 +36,12 @@ async function generatePackageId() {
 
 /**
  * Generate booking ID
+ * Format: 2K[YY][5-digit-sequence] (e.g., 2K2600001)
  */
 async function generateBookingId() {
-    return await getNextSequence('booking', 'BKG');
+    const yearDigits = new Date().getFullYear().toString().slice(-2);
+    const prefix = `2K${yearDigits}`;
+    return await getNextSequence('booking', prefix, 5, '');
 }
 
 /**

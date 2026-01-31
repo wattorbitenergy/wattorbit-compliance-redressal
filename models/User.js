@@ -31,6 +31,11 @@ const userSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
     },
+    specialization: {
+        type: String,
+        enum: ['Technician', 'Plumber', 'House Help'],
+        default: 'Technician'
+    },
     city: String,
     address: String,
     phone: String,

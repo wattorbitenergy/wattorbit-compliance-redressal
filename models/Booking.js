@@ -11,6 +11,10 @@ const bookingSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
+    organisationId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
     serviceId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Service',

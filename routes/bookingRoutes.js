@@ -33,6 +33,14 @@ const isAdmin = (req, res, next) => {
     next();
 };
 
+// Admin or Engineer check middleware
+const isAdminOrEngineer = (req, res, next) => {
+    if (req.user.role !== 'admin' && req.user.role !== 'engineer') {
+        return res.status(403).json({ message: 'Admin or Engineer access required' });
+    }
+    next();
+};
+
 /* =====================
    USER ENDPOINTS
 ===================== */
@@ -94,11 +102,16 @@ router.post('/', verifyToken, async (req, res) => {
 
         const totalAmount = basePrice + taxes - discount;
 
+        // Fetch user to get organisationId
+        const user = await User.findById(req.user.id);
+        const organisationId = user?.organisationId || null;
+
         const bookingId = await generateBookingId();
 
         const booking = new Booking({
             bookingId,
             userId: req.user.id,
+            organisationId, // Capture Org context
             serviceId,
             packageId,
             addressId,
@@ -144,8 +157,17 @@ router.post('/', verifyToken, async (req, res) => {
 router.get('/my-bookings', verifyToken, async (req, res) => {
     try {
         const { status } = req.query;
+        const { role, id } = req.user;
 
-        let query = { userId: req.user.id };
+        let query = {};
+
+        if (role === 'organisation') {
+            // Organisation users see all bookings belonging to their organisation
+            query.organisationId = id;
+        } else {
+            // Individual users see only their own bookings
+            query.userId = id;
+        }
 
         if (status) {
             query.status = status;
@@ -165,10 +187,54 @@ router.get('/my-bookings', verifyToken, async (req, res) => {
     }
 });
 
+// GET: Track booking (Public endpoint)
+router.get('/track', async (req, res) => {
+    try {
+        const { query } = req.query;
+        if (!query) {
+            return res.status(400).json({ message: 'Query parameter required' });
+        }
+
+        // Search by bookingId OR user phone number
+        const bookings = await Booking.find({
+            $or: [
+                { bookingId: query },
+                {
+                    userId: {
+                        $in: await User.find({
+                            phone: { $regex: query, $options: 'i' }
+                        }).distinct('_id')
+                    }
+                }
+            ]
+        })
+            .populate('serviceId', 'name category')
+            .populate('addressId', 'city street pincode')
+            .populate('assignedTechnician', 'name phone')
+            .sort({ createdAt: -1 });
+
+        res.json(bookings);
+    } catch (err) {
+        console.error('Track booking error:', err);
+        res.status(500).json({ message: 'Failed to track booking' });
+    }
+});
+
 // GET: Get booking details
 router.get('/:id', verifyToken, async (req, res) => {
     try {
-        const booking = await Booking.findById(req.params.id)
+        const { id } = req.params;
+        let query = {};
+
+        // If it looks like a MongoDB ObjectId, check both _id and bookingId
+        // Otherwise, check only bookingId
+        if (id.match(/^[0-9a-fA-F]{24}$/)) {
+            query = { $or: [{ _id: id }, { bookingId: id }] };
+        } else {
+            query = { bookingId: id };
+        }
+
+        const booking = await Booking.findOne(query)
             .populate('userId', 'name phone email')
             .populate('serviceId', 'name category description images')
             .populate('packageId', 'name price features')
@@ -179,12 +245,23 @@ router.get('/:id', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Booking not found' });
         }
 
-        // Check access: user can see their own, admin can see all, technician can see assigned
-        if (
-            booking.userId._id.toString() !== req.user.id &&
-            req.user.role !== 'admin' &&
-            (!booking.assignedTechnician || booking.assignedTechnician._id.toString() !== req.user.id)
-        ) {
+        // Check access: user can see their own, admin can see all, technician can see assigned, org see theirs, engineer sees scoped
+        const isOwner = booking.userId._id.toString() === req.user.id;
+        const isAdminUser = req.user.role === 'admin';
+        const isAssignedTech = booking.assignedTechnician && booking.assignedTechnician._id.toString() === req.user.id;
+        const isOrgAdmin = req.user.role === 'organisation' && booking.organisationId?.toString() === req.user.id;
+
+        // Engineer Logic: Global see individual, Org see Org
+        let isSupervisor = false;
+        if (req.user.role === 'engineer') {
+            if (req.user.organisationId) {
+                isSupervisor = booking.organisationId?.toString() === req.user.organisationId;
+            } else {
+                isSupervisor = !booking.organisationId; // null or undefined
+            }
+        }
+
+        if (!isOwner && !isAdminUser && !isAssignedTech && !isOrgAdmin && !isSupervisor) {
             return res.status(403).json({ message: 'Access denied' });
         }
 
@@ -288,8 +365,8 @@ router.patch('/:id/reschedule', verifyToken, async (req, res) => {
    ADMIN ENDPOINTS
 ===================== */
 
-// GET: Get all bookings with filters (admin only)
-router.get('/admin/all', verifyToken, isAdmin, async (req, res) => {
+// GET: Get all bookings with filters (admin and supervisor)
+router.get('/admin/all', verifyToken, isAdminOrEngineer, async (req, res) => {
     try {
         const { status, serviceId, startDate, endDate } = req.query;
 
@@ -313,6 +390,23 @@ router.get('/admin/all', verifyToken, isAdmin, async (req, res) => {
             }
         }
 
+        // Supervisor/Engineer Scoping: Only see relevant bookings
+        if (req.user.role === 'engineer') {
+            if (req.user.organisationId) {
+                // Org Engineer sees only their org's bookings
+                query.organisationId = req.user.organisationId;
+            } else {
+                // Global Engineer sees only individual (non-org) bookings
+                query = {
+                    ...query,
+                    $or: [
+                        { organisationId: null },
+                        { organisationId: { $exists: false } }
+                    ]
+                };
+            }
+        }
+
         const bookings = await Booking.find(query)
             .populate('userId', 'name phone email')
             .populate('serviceId', 'name category')
@@ -328,8 +422,8 @@ router.get('/admin/all', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// PATCH: Confirm booking (admin only)
-router.patch('/:id/confirm', verifyToken, isAdmin, async (req, res) => {
+// PATCH: Confirm booking (admin/engineer)
+router.patch('/:id/confirm', verifyToken, isAdminOrEngineer, async (req, res) => {
     try {
         const booking = await Booking.findById(req.params.id);
 
@@ -361,8 +455,8 @@ router.patch('/:id/confirm', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// PATCH: Assign technician (admin only)
-router.patch('/:id/assign', verifyToken, isAdmin, async (req, res) => {
+// PATCH: Assign technician (admin/engineer)
+router.patch('/:id/assign', verifyToken, isAdminOrEngineer, async (req, res) => {
     try {
         const { technicianId } = req.body;
 
@@ -404,8 +498,8 @@ router.patch('/:id/assign', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// PATCH: Update booking status (admin only)
-router.patch('/:id/status', verifyToken, isAdmin, async (req, res) => {
+// PATCH: Update booking status (admin/engineer)
+router.patch('/:id/status', verifyToken, isAdminOrEngineer, async (req, res) => {
     try {
         const { status, notes } = req.body;
 
@@ -568,6 +662,91 @@ router.patch('/:id/complete', verifyToken, async (req, res) => {
     } catch (err) {
         console.error('Error completing service:', err);
         res.status(500).json({ message: 'Failed to complete service' });
+    }
+});
+
+/* =====================
+   COMMUNICATION & FIELD UPDATES
+===================== */
+
+// GET: WhatsApp URL to contact customer (Technician/Admin only)
+router.get('/:id/whatsapp/user', verifyToken, async (req, res) => {
+    try {
+        const booking = await Booking.findById(req.params.id).populate('userId', 'phone name');
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+        // Access check
+        if (req.user.role !== 'admin' && booking.assignedTechnician?.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        const phone = booking.userId?.phone;
+        if (!phone) return res.status(400).json({ message: 'Customer phone not found' });
+
+        const message = encodeURIComponent(`Hi ${booking.userId.name}, this is your technician regarding your WattOrbit booking #${booking.bookingId}.`);
+        const waUrl = `https://wa.me/91${phone}?text=${message}`;
+
+        res.json({ waUrl });
+    } catch (err) {
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+// GET: WhatsApp URL to contact technician (User/Admin only)
+router.get('/:id/whatsapp/technician', verifyToken, async (req, res) => {
+    try {
+        const booking = await Booking.findById(req.params.id).populate('assignedTechnician', 'phone name');
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+        // Access check
+        if (req.user.role !== 'admin' && booking.userId.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        const tech = booking.assignedTechnician;
+        if (!tech || !tech.phone) return res.status(400).json({ message: 'Technician not assigned or phone missing' });
+
+        const message = encodeURIComponent(`Hi ${tech.name}, I am contacting you regarding my WattOrbit booking #${booking.bookingId}.`);
+        const waUrl = `https://wa.me/91${tech.phone}?text=${message}`;
+
+        res.json({ waUrl });
+    } catch (err) {
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+// PATCH: Generic update for technicians (Web Dashboard compatibility)
+router.patch('/:id/tech-update', verifyToken, async (req, res) => {
+    try {
+        const { status, remark } = req.body;
+        const booking = await Booking.findById(req.params.id);
+
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+        // Access check: Only assigned technician or admin
+        if (req.user.role !== 'admin' && booking.assignedTechnician?.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        if (status) booking.status = status;
+        if (remark) booking.technicianNotes = remark;
+
+        booking.statusHistory.push({
+            status: status || booking.status,
+            timestamp: new Date(),
+            updatedBy: req.user.id,
+            notes: remark || 'Status updated via dashboard'
+        });
+
+        if (status === 'Completed') {
+            booking.completedAt = new Date();
+        }
+
+        await booking.save();
+        res.json({ message: 'Booking updated successfully', booking });
+    } catch (err) {
+        console.error('Tech update error:', err);
+        res.status(500).json({ message: 'Failed to update booking' });
     }
 });
 

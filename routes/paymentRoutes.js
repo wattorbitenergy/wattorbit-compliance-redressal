@@ -92,6 +92,12 @@ router.post('/initiate', verifyToken, async (req, res) => {
 // POST: Confirm payment (for online payments - webhook)
 router.post('/confirm', async (req, res) => {
     try {
+        const webhookSecret = req.headers['x-webhook-secret'];
+        if (webhookSecret !== process.env.PAYMENT_WEBHOOK_SECRET) {
+            console.error('❌ Unauthorized Webhook Attempt');
+            return res.status(401).json({ message: 'Unauthorized webhook' });
+        }
+
         const { paymentId, transactionId, gatewayResponse } = req.body;
 
         if (!paymentId) {

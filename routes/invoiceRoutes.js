@@ -53,10 +53,11 @@ router.post('/generate', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Booking not found' });
         }
 
-        // Check access
+        // Check access: user themselves, admin, or their organisation
         if (
             booking.userId._id.toString() !== req.user.id &&
-            req.user.role !== 'admin'
+            req.user.role !== 'admin' &&
+            !(req.user.role === 'organisation' && booking.organisationId?.toString() === req.user.id)
         ) {
             return res.status(403).json({ message: 'Access denied' });
         }
@@ -121,10 +122,11 @@ router.get('/:id', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Invoice not found' });
         }
 
-        // Check access
+        // Check access: user themselves, admin, or their organisation
         if (
             invoice.userId._id.toString() !== req.user.id &&
-            req.user.role !== 'admin'
+            req.user.role !== 'admin' &&
+            !(req.user.role === 'organisation' && invoice.bookingId?.organisationId?.toString() === req.user.id)
         ) {
             return res.status(403).json({ message: 'Access denied' });
         }
@@ -147,10 +149,11 @@ router.get('/booking/:bookingId', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Invoice not found for this booking' });
         }
 
-        // Check access
+        // Check access: user themselves, admin, or their organisation
         if (
             invoice.userId._id.toString() !== req.user.id &&
-            req.user.role !== 'admin'
+            req.user.role !== 'admin' &&
+            !(req.user.role === 'organisation' && invoice.bookingId?.organisationId?.toString() === req.user.id)
         ) {
             return res.status(403).json({ message: 'Access denied' });
         }
@@ -191,10 +194,11 @@ router.get('/:id/download', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Invoice not found' });
         }
 
-        // Check access
+        // Check access: user themselves, admin, or their organisation
         if (
             invoice.userId._id.toString() !== req.user.id &&
-            req.user.role !== 'admin'
+            req.user.role !== 'admin' &&
+            !(req.user.role === 'organisation' && invoice.bookingId?.organisationId?.toString() === req.user.id)
         ) {
             return res.status(403).json({ message: 'Access denied' });
         }

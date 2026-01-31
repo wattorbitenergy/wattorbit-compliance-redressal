@@ -46,7 +46,7 @@ const verifyToken = (req, res, next) => {
 ========================= */
 router.post('/register', async (req, res) => {
   try {
-    let { username, password, city, phone, email, role, name, organisationId } = req.body;
+    let { username, password, city, phone, email, role, name, organisationId, specialization } = req.body;
     username = username.toLowerCase().trim();
     if (email) email = email.toLowerCase().trim();
     if (phone) phone = phone.trim();
@@ -71,7 +71,8 @@ router.post('/register', async (req, res) => {
       name,
       role: safeRole,
       isApproved: autoApprove,
-      organisationId
+      organisationId,
+      specialization: specialization || 'Technician'
     });
 
     await user.save();
@@ -105,7 +106,14 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user._id, role: user.role, email: user.email, phone: user.phone },
+      {
+        id: user._id,
+        role: user.role,
+        email: user.email,
+        phone: user.phone,
+        organisationId: user.organisationId,
+        name: user.name
+      },
       JWT_SECRET,
       { expiresIn: '30d' }
     );
@@ -180,20 +188,25 @@ router.post('/reset-password', async (req, res) => {
 ========================= */
 router.get('/users', verifyToken, async (req, res) => {
   try {
-    // Only allow specific internal roles
-    const allowedRoles = ['admin', 'organisation', 'engineer', 'technician'];
+    // Only allow specific administrative roles
+    const allowedRoles = ['admin', 'organisation', 'engineer'];
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ message: 'Access denied: Internal use only' });
+      return res.status(403).json({ message: `Access denied: ${req.user.role} role not authorized for user management` });
     }
 
     let query = {};
 
-    // Organisation Scope: Only see users belonging to them
-    if (req.user.role === 'organisation') {
-      // Assuming 'organisationId' in User model links them to the Org
-      // If the requester IS the organization, their ID is the organizationId for others
-      const myOrgId = req.user.organisationId || req.user.id;
-      query = { organisationId: myOrgId };
+    // Organisation Scoping: Scoped roles only see users belonging to them
+    if (req.user.role === 'organisation' || req.user.role === 'engineer') {
+      const myOrgId = req.user.organisationId || (req.user.role === 'organisation' ? req.user.id : null);
+
+      if (myOrgId) {
+        // Scoped to specific organisation
+        query = { organisationId: myOrgId };
+      } else if (req.user.role === 'engineer') {
+        // Global Engineer sees only non-organisational users (individual staff)
+        query = { organisationId: { $exists: false } };
+      }
     }
 
     // Exclude password for security.

@@ -180,7 +180,6 @@ app.get('/api/debug-db', async (req, res) => {
 /* =====================
    API ROUTES
 ===================== */
-app.use('/api/complaints', require('./routes/complaintRoutes'));
 app.use('/api/cities', require('./routes/cityRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
