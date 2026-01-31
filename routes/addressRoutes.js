@@ -2,6 +2,87 @@ const express = require('express');
 const router = express.Router();
 const Address = require('../models/Address');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
+
+// Diagnostic: Health Check
+router.get('/diagnostic/health', async (req, res) => {
+    try {
+        const count = await Address.countDocuments();
+
+        // Trial Op: Create a dummy record and delete it
+        const testAddr = new Address({
+            userId: new mongoose.Types.ObjectId(),
+            street: 'Diagnostic Test',
+            city: 'Test City',
+            state: 'Test State',
+            pincode: '000000'
+        });
+        await testAddr.save();
+        await Address.findByIdAndDelete(testAddr._id);
+
+        res.json({
+            status: 'ok',
+            timestamp: new Date(),
+            message: 'Address routes are active',
+            database: 'connected',
+            write_status: 'ok',
+            count
+        });
+    } catch (err) {
+        console.error('❌ Diagnostic Health Check Failed:', err);
+        res.status(500).json({
+            status: 'error',
+            message: 'Database connection or model issue',
+            error: err.message,
+            stack: err.stack
+        });
+    }
+});
+
+// Diagnostic: POST Test (No Token Required)
+router.post('/debug/post-test', async (req, res) => {
+    console.log('--- DEBUG POST-TEST START ---');
+    try {
+        const dummyUserId = new mongoose.Types.ObjectId();
+        console.log('Created dummy userId:', dummyUserId);
+
+        const testData = {
+            userId: dummyUserId,
+            addressType: 'Other',
+            label: 'Debug Test',
+            street: '123 Debug Lane',
+            city: 'Debug City',
+            state: 'Debug State',
+            pincode: '123456',
+            isDefault: false
+        };
+
+        console.log('Creating Address instance...');
+        const address = new Address(testData);
+
+        console.log('Saving Address...');
+        await address.save();
+        console.log('Address saved with ID:', address._id);
+
+        console.log('Cleaning up (deleting test address)...');
+        await Address.findByIdAndDelete(address._id);
+        console.log('Cleanup successful');
+
+        res.json({
+            status: 'ok',
+            message: 'POST database operation successful',
+            test_id: address._id
+        });
+    } catch (err) {
+        console.error('❌ DEBUG POST-TEST FAILED:', err);
+        res.status(500).json({
+            status: 'error',
+            message: 'Post-test failed',
+            error: err.message,
+            stack: err.stack
+        });
+    }
+});
 
 // Verify token middleware
 const verifyToken = (req, res, next) => {
@@ -12,31 +93,40 @@ const verifyToken = (req, res, next) => {
 
     const token = authHeader.split(' ')[1];
     try {
-        req.user = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        // Ensure id is available even if signed differently (legacy or varied)
+        req.user = {
+            ...decoded,
+            id: decoded.id || decoded._id
+        };
         next();
     } catch (err) {
+        console.error('JWT Verify Error:', err.message);
         return res.status(401).json({ message: 'Invalid or expired token' });
     }
 };
+
+// 🚀 DEBUG MIDDLEWARE: Log every request to this router
+router.use((req, res, next) => {
+    console.log(`[AddressRouter] ${req.method} ${req.path}`, {
+        user: req.user ? req.user.id : 'anonymous',
+        body: req.method === 'POST' ? JSON.stringify(req.body) : 'N/A'
+    });
+    next();
+});
 
 // POST: Add new address
 router.post('/', verifyToken, async (req, res) => {
     try {
         const {
-            addressType,
-            label,
-            flatNo,
-            building,
-            street,
-            landmark,
-            city,
-            state,
-            pincode,
-            contactName,
-            contactPhone,
-            coordinates,
-            isDefault
+            addressType, label, flatNo, building, street, landmark,
+            city, state, pincode, contactName, contactPhone, coordinates, isDefault
         } = req.body;
+
+        // Logging for Render
+        console.log('--- POST ADDRESS ATTEMPT ---');
+        console.log('Payload:', JSON.stringify(req.body));
+        console.log('User ID from token:', req.user?.id);
 
         // Validation
         if (!street || !city || !state || !pincode) {
@@ -45,32 +135,59 @@ router.post('/', verifyToken, async (req, res) => {
             });
         }
 
-        const address = new Address({
-            userId: req.user.id,
+        // Safety check for req.user
+        if (!req.user || !req.user.id) {
+            console.error('❌ Address POST Error: User ID missing from token');
+            return res.status(401).json({ message: 'User identification failed. Please log in again.' });
+        }
+
+        // 🛡️ CRITICAL FIX: Explicitly cast to ObjectId
+        // This prevents errors if req.user.id is passed as a string/buffer/etc that Mongoose dislikes
+        let userId;
+        try {
+            userId = new mongoose.Types.ObjectId(req.user.id);
+        } catch (idErr) {
+            console.error('❌ Address POST Error: Could not cast User ID to ObjectId:', req.user.id);
+            return res.status(400).json({ message: 'Invalid user identity format', error: idErr.message });
+        }
+
+        const addressData = {
+            userId,
             addressType: addressType || 'Home',
             label: label || 'My Address',
-            flatNo,
-            building,
-            street,
-            landmark,
-            city,
-            state,
-            pincode,
-            contactName,
-            contactPhone,
-            coordinates,
+            flatNo, building, street, landmark,
+            city, state, pincode,
+            contactName, contactPhone, coordinates,
             isDefault: isDefault || false
-        });
+        };
 
+        const address = new Address(addressData);
         await address.save();
+
+        console.log('✅ Address saved successfully:', address._id);
 
         res.status(201).json({
             message: 'Address added successfully',
             address
         });
     } catch (err) {
-        console.error('Error adding address:', err);
-        res.status(500).json({ message: 'Failed to add address' });
+        console.error('❌ Address POST Crash:', err);
+
+        // Handle Mongoose Validation Errors specifically
+        if (err.name === 'ValidationError') {
+            const messages = Object.values(err.errors).map(e => e.message);
+            return res.status(400).json({
+                message: 'Validation failed',
+                errors: messages
+            });
+        }
+
+        res.status(500).json({
+            message: 'Failed to add address',
+            error: err.message,
+            stack: err.stack,
+            type: err.name
+        });
     }
 });
 
@@ -85,7 +202,7 @@ router.get('/', verifyToken, async (req, res) => {
         res.json(addresses);
     } catch (err) {
         console.error('Error fetching addresses:', err);
-        res.status(500).json({ message: 'Failed to fetch addresses' });
+        res.status(500).json({ message: 'Failed to fetch addresses', error: err.message });
     }
 });
 
@@ -99,14 +216,39 @@ router.get('/:id', verifyToken, async (req, res) => {
         }
 
         // Check if address belongs to user
-        if (address.userId.toString() !== req.user.id) {
+        if (address.userId.toString() !== req.user.id.toString()) {
             return res.status(403).json({ message: 'Access denied' });
         }
 
         res.json(address);
     } catch (err) {
         console.error('Error fetching address:', err);
-        res.status(500).json({ message: 'Failed to fetch address' });
+        return res.status(500).json({ message: 'Failed to fetch address details', error: err.message });
+    }
+});
+
+// PATCH: Set as default address
+router.patch('/:id/set-default', verifyToken, async (req, res) => {
+    try {
+        const address = await Address.findById(req.params.id);
+
+        if (!address) {
+            return res.status(404).json({ message: 'Address not found' });
+        }
+
+        // Check if address belongs to user
+        if (address.userId.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        // Set this as default (pre-save hook will unset others)
+        address.isDefault = true;
+        await address.save();
+
+        res.json({ message: 'Default address set successfully', address });
+    } catch (err) {
+        console.error('Error setting default address:', err);
+        return res.status(500).json({ message: 'Failed to set default address', error: err.message });
     }
 });
 
@@ -184,31 +326,6 @@ router.delete('/:id', verifyToken, async (req, res) => {
     } catch (err) {
         console.error('Error deleting address:', err);
         res.status(500).json({ message: 'Failed to delete address' });
-    }
-});
-
-// PATCH: Set as default address
-router.patch('/:id/set-default', verifyToken, async (req, res) => {
-    try {
-        const address = await Address.findById(req.params.id);
-
-        if (!address) {
-            return res.status(404).json({ message: 'Address not found' });
-        }
-
-        // Check if address belongs to user
-        if (address.userId.toString() !== req.user.id) {
-            return res.status(403).json({ message: 'Access denied' });
-        }
-
-        // Set this as default (pre-save hook will unset others)
-        address.isDefault = true;
-        await address.save();
-
-        res.json({ message: 'Default address set successfully', address });
-    } catch (err) {
-        console.error('Error setting default address:', err);
-        res.status(500).json({ message: 'Failed to set default address' });
     }
 });
 

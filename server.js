@@ -140,6 +140,18 @@ app.get('/', (req, res) => {
 });
 
 /* ====================
+   DEPLOYMENT HEARTBEAT
+   ==================== */
+app.get('/api/heartbeat', (req, res) => {
+  res.json({
+    status: 'ok',
+    version: '1.0.5-debug',
+    timestamp: new Date().toISOString(),
+    message: 'Latest debugging tools are active'
+  });
+});
+
+/* ====================
    DIAGNOSTIC (INTERNAL)
    Disabled public access to user checks
 ==================== */
