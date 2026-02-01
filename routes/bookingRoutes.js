@@ -7,6 +7,7 @@ const Address = require('../models/Address');
 const User = require('../models/User');
 const { generateBookingId } = require('../utils/idGenerator');
 const { triggerAutomation } = require('../utils/automationEngine');
+const { sendUserNotification } = require('../utils/notificationHelper');
 const jwt = require('jsonwebtoken');
 
 // Verify token middleware
@@ -562,6 +563,14 @@ router.patch('/:id/assign', verifyToken, canManageBookings, async (req, res) => 
         // Trigger automation hook
         await triggerAutomation('booking.assigned', booking);
 
+        // Direct Notification to User
+        await sendUserNotification(
+            booking.userId,
+            'Technician Assigned',
+            `Technician ${technician.name} has been assigned to your booking ${booking.bookingId}.`,
+            { bookingId: booking._id.toString(), type: 'assignment' }
+        );
+
         res.json({ message: 'Technician assigned successfully', booking });
     } catch (err) {
         console.error('Error assigning technician:', err);
@@ -606,6 +615,15 @@ router.patch('/:id/status', verifyToken, canManageBookings, async (req, res) => 
 
         if (eventMap[status]) {
             await triggerAutomation(eventMap[status], booking);
+
+            if (status === 'Completed') {
+                await sendUserNotification(
+                    booking.userId,
+                    'Service Completed',
+                    `Your service for booking ${booking.bookingId} has been completed. Please share your feedback!`,
+                    { bookingId: booking._id.toString(), type: 'completion' }
+                );
+            }
         }
 
         res.json({ message: 'Booking status updated successfully', booking });
@@ -729,6 +747,14 @@ router.patch('/:id/complete', verifyToken, async (req, res) => {
         // Trigger automation hook
         await triggerAutomation('booking.completed', booking);
 
+        // Direct Notification to User
+        await sendUserNotification(
+            booking.userId,
+            'Service Completed',
+            `Your service for booking ${booking.bookingId} has been completed. Please share your feedback!`,
+            { bookingId: booking._id.toString(), type: 'completion' }
+        );
+
         res.json({ message: 'Service completed successfully', booking });
     } catch (err) {
         console.error('Error completing service:', err);
@@ -814,9 +840,18 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
         if (status === 'Completed') {
             booking.completedAt = new Date();
             await booking.save();
+
+            // Notify User
+            await sendUserNotification(
+                booking.userId,
+                'Service Completed',
+                `Your service for booking ${booking.bookingId} has been completed. Please share your feedback!`,
+                { bookingId: booking._id.toString(), type: 'completion' }
+            );
+
             // Trigger completion automations (notifications etc)
             await triggerAutomation('booking.completed', booking);
-            console.log(`Booking ${booking.bookingId} completion notified to admins/engineers`);
+            console.log(`Booking ${booking.bookingId} completion notified`);
         } else {
             await booking.save();
         }
