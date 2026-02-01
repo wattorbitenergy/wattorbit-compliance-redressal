@@ -8,6 +8,7 @@ const User = require('../models/User');
 const { generateBookingId } = require('../utils/idGenerator');
 const { triggerAutomation } = require('../utils/automationEngine');
 const { sendUserNotification } = require('../utils/notificationHelper');
+const { autoGenerateInvoice } = require('../utils/invoiceHelper');
 const jwt = require('jsonwebtoken');
 
 // Verify token middleware
@@ -755,6 +756,9 @@ router.patch('/:id/complete', verifyToken, async (req, res) => {
             { bookingId: booking._id.toString(), type: 'completion' }
         );
 
+        // Auto-generate Invoice directly to ensure it exists for download
+        await autoGenerateInvoice(booking._id);
+
         res.json({ message: 'Service completed successfully', booking });
     } catch (err) {
         console.error('Error completing service:', err);
@@ -848,6 +852,9 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
                 `Your service for booking ${booking.bookingId} has been completed. Please share your feedback!`,
                 { bookingId: booking._id.toString(), type: 'completion' }
             );
+
+            // Auto-generate Invoice directly to ensure it exists for download
+            await autoGenerateInvoice(booking._id);
 
             // Trigger completion automations (notifications etc)
             await triggerAutomation('booking.completed', booking);
