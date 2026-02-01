@@ -33,8 +33,8 @@ const userSchema = new mongoose.Schema({
     },
     specialization: {
         type: String,
-        enum: ['Technician', 'Plumber', 'House Help'],
-        default: 'Technician'
+        enum: ['Electrician', 'Plumber', 'House Help'],
+        default: 'Electrician'
     },
     city: String,
     address: String,

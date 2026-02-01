@@ -47,6 +47,12 @@ const verifyToken = (req, res, next) => {
 router.post('/register', async (req, res) => {
   try {
     let { username, password, city, phone, email, role, name, organisationId, specialization } = req.body;
+
+    // Auto-generate username from phone if not provided
+    if (!username && phone) {
+      username = phone.trim();
+    }
+
     username = username.toLowerCase().trim();
     if (email) email = email.toLowerCase().trim();
     if (phone) phone = phone.trim();
@@ -72,7 +78,7 @@ router.post('/register', async (req, res) => {
       role: safeRole,
       isApproved: autoApprove,
       organisationId,
-      specialization: specialization || 'Technician'
+      specialization: specialization || req.body.specialistType || 'Electrician'
     });
 
     await user.save();
