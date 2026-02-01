@@ -115,6 +115,15 @@ const bookingSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    paymentReceived: {
+        type: Boolean,
+        default: false
+    },
+    customerBehavior: {
+        type: String,
+        enum: ['Excellent', 'Good', 'Neutral', 'Difficult', 'Abusive'],
+        default: 'Neutral'
+    },
 
     // Tracking
     statusHistory: [{

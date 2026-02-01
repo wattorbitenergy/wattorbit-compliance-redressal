@@ -33,6 +33,15 @@ const isAdmin = (req, res, next) => {
     next();
 };
 
+// Admin, Engineer, or Partner (Organisation) check middleware
+const canManageBookings = (req, res, next) => {
+    const roles = ['admin', 'engineer', 'organisation'];
+    if (!roles.includes(req.user.role)) {
+        return res.status(403).json({ message: 'Access denied: Requires Admin, Engineer, or Partner role' });
+    }
+    next();
+};
+
 // Admin or Engineer check middleware
 const isAdminOrEngineer = (req, res, next) => {
     if (req.user.role !== 'admin' && req.user.role !== 'engineer') {
@@ -239,7 +248,8 @@ router.get('/:id', verifyToken, async (req, res) => {
             .populate('serviceId', 'name category description images')
             .populate('packageId', 'name price features')
             .populate('addressId')
-            .populate('assignedTechnician', 'name phone email');
+            .populate('assignedTechnician', 'name phone email')
+            .populate('organisationId', 'name phone email username');
 
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
@@ -455,10 +465,70 @@ router.patch('/:id/confirm', verifyToken, isAdminOrEngineer, async (req, res) =>
     }
 });
 
-// PATCH: Assign technician (admin/engineer)
-router.patch('/:id/assign', verifyToken, isAdminOrEngineer, async (req, res) => {
+// PATCH: Assign agency/organisation (admin/engineer)
+router.patch('/:id/assign-agency', verifyToken, isAdminOrEngineer, async (req, res) => {
+    try {
+        const { organisationId } = req.body;
+
+        if (!organisationId) {
+            return res.status(400).json({ message: 'Organisation ID required' });
+        }
+
+        // Verify organisation exists and has correct role
+        const organisation = await User.findById(organisationId);
+        if (!organisation || organisation.role !== 'organisation') {
+            return res.status(404).json({ message: 'Organisation not found' });
+        }
+
+        const booking = await Booking.findById(req.params.id);
+
+        if (!booking) {
+            return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        booking.organisationId = organisationId;
+        // Reset technician if agency changes? Probably a good idea
+        booking.assignedTechnician = undefined;
+
+        booking.statusHistory.push({
+            status: booking.status,
+            timestamp: new Date(),
+            updatedBy: req.user.id,
+            notes: `Assigned to Agency: ${organisation.name || organisation.username}`
+        });
+
+        await booking.save();
+
+        // Populate for response
+        const updatedBooking = await Booking.findById(booking._id)
+            .populate('userId', 'name phone email')
+            .populate('serviceId', 'name category')
+            .populate('packageId', 'name price')
+            .populate('addressId')
+            .populate('assignedTechnician', 'name phone')
+            .populate('organisationId', 'name phone email username');
+
+        res.json({ message: 'Agency assigned successfully', booking: updatedBooking });
+    } catch (err) {
+        console.error('Error assigning agency:', err);
+        res.status(500).json({ message: 'Failed to assign agency' });
+    }
+});
+
+// PATCH: Assign technician (admin/engineer/partner)
+router.patch('/:id/assign', verifyToken, canManageBookings, async (req, res) => {
     try {
         const { technicianId } = req.body;
+        const booking = await Booking.findById(req.params.id);
+
+        if (!booking) {
+            return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        // Access Control: If partner, booking must belong to them
+        if (req.user.role === 'organisation' && booking.organisationId?.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Access denied: This booking is not assigned to your agency' });
+        }
 
         if (!technicianId) {
             return res.status(400).json({ message: 'Technician ID required' });
@@ -470,11 +540,12 @@ router.patch('/:id/assign', verifyToken, isAdminOrEngineer, async (req, res) => 
             return res.status(404).json({ message: 'Technician not found' });
         }
 
-        const booking = await Booking.findById(req.params.id);
-
-        if (!booking) {
-            return res.status(404).json({ message: 'Booking not found' });
+        // Access Control: If partner, technician must belong to them
+        if (req.user.role === 'organisation' && technician.organisationId?.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Access denied: Technician belongs to another agency' });
         }
+
+        // Booking already found and existence/permission checked above
 
         booking.assignedTechnician = technicianId;
         booking.assignedAt = new Date();
@@ -498,8 +569,8 @@ router.patch('/:id/assign', verifyToken, isAdminOrEngineer, async (req, res) => 
     }
 });
 
-// PATCH: Update booking status (admin/engineer)
-router.patch('/:id/status', verifyToken, isAdminOrEngineer, async (req, res) => {
+// PATCH: Update booking status (admin/engineer/partner)
+router.patch('/:id/status', verifyToken, canManageBookings, async (req, res) => {
     try {
         const { status, notes } = req.body;
 
@@ -683,7 +754,7 @@ router.get('/:id/whatsapp/user', verifyToken, async (req, res) => {
         const phone = booking.userId?.phone;
         if (!phone) return res.status(400).json({ message: 'Customer phone not found' });
 
-        const message = encodeURIComponent(`Hi ${booking.userId.name}, this is your technician regarding your WattOrbit booking #${booking.bookingId}.`);
+        const message = encodeURIComponent(`Hi ${booking.userId.name}, this is your technician regarding your WattOrbit booking ${booking.bookingId}.`);
         const waUrl = `https://wa.me/91${phone}?text=${message}`;
 
         res.json({ waUrl });
@@ -706,7 +777,7 @@ router.get('/:id/whatsapp/technician', verifyToken, async (req, res) => {
         const tech = booking.assignedTechnician;
         if (!tech || !tech.phone) return res.status(400).json({ message: 'Technician not assigned or phone missing' });
 
-        const message = encodeURIComponent(`Hi ${tech.name}, I am contacting you regarding my WattOrbit booking #${booking.bookingId}.`);
+        const message = encodeURIComponent(`Hi ${tech.name}, I am contacting you regarding my WattOrbit booking ${booking.bookingId}.`);
         const waUrl = `https://wa.me/91${tech.phone}?text=${message}`;
 
         res.json({ waUrl });
@@ -718,7 +789,7 @@ router.get('/:id/whatsapp/technician', verifyToken, async (req, res) => {
 // PATCH: Generic update for technicians (Web Dashboard compatibility)
 router.patch('/:id/tech-update', verifyToken, async (req, res) => {
     try {
-        const { status, remark } = req.body;
+        const { status, remark, paymentReceived, customerBehavior } = req.body;
         const booking = await Booking.findById(req.params.id);
 
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
@@ -730,6 +801,8 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
 
         if (status) booking.status = status;
         if (remark) booking.technicianNotes = remark;
+        if (paymentReceived !== undefined) booking.paymentReceived = paymentReceived;
+        if (customerBehavior) booking.customerBehavior = customerBehavior;
 
         booking.statusHistory.push({
             status: status || booking.status,
@@ -740,9 +813,14 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
 
         if (status === 'Completed') {
             booking.completedAt = new Date();
+            await booking.save();
+            // Trigger completion automations (notifications etc)
+            await triggerAutomation('booking.completed', booking);
+            console.log(`Booking ${booking.bookingId} completion notified to admins/engineers`);
+        } else {
+            await booking.save();
         }
 
-        await booking.save();
         res.json({ message: 'Booking updated successfully', booking });
     } catch (err) {
         console.error('Tech update error:', err);
