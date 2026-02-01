@@ -624,6 +624,9 @@ router.patch('/:id/status', verifyToken, canManageBookings, async (req, res) => 
                     `Your service for booking ${booking.bookingId} has been completed. Please share your feedback!`,
                     { bookingId: booking._id.toString(), type: 'completion' }
                 );
+
+                // Auto-generate Invoice directly to ensure it exists for download
+                await autoGenerateInvoice(booking._id);
             }
         }
 
