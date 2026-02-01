@@ -844,24 +844,29 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
             notes: remark || 'Status updated via dashboard'
         });
 
-        if (status === 'Completed') {
-            booking.completedAt = new Date();
-            await booking.save();
+        if (status === 'Completed' || paymentReceived === true) {
+            if (status === 'Completed') {
+                booking.completedAt = new Date();
 
-            // Notify User
-            await sendUserNotification(
-                booking.userId,
-                'Service Completed',
-                `Your service for booking ${booking.bookingId} has been completed. Please share your feedback!`,
-                { bookingId: booking._id.toString(), type: 'completion' }
-            );
+                // Notify User
+                await sendUserNotification(
+                    booking.userId,
+                    'Service Completed',
+                    `Your service for booking ${booking.bookingId} has been completed. Please share your feedback!`,
+                    { bookingId: booking._id.toString(), type: 'completion' }
+                );
+            }
+
+            await booking.save();
 
             // Auto-generate Invoice directly to ensure it exists for download
             await autoGenerateInvoice(booking._id);
 
-            // Trigger completion automations (notifications etc)
-            await triggerAutomation('booking.completed', booking);
-            console.log(`Booking ${booking.bookingId} completion notified`);
+            if (status === 'Completed') {
+                // Trigger completion automations (notifications etc)
+                await triggerAutomation('booking.completed', booking);
+                console.log(`Booking ${booking.bookingId} completion notified`);
+            }
         } else {
             await booking.save();
         }
