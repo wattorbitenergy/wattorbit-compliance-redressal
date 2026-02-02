@@ -9,13 +9,24 @@ const { generateInvoiceId } = require('../utils/idGenerator');
 const jwt = require('jsonwebtoken');
 
 // Verify token middleware
+// Verify token middleware
 const verifyToken = (req, res, next) => {
+    let token;
+
+    // Check header
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+    }
+    // Check query param (for downloads/window.open)
+    else if (req.query.token) {
+        token = req.query.token;
+    }
+
+    if (!token) {
         return res.status(401).json({ message: 'Authorization header missing or invalid' });
     }
 
-    const token = authHeader.split(' ')[1];
     try {
         req.user = jwt.verify(token, process.env.JWT_SECRET);
         next();
@@ -213,7 +224,7 @@ router.get('/:id/download', verifyToken, async (req, res) => {
         doc.pipe(res);
 
         // Logo
-        const logoPath = path.join(__dirname, '../assets/logo.png');
+        const logoPath = path.join(__dirname, '../assets/logo.jpg');
         if (fs.existsSync(logoPath)) {
             doc.image(logoPath, 50, 45, { width: 50 });
         }
