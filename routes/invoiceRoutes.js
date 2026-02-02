@@ -212,15 +212,25 @@ router.get('/:id/download', verifyToken, async (req, res) => {
 
         doc.pipe(res);
 
+        // Logo
+        const logoPath = path.join(__dirname, '../assets/logo.png');
+        if (fs.existsSync(logoPath)) {
+            doc.image(logoPath, 50, 45, { width: 50 });
+        }
+
         // Header
-        doc.fontSize(20).text('INVOICE', { align: 'center' });
+        doc.fontSize(20).text('INVOICE', { align: 'right' });
         doc.moveDown();
-        doc.fontSize(12).text('WattOrbit Compliance & Redressal', { align: 'right' });
+
+        doc.fontSize(10).font('Helvetica-Bold').text('WATTORBIT ENERGY SOLUTIONS LLP', { align: 'right' });
+        doc.font('Helvetica').text('Shop No.3, INDAURABAG', { align: 'right' });
+        doc.text('BAKSHI KA TALAB LUCKNOW - 226202', { align: 'right' });
         doc.text('support@wattorbit.com', { align: 'right' });
         doc.moveDown();
 
         // Invoice Details
-        doc.fontSize(10).text(`Invoice ID: ${invoice.invoiceId}`, 50, 150);
+        doc.font('Helvetica');
+        doc.text(`Invoice ID: ${invoice.invoiceId}`, 50, 150);
         doc.text(`Date: ${new Date(invoice.invoiceDate).toLocaleDateString()}`, 50, 165);
         doc.text(`Due Date: ${new Date(invoice.dueDate).toLocaleDateString()}`, 50, 180);
 
@@ -292,8 +302,16 @@ router.get('/:id/download', verifyToken, async (req, res) => {
             doc.fillColor('red').text('UNPAID', 130, totalY);
         }
 
+        // Terms and Conditions
         doc.fillColor('black');
-        doc.text('Thank you for your business!', 50, 700, { align: 'center', width: 500 });
+        doc.moveDown(4);
+        doc.font('Helvetica-Bold').text('Terms & Conditions:', 50);
+        doc.font('Helvetica').fontSize(9);
+        doc.text('1. This is an electronically generated invoice and does not require a physical signature.');
+        doc.text('2. All disputes are subject to Lucknow jurisdiction.');
+
+        doc.moveDown(2);
+        doc.fontSize(10).text('Thank you for choosing WattOrbit!', { align: 'center' });
 
         doc.end();
 
