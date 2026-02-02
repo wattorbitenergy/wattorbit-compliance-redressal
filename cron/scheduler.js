@@ -11,8 +11,19 @@ const initCronJobs = () => {
 
     // Feedback Reminder Job - Runs every hour
     cron.schedule('0 * * * *', async () => {
-        console.log('Running Feedback Reminder Job...');
         try {
+            const Config = require('../models/Config');
+            const cronConfig = await Config.findOne({ key: 'cron_enabled' });
+
+            // Default to true if not set, or check explicit value
+            const isEnabled = cronConfig ? cronConfig.value : true;
+
+            if (!isEnabled) {
+                console.log('Feedback Reminder Job skipped: Cron is disabled in config.');
+                return;
+            }
+
+            console.log('Running Feedback Reminder Job...');
             // Find bookings completed > 2 days ago, no feedback sent
             const twoDaysAgo = new Date();
             twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);

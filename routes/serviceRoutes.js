@@ -90,11 +90,15 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-// GET: Get all categories
+// GET: Get all categories (from schema enum and active services)
 router.get('/meta/categories', async (req, res) => {
     try {
-        const categories = await Service.distinct('category', { isActive: true });
-        res.json(categories);
+        const schemaCategories = Service.schema.path('category').enumValues;
+        const activeCategories = await Service.distinct('category', { isActive: true });
+
+        // Combine and remove duplicates
+        const allCategories = [...new Set([...schemaCategories, ...activeCategories])];
+        res.json(allCategories);
     } catch (err) {
         console.error('Error fetching categories:', err);
         res.status(500).json({ message: 'Failed to fetch categories' });

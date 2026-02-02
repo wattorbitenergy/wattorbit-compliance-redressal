@@ -101,13 +101,13 @@ router.post('/', verifyToken, async (req, res) => {
         // Calculate pricing
         const basePrice = servicePackage.price;
         const taxRate = 18; // 18% GST
-        const taxes = (basePrice * taxRate) / 100;
+        const taxes = Math.round((basePrice * taxRate) / 100);
 
         // Apply discount if valid
         let discount = 0;
         if (servicePackage.discount && servicePackage.discount.percentage > 0) {
             if (!servicePackage.discount.validUntil || new Date(servicePackage.discount.validUntil) >= new Date()) {
-                discount = (basePrice * servicePackage.discount.percentage) / 100;
+                discount = Math.round((basePrice * servicePackage.discount.percentage) / 100);
             }
         }
 
