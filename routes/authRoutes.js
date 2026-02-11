@@ -255,4 +255,34 @@ router.patch('/admin-reset-password/:id', verifyToken, async (req, res) => {
   }
 });
 
+/* =========================
+   APPROVE USER (Admin/Org)
+========================= */
+router.patch('/approve/:id', verifyToken, async (req, res) => {
+  try {
+    const allowedRoles = ['admin', 'organisation'];
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Prevent cross-organisation approval if restricted
+    if (req.user.role === 'organisation' && user.organisationId?.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Cannot approve users outside your organisation' });
+    }
+
+    user.isApproved = true;
+    await user.save();
+
+    res.json({ message: `User ${user.username} approved successfully`, user });
+  } catch (err) {
+    console.error('Approve user error:', err);
+    res.status(500).json({ message: 'Failed to approve user' });
+  }
+});
+
 module.exports = router;
