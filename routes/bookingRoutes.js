@@ -7,7 +7,7 @@ const Address = require('../models/Address');
 const User = require('../models/User');
 const { generateBookingId } = require('../utils/idGenerator');
 const { triggerAutomation } = require('../utils/automationEngine');
-const { sendUserNotification } = require('../utils/notificationHelper');
+const { sendUserNotification, sendTopicNotification } = require('../utils/notificationHelper');
 const { autoGenerateInvoice } = require('../utils/invoiceHelper');
 const jwt = require('jsonwebtoken');
 
@@ -146,6 +146,14 @@ router.post('/', verifyToken, async (req, res) => {
 
         // Trigger automation hook
         await triggerAutomation('booking.created', booking);
+
+        // Notify Admin of new booking
+        await sendTopicNotification(
+            'admin',
+            'New Booking Received',
+            `New booking ${booking.bookingId} for ${service.name}.`,
+            { bookingId: booking._id.toString(), type: 'new_booking' }
+        );
 
         // Populate for response
         await booking.populate([
@@ -305,6 +313,18 @@ router.patch('/:id/cancel', verifyToken, async (req, res) => {
             return res.status(400).json({ message: 'Cannot cancel completed or already cancelled booking' });
         }
 
+        // Cancellation Policy: Users can only cancel within 1 hour of creation
+        if (req.user.role !== 'admin') {
+            const oneHour = 60 * 60 * 1000;
+            const timeSinceCreation = new Date() - new Date(booking.createdAt);
+
+            if (timeSinceCreation > oneHour) {
+                return res.status(400).json({
+                    message: 'Cancellation is only allowed within 1 hour of booking. Please contact support.'
+                });
+            }
+        }
+
         booking.status = 'Cancelled';
         booking.cancellationReason = cancellationReason;
         booking.statusHistory.push({
@@ -318,6 +338,24 @@ router.patch('/:id/cancel', verifyToken, async (req, res) => {
 
         // Trigger automation hook
         await triggerAutomation('booking.cancelled', booking);
+
+        // Notify Admin
+        await sendTopicNotification(
+            'admin',
+            'Booking Cancelled',
+            `Booking ${booking.bookingId} has been cancelled by ${req.user.name}.`,
+            { bookingId: booking._id.toString(), type: 'cancellation' }
+        );
+
+        // Notify Technician if assigned
+        if (booking.assignedTechnician) {
+            await sendUserNotification(
+                booking.assignedTechnician,
+                'Assignment Cancelled',
+                `Booking ${booking.bookingId} has been cancelled.`,
+                { bookingId: booking._id.toString(), type: 'cancellation' }
+            );
+        }
 
         res.json({ message: 'Booking cancelled successfully', booking });
     } catch (err) {
@@ -564,6 +602,14 @@ router.patch('/:id/assign', verifyToken, canManageBookings, async (req, res) => 
         // Trigger automation hook
         await triggerAutomation('booking.assigned', booking);
 
+        // Notify Technician
+        await sendUserNotification(
+            technicianId,
+            'New Service Assignment',
+            `You have been assigned to booking ${booking.bookingId}.`,
+            { bookingId: booking._id.toString(), type: 'assignment' }
+        );
+
         // Direct Notification to User
         await sendUserNotification(
             booking.userId,
@@ -705,6 +751,22 @@ router.patch('/:id/start', verifyToken, async (req, res) => {
         // Trigger automation hook
         await triggerAutomation('booking.in_progress', booking);
 
+        // Notify User
+        await sendUserNotification(
+            booking.userId,
+            'Technician Started Service',
+            `Technician has started working on your service ${booking.bookingId}.`,
+            { bookingId: booking._id.toString(), type: 'status_update' }
+        );
+
+        // Notify Admin
+        await sendTopicNotification(
+            'admin',
+            'Service Started',
+            `Service ${booking.bookingId} marked as In Progress by technician.`,
+            { bookingId: booking._id.toString(), type: 'status_update' }
+        );
+
         res.json({ message: 'Service started successfully', booking });
     } catch (err) {
         console.error('Error starting service:', err);
@@ -756,6 +818,14 @@ router.patch('/:id/complete', verifyToken, async (req, res) => {
             booking.userId,
             'Service Completed',
             `Your service for booking ${booking.bookingId} has been completed. Please share your feedback!`,
+            { bookingId: booking._id.toString(), type: 'completion' }
+        );
+
+        // Notify Admin
+        await sendTopicNotification(
+            'admin',
+            'Service Completed',
+            `Service ${booking.bookingId} marked as Completed by technician.`,
             { bookingId: booking._id.toString(), type: 'completion' }
         );
 
