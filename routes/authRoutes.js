@@ -147,7 +147,7 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
     user.resetPasswordExpires = Date.now() + 3600000;
     await user.save();
 
-    const origin = req.get('origin') || process.env.FRONTEND_URL || 'https://wattorbit.com';
+    const origin = process.env.FRONTEND_URL || req.get('origin') || 'https://wattorbit.com';
     const resetUrl = `${origin}/reset-password?token=${resetToken}`;
 
     if (user.email) {
