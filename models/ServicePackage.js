@@ -26,6 +26,18 @@ const servicePackageSchema = new mongoose.Schema({
         required: true,
         min: 0
     },
+    technicianCharges: {
+        type: Number,
+        required: true,
+        default: 0,
+        min: 0
+    },
+    platformFees: {
+        type: Number,
+        required: true,
+        default: 0,
+        min: 0
+    },
     duration: {
         type: Number, // Duration in minutes
         required: true,

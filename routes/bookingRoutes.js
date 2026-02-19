@@ -5,6 +5,7 @@ const Service = require('../models/Service');
 const ServicePackage = require('../models/ServicePackage');
 const Address = require('../models/Address');
 const User = require('../models/User');
+const Coupon = require('../models/Coupon');
 const { generateBookingId } = require('../utils/idGenerator');
 const { triggerAutomation } = require('../utils/automationEngine');
 const { sendUserNotification, sendTopicNotification } = require('../utils/notificationHelper');
@@ -65,7 +66,8 @@ router.post('/', verifyToken, async (req, res) => {
             addressId,
             scheduledDate,
             scheduledTimeSlot,
-            customerNotes
+            customerNotes,
+            couponCode
         } = req.body;
 
         // Validation
@@ -99,13 +101,29 @@ router.post('/', verifyToken, async (req, res) => {
         }
 
         // Calculate pricing
-        const basePrice = servicePackage.price;
-        const taxRate = 18; // 18% GST
-        const taxes = Math.round((basePrice * taxRate) / 100);
+        const technicianCharges = servicePackage.technicianCharges || 0;
+        const platformFees = servicePackage.platformFees || 0;
+        const taxRate = 18; // 18% GST on platform fees only
+        const taxes = Math.round((platformFees * taxRate) / 100);
 
-        // Apply discount if valid
+        // Base price for discounts is the total of components
+        const basePrice = technicianCharges + platformFees;
+
+        // Apply coupon if provided
         let discount = 0;
-        if (servicePackage.discount && servicePackage.discount.percentage > 0) {
+        let couponId = null;
+
+        if (couponCode) {
+            const coupon = await Coupon.findOne({ code: couponCode.toUpperCase(), isActive: true });
+            if (coupon && coupon.isValid(basePrice)) {
+                discount = coupon.calculateDiscount(basePrice);
+                couponId = coupon._id;
+            }
+        }
+
+        // Apply package discount if no coupon discount (or as fallback)
+        // Note: Deciding that coupons take precedence and are not additive by default unless specified
+        if (discount === 0 && servicePackage.discount && servicePackage.discount.percentage > 0) {
             if (!servicePackage.discount.validUntil || new Date(servicePackage.discount.validUntil) >= new Date()) {
                 discount = Math.round((basePrice * servicePackage.discount.percentage) / 100);
             }
@@ -130,7 +148,11 @@ router.post('/', verifyToken, async (req, res) => {
             scheduledTimeSlot,
             customerNotes,
             basePrice,
+            technicianCharges,
+            platformFees,
             taxes,
+            couponId,
+            couponCode: couponCode ? couponCode.toUpperCase() : undefined,
             discount,
             totalAmount,
             status: 'Pending',

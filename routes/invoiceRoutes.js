@@ -79,12 +79,24 @@ router.post('/generate', verifyToken, async (req, res) => {
         const invoiceId = await generateInvoiceId();
 
         // Build line items
-        const items = [{
-            description: `${booking.serviceId.name} - ${booking.packageId.name}`,
-            quantity: 1,
-            unitPrice: booking.basePrice,
-            total: booking.basePrice
-        }];
+        const items = [
+            {
+                description: `Technician Charges (${booking.serviceId.name} - ${booking.packageId.name})`,
+                quantity: 1,
+                unitPrice: booking.technicianCharges || booking.basePrice, // Fallback for transition
+                total: booking.technicianCharges || booking.basePrice
+            }
+        ];
+
+        // Add platform fees as a separate item if they exist
+        if (booking.platformFees > 0) {
+            items.push({
+                description: 'Platform Fees',
+                quantity: 1,
+                unitPrice: booking.platformFees,
+                total: booking.platformFees
+            });
+        }
 
         // Format address
         const addr = booking.addressId;

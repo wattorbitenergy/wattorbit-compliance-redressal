@@ -79,6 +79,8 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
             name,
             description,
             price,
+            technicianCharges,
+            platformFees,
             duration,
             features,
             isPopular,
@@ -86,9 +88,9 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
         } = req.body;
 
         // Validation
-        if (!serviceId || !name || !description || !price || !duration) {
+        if (!serviceId || !name || !description || !duration) {
             return res.status(400).json({
-                message: 'Missing required fields: serviceId, name, description, price, duration'
+                message: 'Missing required fields: serviceId, name, description, duration'
             });
         }
 
@@ -105,7 +107,9 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
             serviceId,
             name,
             description,
-            price,
+            price: price || (Number(technicianCharges || 0) + Number(platformFees || 0) + (Number(platformFees || 0) * 0.18)),
+            technicianCharges: technicianCharges || 0,
+            platformFees: platformFees || 0,
             duration,
             features: features || [],
             isPopular: isPopular || false,
@@ -131,23 +135,38 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
             name,
             description,
             price,
+            technicianCharges,
+            platformFees,
             duration,
             features,
             isPopular,
             discount
         } = req.body;
 
+        const updateData = {
+            name,
+            description,
+            duration,
+            features,
+            isPopular,
+            discount,
+            technicianCharges: technicianCharges !== undefined ? technicianCharges : undefined,
+            platformFees: platformFees !== undefined ? platformFees : undefined
+        };
+
+        if (price !== undefined) {
+            updateData.price = price;
+        } else if (technicianCharges !== undefined || platformFees !== undefined) {
+            // Recalculate if only components are provided and price is missing
+            const currentPkg = await ServicePackage.findById(req.params.id);
+            const t = technicianCharges !== undefined ? Number(technicianCharges) : currentPkg.technicianCharges;
+            const p = platformFees !== undefined ? Number(platformFees) : currentPkg.platformFees;
+            updateData.price = t + p + (p * 0.18);
+        }
+
         const servicePackage = await ServicePackage.findByIdAndUpdate(
             req.params.id,
-            {
-                name,
-                description,
-                price,
-                duration,
-                features,
-                isPopular,
-                discount
-            },
+            updateData,
             { new: true, runValidators: true }
         );
 

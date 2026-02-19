@@ -191,6 +191,7 @@ app.use('/api/packages', require('./routes/packageRoutes'));
 app.use('/api/bookings', require('./routes/bookingRoutes'));
 app.use('/api/addresses', require('./routes/addressRoutes'));
 app.use('/api/payments', require('./routes/paymentRoutes'));
+app.use('/api/coupons', require('./routes/couponRoutes'));
 app.use('/api/invoices', require('./routes/invoiceRoutes'));
 app.use('/api/feedback', require('./routes/feedbackRoutes'));
 app.use('/api/automation', require('./routes/automationRoutes'));

@@ -79,10 +79,29 @@ const bookingSchema = new mongoose.Schema({
         required: true,
         min: 0
     },
+    technicianCharges: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
+    platformFees: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
     taxes: {
         type: Number,
         default: 0,
         min: 0
+    },
+    couponId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Coupon'
+    },
+    couponCode: {
+        type: String,
+        uppercase: true,
+        trim: true
     },
     discount: {
         type: Number,
@@ -118,6 +137,23 @@ const bookingSchema = new mongoose.Schema({
     paymentReceived: {
         type: Boolean,
         default: false
+    },
+    paymentMethod: {
+        type: String,
+        enum: ['COD', 'Online'],
+        default: 'COD'
+    },
+    razorpayOrderId: {
+        type: String,
+        trim: true
+    },
+    razorpayPaymentId: {
+        type: String,
+        trim: true
+    },
+    razorpaySignature: {
+        type: String,
+        trim: true
     },
     customerBehavior: {
         type: String,

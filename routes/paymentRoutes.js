@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const Payment = require('../models/Payment');
-const Booking = require('../models/Booking');
-const { generatePaymentId } = require('../utils/idGenerator');
-const { triggerAutomation } = require('../utils/automationEngine');
+const Razorpay = require('razorpay');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const Booking = require('../models/Booking');
+const Config = require('../models/Config');
 
 // Verify token middleware
 const verifyToken = (req, res, next) => {
@@ -22,237 +22,107 @@ const verifyToken = (req, res, next) => {
     }
 };
 
-// Admin check middleware
-const isAdmin = (req, res, next) => {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ message: 'Admin access required' });
-    }
-    next();
-};
+// Initialize Razorpay
+// Note: These should be in the .env file
+const razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID || 'your_key_id',
+    key_secret: process.env.RAZORPAY_KEY_SECRET || 'your_key_secret'
+});
 
-// POST: Initiate payment for booking
-router.post('/initiate', verifyToken, async (req, res) => {
+// POST: Create Razorpay Order
+router.post('/create-order', verifyToken, async (req, res) => {
     try {
-        const { bookingId, paymentMethod } = req.body;
-
-        if (!bookingId || !paymentMethod) {
-            return res.status(400).json({
-                message: 'Missing required fields: bookingId, paymentMethod'
-            });
+        const { bookingId } = req.body;
+        if (!bookingId) {
+            return res.status(400).json({ message: 'Booking ID is required' });
         }
 
-        // Verify booking exists and belongs to user
         const booking = await Booking.findById(bookingId);
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
         }
 
-        if (booking.userId.toString() !== req.user.id) {
-            return res.status(403).json({ message: 'Access denied' });
+        // Check if online payment is enabled in settings
+        const onlinePaymentEnabled = await Config.findOne({ key: 'enable_online_payment' });
+        if (onlinePaymentEnabled && onlinePaymentEnabled.value === false) {
+            return res.status(400).json({ message: 'Online payment is currently disabled' });
         }
 
-        // Check if payment already exists for this booking
-        const existingPayment = await Payment.findOne({ bookingId });
-        if (existingPayment && existingPayment.status === 'Paid') {
-            return res.status(400).json({ message: 'Payment already completed for this booking' });
-        }
+        const options = {
+            amount: Math.round(booking.totalAmount * 100), // Razorpay amount is in paise
+            currency: 'INR',
+            receipt: booking.bookingId,
+            notes: {
+                bookingId: booking._id.toString(),
+                userId: req.user.id
+            }
+        };
 
-        const paymentId = await generatePaymentId();
+        const order = await razorpay.orders.create(options);
 
-        const payment = new Payment({
-            paymentId,
-            bookingId,
-            userId: req.user.id,
-            amount: booking.totalAmount,
-            paymentMethod,
-            status: 'Pending',
-            paymentHistory: [{
-                action: 'initiated',
+        // Update booking with razorpayOrderId
+        booking.razorpayOrderId = order.id;
+        booking.paymentMethod = 'Online';
+        await booking.save();
+
+        res.json({
+            orderId: order.id,
+            amount: options.amount,
+            currency: options.currency,
+            key_id: process.env.RAZORPAY_KEY_ID
+        });
+    } catch (err) {
+        console.error('Razorpay Order Creation Error:', err);
+        res.status(500).json({ message: 'Failed to create payment order' });
+    }
+});
+
+// POST: Verify Razorpay Signature
+router.post('/verify-payment', verifyToken, async (req, res) => {
+    try {
+        const {
+            razorpay_order_id,
+            razorpay_payment_id,
+            razorpay_signature,
+            bookingId
+        } = req.body;
+
+        const body = razorpay_order_id + "|" + razorpay_payment_id;
+
+        const expectedSignature = crypto
+            .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'your_key_secret')
+            .update(body.toString())
+            .digest('hex');
+
+        const isSignatureValid = expectedSignature === razorpay_signature;
+
+        if (isSignatureValid) {
+            const booking = await Booking.findById(bookingId);
+            if (!booking) {
+                return res.status(404).json({ message: 'Booking not found' });
+            }
+
+            booking.paymentReceived = true;
+            booking.razorpayPaymentId = razorpay_payment_id;
+            booking.razorpaySignature = razorpay_signature;
+            booking.status = 'Confirmed'; // Auto confirm if payment is received
+
+            booking.statusHistory.push({
+                status: 'Confirmed',
                 timestamp: new Date(),
-                amount: booking.totalAmount,
-                notes: `Payment initiated via ${paymentMethod}`
-            }]
-        });
-
-        await payment.save();
-
-        // Trigger automation hook
-        await triggerAutomation('payment.initiated', payment);
-
-        res.status(201).json({
-            message: 'Payment initiated successfully',
-            payment
-        });
-    } catch (err) {
-        console.error('Error initiating payment:', err);
-        res.status(500).json({ message: 'Failed to initiate payment' });
-    }
-});
-
-// POST: Confirm payment (for online payments - webhook)
-router.post('/confirm', async (req, res) => {
-    try {
-        const webhookSecret = req.headers['x-webhook-secret'];
-        if (webhookSecret !== process.env.PAYMENT_WEBHOOK_SECRET) {
-            console.error('❌ Unauthorized Webhook Attempt');
-            return res.status(401).json({ message: 'Unauthorized webhook' });
-        }
-
-        const { paymentId, transactionId, gatewayResponse } = req.body;
-
-        if (!paymentId) {
-            return res.status(400).json({ message: 'Payment ID required' });
-        }
-
-        const payment = await Payment.findOne({ paymentId });
-
-        if (!payment) {
-            return res.status(404).json({ message: 'Payment not found' });
-        }
-
-        payment.status = 'Paid';
-        payment.transactionId = transactionId;
-        payment.gatewayResponse = gatewayResponse;
-        payment.paymentHistory.push({
-            action: 'paid',
-            timestamp: new Date(),
-            amount: payment.amount,
-            notes: `Payment confirmed via ${payment.paymentMethod}`
-        });
-
-        await payment.save();
-
-        // Trigger automation hook
-        await triggerAutomation('payment.received', payment);
-
-        res.json({ message: 'Payment confirmed successfully', payment });
-    } catch (err) {
-        console.error('Error confirming payment:', err);
-        res.status(500).json({ message: 'Failed to confirm payment' });
-    }
-});
-
-// PATCH: Mark COD as collected (technician only)
-router.patch('/:id/cod-collect', verifyToken, async (req, res) => {
-    try {
-        if (req.user.role !== 'technician') {
-            return res.status(403).json({ message: 'Technician access required' });
-        }
-
-        const payment = await Payment.findById(req.params.id)
-            .populate('bookingId');
-
-        if (!payment) {
-            return res.status(404).json({ message: 'Payment not found' });
-        }
-
-        // Verify technician is assigned to this booking
-        if (!payment.bookingId.assignedTechnician ||
-            payment.bookingId.assignedTechnician.toString() !== req.user.id) {
-            return res.status(403).json({ message: 'You are not assigned to this booking' });
-        }
-
-        if (payment.paymentMethod !== 'COD') {
-            return res.status(400).json({ message: 'This is not a COD payment' });
-        }
-
-        if (payment.status === 'Paid') {
-            return res.status(400).json({ message: 'Payment already collected' });
-        }
-
-        payment.status = 'Paid';
-        payment.codCollectedBy = req.user.id;
-        payment.codCollectedAt = new Date();
-        payment.paymentHistory.push({
-            action: 'paid',
-            timestamp: new Date(),
-            amount: payment.amount,
-            notes: 'COD collected by technician'
-        });
-
-        await payment.save();
-
-        // Trigger automation hook
-        await triggerAutomation('payment.received', payment);
-
-        res.json({ message: 'COD payment collected successfully', payment });
-    } catch (err) {
-        console.error('Error collecting COD payment:', err);
-        res.status(500).json({ message: 'Failed to collect COD payment' });
-    }
-});
-
-// GET: Get payment details for booking
-router.get('/booking/:bookingId', verifyToken, async (req, res) => {
-    try {
-        const payment = await Payment.findOne({ bookingId: req.params.bookingId })
-            .populate('bookingId')
-            .populate('userId', 'name phone email')
-            .populate('codCollectedBy', 'name phone');
-
-        if (!payment) {
-            return res.status(404).json({ message: 'Payment not found' });
-        }
-
-        // Check access
-        if (
-            payment.userId._id.toString() !== req.user.id &&
-            req.user.role !== 'admin' &&
-            (!payment.bookingId.assignedTechnician ||
-                payment.bookingId.assignedTechnician.toString() !== req.user.id)
-        ) {
-            return res.status(403).json({ message: 'Access denied' });
-        }
-
-        res.json(payment);
-    } catch (err) {
-        console.error('Error fetching payment:', err);
-        res.status(500).json({ message: 'Failed to fetch payment' });
-    }
-});
-
-// POST: Process refund (admin only)
-router.post('/:id/refund', verifyToken, isAdmin, async (req, res) => {
-    try {
-        const { refundAmount, refundReason } = req.body;
-
-        if (!refundAmount || !refundReason) {
-            return res.status(400).json({
-                message: 'Missing required fields: refundAmount, refundReason'
+                updatedBy: req.user.id,
+                notes: 'Online payment received. Booking auto-confirmed.'
             });
+
+            await booking.save();
+
+            res.json({ message: 'Payment verified successfully', booking });
+        } else {
+            res.status(400).json({ message: 'Invalid payment signature' });
         }
-
-        const payment = await Payment.findById(req.params.id);
-
-        if (!payment) {
-            return res.status(404).json({ message: 'Payment not found' });
-        }
-
-        if (payment.status !== 'Paid') {
-            return res.status(400).json({ message: 'Can only refund paid payments' });
-        }
-
-        if (refundAmount > payment.amount) {
-            return res.status(400).json({ message: 'Refund amount cannot exceed payment amount' });
-        }
-
-        payment.status = 'Refunded';
-        payment.refundAmount = refundAmount;
-        payment.refundReason = refundReason;
-        payment.refundedAt = new Date();
-        payment.paymentHistory.push({
-            action: 'refunded',
-            timestamp: new Date(),
-            amount: refundAmount,
-            notes: refundReason
-        });
-
-        await payment.save();
-
-        res.json({ message: 'Refund processed successfully', payment });
     } catch (err) {
-        console.error('Error processing refund:', err);
-        res.status(500).json({ message: 'Failed to process refund' });
+        console.error('Razorpay Signature Verification Error:', err);
+        res.status(500).json({ message: 'Failed to verify payment' });
     }
 });
 
