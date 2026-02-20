@@ -5,6 +5,8 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const Booking = require('../models/Booking');
 const Config = require('../models/Config');
+const { generateBookingId } = require('../utils/idGenerator');
+const { sendUserNotification, sendTopicNotification } = require('../utils/notificationHelper');
 
 // Verify token middleware
 const verifyToken = (req, res, next) => {
@@ -107,14 +109,27 @@ router.post('/verify-payment', verifyToken, async (req, res) => {
             booking.razorpaySignature = razorpay_signature;
             booking.status = 'Confirmed'; // Auto confirm if payment is received
 
+            // Generate Booking ID if missing (for Online Payments)
+            if (!booking.bookingId) {
+                booking.bookingId = await generateBookingId();
+            }
+
             booking.statusHistory.push({
                 status: 'Confirmed',
                 timestamp: new Date(),
                 updatedBy: req.user.id,
-                notes: 'Online payment received. Booking auto-confirmed.'
+                notes: `Online payment received (ID: ${razorpay_payment_id}). Booking confirmed and ID ${booking.bookingId} generated.`
             });
 
             await booking.save();
+
+            // Notify Admin of confirmed online booking
+            await sendTopicNotification(
+                'admin',
+                'Online Payment Confirmed',
+                `Payment confirmed for booking ${booking.bookingId}. Status updated to Confirmed.`,
+                { bookingId: booking._id.toString(), type: 'payment_confirmed' }
+            );
 
             res.json({ message: 'Payment verified successfully', booking });
         } else {

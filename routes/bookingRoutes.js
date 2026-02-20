@@ -67,7 +67,8 @@ router.post('/', verifyToken, async (req, res) => {
             scheduledDate,
             scheduledTimeSlot,
             customerNotes,
-            couponCode
+            couponCode,
+            paymentMethod
         } = req.body;
 
         // Validation
@@ -135,7 +136,11 @@ router.post('/', verifyToken, async (req, res) => {
         const user = await User.findById(req.user.id);
         const organisationId = user?.organisationId || null;
 
-        const bookingId = await generateBookingId();
+        // Generate bookingId ONLY for COD. For Online, it's generated after payment.
+        let bookingId = undefined;
+        if (paymentMethod === 'COD') {
+            bookingId = await generateBookingId();
+        }
 
         const booking = new Booking({
             bookingId,
@@ -155,12 +160,13 @@ router.post('/', verifyToken, async (req, res) => {
             couponCode: couponCode ? couponCode.toUpperCase() : undefined,
             discount,
             totalAmount,
+            paymentMethod: paymentMethod || 'COD',
             status: 'Pending',
             statusHistory: [{
                 status: 'Pending',
                 timestamp: new Date(),
                 updatedBy: req.user.id,
-                notes: 'Booking created'
+                notes: paymentMethod === 'Online' ? 'Booking initiated (Awaiting Payment)' : 'Booking created'
             }]
         });
 
@@ -172,8 +178,10 @@ router.post('/', verifyToken, async (req, res) => {
         // Notify Admin of new booking
         await sendTopicNotification(
             'admin',
-            'New Booking Received',
-            `New booking ${booking.bookingId} for ${service.name}.`,
+            paymentMethod === 'Online' ? 'New Online Booking Initiated' : 'New Booking Received',
+            paymentMethod === 'Online'
+                ? `New online booking initiated for ${service.name}. (Awaiting Payment)`
+                : `New booking ${booking.bookingId} for ${service.name}.`,
             { bookingId: booking._id.toString(), type: 'new_booking' }
         );
 
