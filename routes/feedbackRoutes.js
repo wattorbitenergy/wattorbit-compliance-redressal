@@ -116,6 +116,16 @@ router.get('/booking/:bookingId', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Feedback not found for this booking' });
         }
 
+        // 🛡️ SECURITY FIX: Verify access permissions (IDOR fix)
+        const booking = await Booking.findById(feedback.bookingId);
+        const isOwner = feedback.userId.toString() === req.user.id;
+        const isAdminUser = req.user.role === 'admin';
+        const isAssignedTech = booking && booking.assignedTechnician?.toString() === req.user.id;
+
+        if (!isOwner && !isAdminUser && !isAssignedTech) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
         res.json(feedback);
     } catch (err) {
         console.error('Error fetching feedback:', err);

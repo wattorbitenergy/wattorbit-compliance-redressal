@@ -34,13 +34,21 @@ async function autoGenerateInvoice(bookingId) {
 
         const invoiceId = await generateInvoiceId();
 
-        // Build line items
-        const items = [{
-            description: `${booking.serviceId.name} - ${booking.packageId.name}`,
-            quantity: 1,
-            unitPrice: booking.basePrice,
-            total: booking.basePrice
-        }];
+        // Build line items split into components
+        const items = [
+            {
+                description: `${booking.serviceId.name} - ${booking.packageId.name} (Technician Fees)`,
+                quantity: 1,
+                unitPrice: booking.technicianCharges,
+                total: booking.technicianCharges
+            },
+            {
+                description: `${booking.serviceId.name} - ${booking.packageId.name} (Platform Fees)`,
+                quantity: 1,
+                unitPrice: booking.platformFees,
+                total: booking.platformFees
+            }
+        ];
 
         // Format address
         const addr = booking.addressId;

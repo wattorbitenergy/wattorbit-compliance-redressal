@@ -244,19 +244,9 @@ router.get('/track', async (req, res) => {
             return res.status(400).json({ message: 'Query parameter required' });
         }
 
-        // Search by bookingId OR user phone number
-        const bookings = await Booking.find({
-            $or: [
-                { bookingId: query },
-                {
-                    userId: {
-                        $in: await User.find({
-                            phone: { $regex: query, $options: 'i' }
-                        }).distinct('_id')
-                    }
-                }
-            ]
-        })
+        // 🛡️ SECURITY FIX: Only allow search by exact bookingId for public access.
+        // Regex-based phone number search is disabled to prevent data leakage via partial matches.
+        const bookings = await Booking.find({ bookingId: query })
             .populate('serviceId', 'name category')
             .populate('addressId', 'city street pincode')
             .populate('assignedTechnician', 'name phone')

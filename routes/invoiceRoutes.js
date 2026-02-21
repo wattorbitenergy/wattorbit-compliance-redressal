@@ -78,25 +78,21 @@ router.post('/generate', verifyToken, async (req, res) => {
 
         const invoiceId = await generateInvoiceId();
 
-        // Build line items
+        // Build line items split into components
         const items = [
             {
-                description: `Technician Charges (${booking.serviceId.name} - ${booking.packageId.name})`,
+                description: `${booking.serviceId.name} - ${booking.packageId.name} (Technician Fees)`,
                 quantity: 1,
-                unitPrice: booking.technicianCharges || booking.basePrice, // Fallback for transition
-                total: booking.technicianCharges || booking.basePrice
-            }
-        ];
-
-        // Add platform fees as a separate item if they exist
-        if (booking.platformFees > 0) {
-            items.push({
-                description: 'Platform Fees',
+                unitPrice: booking.technicianCharges,
+                total: booking.technicianCharges
+            },
+            {
+                description: `${booking.serviceId.name} - ${booking.packageId.name} (Platform Fees)`,
                 quantity: 1,
                 unitPrice: booking.platformFees,
                 total: booking.platformFees
-            });
-        }
+            }
+        ];
 
         // Format address
         const addr = booking.addressId;
@@ -299,7 +295,7 @@ router.get('/:id/download', verifyToken, async (req, res) => {
         doc.text(`₹${invoice.subtotal}`, 460, subtotalY, { width: 90, align: 'right' });
 
         const taxY = subtotalY + 20;
-        doc.text(`Tax (${invoice.taxRate}%):`, 370, taxY, { width: 90, align: 'right' });
+        doc.text(`GST (${invoice.taxRate}% on PF):`, 370, taxY, { width: 90, align: 'right' });
         doc.text(`₹${invoice.taxAmount.toFixed(2)}`, 460, taxY, { width: 90, align: 'right' });
 
         if (invoice.discount > 0) {

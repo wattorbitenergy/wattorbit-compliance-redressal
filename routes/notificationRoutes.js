@@ -36,20 +36,27 @@ const verifyToken = (req, res, next) => {
 };
 
 /* POST: Subscribe to Topic */
-router.post('/subscribe', async (req, res) => {
+router.post('/subscribe', verifyToken, async (req, res) => {
     const { token, role } = req.body;
     if (!token) return res.status(400).json({ message: 'Token required' });
 
     try {
+        // 🛡️ SECURITY FIX: Verify the role matches the authenticated user's role
+        // This prevents users from subscribing to 'admin' or 'technician' topics maliciously.
+        if (role && role !== req.user.role && req.user.role !== 'admin') {
+            return res.status(403).json({ message: 'Unauthorized topic subscription' });
+        }
+
         // Subscribe to 'all' for broadcasts
         await admin.messaging().subscribeToTopic(token, 'all');
 
-        // Subscribe to role-specific topic (if role exists)
-        if (role) {
-            await admin.messaging().subscribeToTopic(token, role);
+        // Subscribe to role-specific topic (if role exists and verified)
+        const targetTopic = role || req.user.role;
+        if (targetTopic) {
+            await admin.messaging().subscribeToTopic(token, targetTopic);
         }
 
-        res.status(200).json({ message: 'Subscribed to topics' });
+        res.status(200).json({ message: `Subscribed to topics (including ${targetTopic})` });
     } catch (err) {
         console.error('Topic Subscription Error:', err);
         res.status(500).json({ message: 'Subscription failed' });

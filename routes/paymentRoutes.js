@@ -25,10 +25,9 @@ const verifyToken = (req, res, next) => {
 };
 
 // Initialize Razorpay
-// Note: These should be in the .env file
 const razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID || 'your_key_id',
-    key_secret: process.env.RAZORPAY_KEY_SECRET || 'your_key_secret'
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET
 });
 
 // POST: Create Razorpay Order
@@ -92,7 +91,7 @@ router.post('/verify-payment', verifyToken, async (req, res) => {
         const body = razorpay_order_id + "|" + razorpay_payment_id;
 
         const expectedSignature = crypto
-            .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'your_key_secret')
+            .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
             .update(body.toString())
             .digest('hex');
 

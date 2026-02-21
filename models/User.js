@@ -65,4 +65,18 @@ userSchema.methods.comparePassword = async function (enteredPassword) {
     return bcrypt.compare(enteredPassword, this.password);
 };
 
+/* =====================
+   TRANSFORM TO JSON (Security)
+   ===================== */
+userSchema.set('toJSON', {
+    transform: (doc, ret) => {
+        delete ret.password;
+        delete ret.fcmToken;
+        delete ret.resetPasswordToken;
+        delete ret.resetPasswordExpires;
+        delete ret.__v;
+        return ret;
+    }
+});
+
 module.exports = mongoose.model('User', userSchema);
