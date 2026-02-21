@@ -33,6 +33,19 @@ const promotionSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
+    backgroundColor: {
+        type: String,
+        default: '#3b82f6' // Default blue
+    },
+    textColor: {
+        type: String,
+        default: '#ffffff' // Default white
+    },
+    page: {
+        type: String,
+        enum: ['home', 'track', 'all'],
+        default: 'all'
+    },
     createdAt: {
         type: Date,
         default: Date.now
