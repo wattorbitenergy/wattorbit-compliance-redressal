@@ -285,4 +285,20 @@ router.patch('/approve/:id', verifyToken, async (req, res) => {
   }
 });
 
+/* =========================
+   PUBLIC ORGANISATIONS
+   Used by: Registration flow
+========================= */
+router.get('/public-organisations', async (req, res) => {
+  try {
+    const organisations = await User.find({ role: 'organisation' })
+      .select('name city _id')
+      .sort({ name: 1 });
+    res.json(organisations);
+  } catch (err) {
+    console.error('Fetch public organisations error:', err);
+    res.status(500).json({ message: 'Failed to fetch organisations' });
+  }
+});
+
 module.exports = router;
