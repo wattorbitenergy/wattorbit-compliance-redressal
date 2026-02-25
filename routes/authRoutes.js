@@ -89,6 +89,41 @@ router.post('/register', async (req, res) => {
 });
 
 /* =========================
+   CHECK USER (Identity First)
+========================= */
+router.post('/check-user', async (req, res) => {
+  try {
+    const { identity } = req.body;
+    if (!identity) {
+      return res.status(400).json({ message: 'Identity (phone or email) is required' });
+    }
+
+    const identifier = identity.toLowerCase().trim();
+    const user = await User.findOne({
+      $or: [
+        { email: identifier },
+        { phone: identity.trim() },
+        { username: identifier }
+      ]
+    });
+
+    if (user) {
+      return res.json({
+        exists: true,
+        phone: user.phone,
+        email: user.email,
+        name: user.name,
+        role: user.role
+      });
+    }
+
+    res.json({ exists: false });
+  } catch (error) {
+    res.status(500).json({ message: 'Error checking user' });
+  }
+});
+
+/* =========================
    LOGIN
 ========================= */
 router.post('/login', authLimiter, async (req, res) => {
