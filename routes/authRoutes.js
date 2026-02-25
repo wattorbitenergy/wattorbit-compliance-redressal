@@ -166,6 +166,87 @@ router.post('/login', authLimiter, async (req, res) => {
 });
 
 /* =========================
+   SEND OTP (Login)
+========================= */
+router.post('/send-otp', authLimiter, async (req, res) => {
+  try {
+    const { identity } = req.body;
+    const identifier = identity.toLowerCase().trim();
+    const user = await User.findOne({
+      $or: [{ email: identifier }, { phone: identity.trim() }, { username: identifier }]
+    });
+
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user.email) return res.status(400).json({ message: 'No email registered for this user' });
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    user.loginOTP = otp;
+    user.loginOTPExpires = Date.now() + 600000; // 10 minutes
+    await user.save();
+
+    await mailer.sendMail({
+      to: user.email,
+      subject: 'WattOrbit Login OTP',
+      html: `
+        <h2>Login Verification</h2>
+        <p>Your OTP for login is: <strong>${otp}</strong></p>
+        <p>This code expires in 10 minutes.</p>
+      `
+    });
+
+    res.json({ message: 'OTP sent to registered email' });
+  } catch (error) {
+    console.error('OTP Send Error:', error);
+    res.status(500).json({ message: 'Failed to send OTP' });
+  }
+});
+
+/* =========================
+   OTP LOGIN VERIFY
+========================= */
+router.post('/otp-login', authLimiter, async (req, res) => {
+  try {
+    const { identity, otp, fcmToken } = req.body;
+    const identifier = identity.toLowerCase().trim();
+    const user = await User.findOne({
+      $or: [{ email: identifier }, { phone: identity.trim() }, { username: identifier }]
+    });
+
+    if (!user || user.loginOTP !== otp || user.loginOTPExpires < Date.now()) {
+      return res.status(401).json({ message: 'Invalid or expired OTP' });
+    }
+
+    if (!user.isApproved && user.role !== 'admin') {
+      return res.status(403).json({ message: 'Pending approval' });
+    }
+
+    // Clear OTP after use
+    user.loginOTP = undefined;
+    user.loginOTPExpires = undefined;
+    if (fcmToken) user.fcmToken = fcmToken;
+    await user.save();
+
+    const token = jwt.sign(
+      {
+        id: user._id,
+        role: user.role,
+        email: user.email,
+        phone: user.phone,
+        organisationId: user.organisationId,
+        name: user.name
+      },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.json({ token, user });
+  } catch (error) {
+    res.status(500).json({ message: 'OTP Login failed' });
+  }
+});
+
+/* =========================
    FORGOT PASSWORD (MAILJET)
 ========================= */
 router.post('/forgot-password', authLimiter, async (req, res) => {

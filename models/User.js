@@ -45,7 +45,9 @@ const userSchema = new mongoose.Schema({
     },
     fcmToken: String,
     resetPasswordToken: String,
-    resetPasswordExpires: Date
+    resetPasswordExpires: Date,
+    loginOTP: String,
+    loginOTPExpires: Date
 }, { timestamps: true });
 
 /* =====================
@@ -74,6 +76,8 @@ userSchema.set('toJSON', {
         delete ret.fcmToken;
         delete ret.resetPasswordToken;
         delete ret.resetPasswordExpires;
+        delete ret.loginOTP;
+        delete ret.loginOTPExpires;
         delete ret.__v;
         return ret;
     }
