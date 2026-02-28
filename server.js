@@ -198,6 +198,7 @@ app.use('/api/invoices', require('./routes/invoiceRoutes'));
 app.use('/api/feedback', require('./routes/feedbackRoutes'));
 app.use('/api/automation', require('./routes/automationRoutes'));
 app.use('/api/promotions', require('./routes/promotionRoutes'));
+app.use('/api/categories', require('./routes/categoryRoutes'));
 
 // Production Security: Only enable test routes in non-prod
 if (process.env.NODE_ENV !== 'production') {

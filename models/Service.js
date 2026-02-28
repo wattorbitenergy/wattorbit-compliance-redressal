@@ -17,17 +17,7 @@ const serviceSchema = new mongoose.Schema({
     },
     category: {
         type: String,
-        required: true,
-        enum: [
-            'Home Appliances',
-            'Appliances',
-            'Electrical',
-            'Plumbing',
-            'Cleaning',
-            'Repair & Maintenance',
-            'Installation',
-            'Other'
-        ]
+        required: true
     },
     subcategory: {
         type: String,
