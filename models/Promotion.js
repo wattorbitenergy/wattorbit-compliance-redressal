@@ -3,12 +3,21 @@ const mongoose = require('mongoose');
 const promotionSchema = new mongoose.Schema({
     title: {
         type: String,
-        required: true,
         trim: true
     },
     content: {
         type: String,
         trim: true
+    },
+    location: {
+        type: String,
+        default: 'all',
+        trim: true
+    },
+    layout: {
+        type: String,
+        enum: ['standard', 'horizontal', 'parallel'],
+        default: 'standard'
     },
     mediaUrl: {
         type: String,
