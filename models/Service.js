@@ -26,6 +26,10 @@ const serviceSchema = new mongoose.Schema({
     images: [{
         type: String // URLs or base64 strings
     }],
+    icon: {
+        type: String, // URL for the dynamic service icon
+        trim: true
+    },
     basePrice: {
         type: Number,
         required: true,
@@ -39,6 +43,10 @@ const serviceSchema = new mongoose.Schema({
     isActive: {
         type: Boolean,
         default: true
+    },
+    isCurated: {
+        type: Boolean,
+        default: false
     },
     tags: [{
         type: String,
@@ -61,6 +69,7 @@ const serviceSchema = new mongoose.Schema({
 // Index for search and filtering
 serviceSchema.index({ name: 'text', description: 'text', tags: 'text' });
 serviceSchema.index({ category: 1, isActive: 1 });
+serviceSchema.index({ isCurated: 1, isActive: 1 });
 serviceSchema.index({ availableCities: 1 });
 
 module.exports = mongoose.model('Service', serviceSchema);

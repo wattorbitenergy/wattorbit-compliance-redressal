@@ -36,7 +36,7 @@ const isAdmin = (req, res, next) => {
 // GET: List all active services with filters
 router.get('/', async (req, res) => {
     try {
-        const { category, city, search, subcategory } = req.query;
+        const { category, city, search, subcategory, isCurated } = req.query;
 
         let query = { isActive: true };
 
@@ -54,6 +54,10 @@ router.get('/', async (req, res) => {
 
         if (search) {
             query.$text = { $search: search };
+        }
+
+        if (isCurated !== undefined) {
+            query.isCurated = isCurated === 'true';
         }
 
         const services = await Service.find(query)
@@ -118,6 +122,7 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
             category,
             subcategory,
             images,
+            icon,
             basePrice,
             duration,
             tags,
@@ -141,6 +146,7 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
             category,
             subcategory,
             images: images || [],
+            icon: icon || '',
             basePrice,
             duration,
             tags: tags || [],
@@ -170,6 +176,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
             category,
             subcategory,
             images,
+            icon,
             basePrice,
             duration,
             tags,
@@ -185,6 +192,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
                 category,
                 subcategory,
                 images,
+                icon,
                 basePrice,
                 duration,
                 tags,
@@ -224,6 +232,28 @@ router.patch('/:id/toggle', verifyToken, isAdmin, async (req, res) => {
     } catch (err) {
         console.error('Error toggling service status:', err);
         res.status(500).json({ message: 'Failed to toggle service status' });
+    }
+});
+
+// PATCH: Toggle service curation status (admin only)
+router.patch('/:id/curate', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const service = await Service.findById(req.params.id);
+
+        if (!service) {
+            return res.status(404).json({ message: 'Service not found' });
+        }
+
+        service.isCurated = !service.isCurated;
+        await service.save();
+
+        res.json({
+            message: `Service ${service.isCurated ? 'curated' : 'removed from curations'} successfully`,
+            service
+        });
+    } catch (err) {
+        console.error('Error toggling service curation status:', err);
+        res.status(500).json({ message: 'Failed to toggle service curation status' });
     }
 });
 

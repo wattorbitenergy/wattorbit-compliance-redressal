@@ -78,7 +78,8 @@ router.post('/register', async (req, res) => {
       role: safeRole,
       isApproved: autoApprove,
       organisationId,
-      specialization: specialization || req.body.specialistType || 'Electrician'
+      specialization: specialization || req.body.specialistType || 'Electrician',
+      walletBalance: 100 // Welcome Bonus
     });
 
     await user.save();
@@ -414,6 +415,83 @@ router.get('/public-organisations', async (req, res) => {
   } catch (err) {
     console.error('Fetch public organisations error:', err);
     res.status(500).json({ message: 'Failed to fetch organisations' });
+  }
+});
+
+/* =========================
+   UPDATE PAYMENT METHOD
+========================= */
+router.patch('/update-payment-method', verifyToken, async (req, res) => {
+  try {
+    const { defaultPaymentMethod } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.defaultPaymentMethod = defaultPaymentMethod;
+    await user.save();
+
+    res.json({ message: 'Payment method updated', defaultPaymentMethod: user.defaultPaymentMethod });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to update payment method' });
+  }
+});
+
+/* =========================
+   UPGRADE PLUS MEMBERSHIP
+========================= */
+router.post('/upgrade-membership', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.isPlusMember = true;
+    await user.save();
+
+    res.json({ message: 'Successfully upgraded to Plus Membership!', isPlusMember: true });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to upgrade membership' });
+  }
+});
+
+/* =========================
+   ADMIN: ADJUST USER POINTS
+========================= */
+router.patch('/admin/adjust-points', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    const { userId, amount } = req.body;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.walletBalance = Math.max(0, (user.walletBalance || 0) + amount);
+    await user.save();
+
+    res.json({ message: 'Points adjusted', walletBalance: user.walletBalance });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to adjust points' });
+  }
+});
+
+/* =========================
+   ADMIN: TOGGLE MEMBERSHIP
+========================= */
+router.patch('/admin/toggle-membership', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    const { userId, isPlusMember } = req.body;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.isPlusMember = isPlusMember;
+    await user.save();
+
+    res.json({ message: 'Membership updated', isPlusMember: user.isPlusMember });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to toggle membership' });
   }
 });
 

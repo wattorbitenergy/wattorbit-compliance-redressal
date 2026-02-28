@@ -109,6 +109,11 @@ const bookingSchema = new mongoose.Schema({
         default: 0,
         min: 0
     },
+    pointsUsed: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
     totalAmount: {
         type: Number,
         required: true,
@@ -141,7 +146,7 @@ const bookingSchema = new mongoose.Schema({
     },
     paymentMethod: {
         type: String,
-        enum: ['COD', 'Online'],
+        enum: ['COD', 'Online', 'Wallet', 'Mixed'],
         default: 'COD'
     },
     razorpayOrderId: {

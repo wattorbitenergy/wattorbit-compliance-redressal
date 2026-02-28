@@ -47,7 +47,20 @@ const userSchema = new mongoose.Schema({
     resetPasswordToken: String,
     resetPasswordExpires: Date,
     loginOTP: String,
-    loginOTPExpires: Date
+    loginOTPExpires: Date,
+    walletBalance: {
+        type: Number,
+        default: 0
+    },
+    isPlusMember: {
+        type: Boolean,
+        default: false
+    },
+    defaultPaymentMethod: {
+        type: String,
+        enum: ['COD', 'Online', 'Wallet', ''],
+        default: 'COD'
+    }
 }, { timestamps: true });
 
 /* =====================

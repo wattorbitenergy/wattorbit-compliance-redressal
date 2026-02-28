@@ -101,6 +101,20 @@ router.post('/', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Address not found or does not belong to user' });
         }
 
+        // Fetch user to verify wallet and get organisationId
+        const user = await User.findById(req.user.id);
+        const organisationId = user?.organisationId || null;
+        let pointsToUse = 0;
+
+        // Check wallet balance
+        if (req.body.pointsUsed && req.body.pointsUsed > 0) {
+            const requestedPoints = Number(req.body.pointsUsed);
+            if (user.walletBalance < requestedPoints) {
+                return res.status(400).json({ message: 'Insufficient WattOrbit Cash Points' });
+            }
+            pointsToUse = requestedPoints;
+        }
+
         // Calculate pricing
         const technicianCharges = servicePackage.technicianCharges || 0;
         const platformFees = servicePackage.platformFees || 0;
@@ -130,11 +144,7 @@ router.post('/', verifyToken, async (req, res) => {
             }
         }
 
-        const totalAmount = basePrice + taxes - discount;
-
-        // Fetch user to get organisationId
-        const user = await User.findById(req.user.id);
-        const organisationId = user?.organisationId || null;
+        const totalAmount = Math.max(0, basePrice + taxes - discount - pointsToUse);
 
         // Generate bookingId ONLY for COD. For Online, it's generated after payment.
         let bookingId = undefined;
@@ -159,6 +169,7 @@ router.post('/', verifyToken, async (req, res) => {
             couponId,
             couponCode: couponCode ? couponCode.toUpperCase() : undefined,
             discount,
+            pointsUsed: pointsToUse,
             totalAmount,
             paymentMethod: paymentMethod || 'COD',
             status: 'Pending',
@@ -171,6 +182,15 @@ router.post('/', verifyToken, async (req, res) => {
         });
 
         await booking.save();
+
+        // Deduct points from wallet and update default payment method
+        if (pointsToUse > 0) {
+            user.walletBalance -= pointsToUse;
+        }
+        if (paymentMethod && ['COD', 'Online', 'Wallet'].includes(paymentMethod)) {
+            user.defaultPaymentMethod = paymentMethod;
+        }
+        await user.save();
 
         // Trigger automation hook
         await triggerAutomation('booking.created', booking);
