@@ -78,7 +78,7 @@ router.post('/register', async (req, res) => {
       role: safeRole,
       isApproved: autoApprove,
       organisationId,
-      specialization: specialization || req.body.specialistType || 'Electrician',
+      specialization: safeRole === 'technician' ? (specialization || req.body.specialistType || 'Electrician') : '',
       walletBalance: 100 // Welcome Bonus
     });
 
