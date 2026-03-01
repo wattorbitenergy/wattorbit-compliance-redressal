@@ -32,7 +32,7 @@ const isAdmin = (req, res, next) => {
 // @access  Public
 router.get('/', async (req, res) => {
     try {
-        const promotions = await Promotion.find({ isActive: true });
+        const promotions = await Promotion.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
         res.json(promotions);
     } catch (err) {
         res.status(500).json({ message: err.message });
@@ -44,7 +44,7 @@ router.get('/', async (req, res) => {
 // @access  Private/Admin
 router.get('/admin', verifyToken, isAdmin, async (req, res) => {
     try {
-        const promotions = await Promotion.find().sort({ createdAt: -1 });
+        const promotions = await Promotion.find().sort({ order: 1, createdAt: -1 });
         res.json(promotions);
     } catch (err) {
         res.status(500).json({ message: err.message });

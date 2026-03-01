@@ -30,9 +30,13 @@ const promotionSchema = new mongoose.Schema({
     },
     position: {
         type: String,
-        enum: ['top', 'bottom'],
+        enum: ['top', 'bottom', 'above_curation', 'below_curation'],
         default: 'top',
         required: true
+    },
+    targetServiceId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Service'
     },
     isActive: {
         type: Boolean,
@@ -54,6 +58,10 @@ const promotionSchema = new mongoose.Schema({
         type: String,
         enum: ['home', 'track', 'all'],
         default: 'all'
+    },
+    order: {
+        type: Number,
+        default: 0
     },
     createdAt: {
         type: Date,

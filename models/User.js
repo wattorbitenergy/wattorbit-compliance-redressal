@@ -60,6 +60,15 @@ const userSchema = new mongoose.Schema({
         type: String,
         enum: ['COD', 'Online', 'Wallet', ''],
         default: 'COD'
+    },
+    referralCode: {
+        type: String,
+        unique: true,
+        sparse: true
+    },
+    referredBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
     }
 }, { timestamps: true });
 

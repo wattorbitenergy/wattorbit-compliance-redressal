@@ -46,7 +46,7 @@ const verifyToken = (req, res, next) => {
 ========================= */
 router.post('/register', async (req, res) => {
   try {
-    let { username, password, city, phone, email, role, name, organisationId, specialization } = req.body;
+    let { username, password, city, phone, email, role, name, organisationId, specialization, referralCodeInput } = req.body;
 
     // Auto-generate username from phone if not provided
     if (!username && phone) {
@@ -81,6 +81,27 @@ router.post('/register', async (req, res) => {
       specialization: safeRole === 'technician' ? (specialization || req.body.specialistType || 'Electrician') : '',
       walletBalance: 100 // Welcome Bonus
     });
+
+    // Handle Referral
+    if (referralCodeInput && safeRole === 'user') {
+      const referrer = await User.findOne({ referralCode: referralCodeInput.toUpperCase().trim() });
+      if (referrer) {
+        user.referredBy = referrer._id;
+        user.walletBalance += 50; // Extra bonus for referee
+        referrer.walletBalance += 100; // Bonus for referrer
+        await referrer.save();
+      }
+    }
+
+    // Generate unique referral code for new user
+    let newReferralCode;
+    let isUnique = false;
+    while (!isUnique) {
+      newReferralCode = crypto.randomBytes(3).toString('hex').toUpperCase();
+      const existing = await User.findOne({ referralCode: newReferralCode });
+      if (!existing) isUnique = true;
+    }
+    user.referralCode = newReferralCode;
 
     await user.save();
     res.status(201).json({ message: autoApprove ? 'Registered successfully' : 'Awaiting approval' });
@@ -492,6 +513,26 @@ router.patch('/admin/toggle-membership', verifyToken, async (req, res) => {
     res.json({ message: 'Membership updated', isPlusMember: user.isPlusMember });
   } catch (err) {
     res.status(500).json({ message: 'Failed to toggle membership' });
+  }
+});
+
+/* =========================
+   GET REFERRAL INFO
+========================= */
+router.get('/referral-info', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('referralCode walletBalance');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const referralCount = await User.countDocuments({ referredBy: user._id });
+
+    res.json({
+      referralCode: user.referralCode,
+      walletBalance: user.walletBalance,
+      referralCount
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to fetch referral info' });
   }
 });
 
