@@ -278,7 +278,7 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
       $or: [{ username }, { email: username }, { phone: username }]
     });
 
-    if (!user) return res.json({ message: 'If user exists, email sent.' });
+    if (!user) return res.status(404).json({ message: 'This user is not registered' });
 
     const resetToken = crypto.randomBytes(20).toString('hex');
     user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
@@ -300,7 +300,7 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
       });
     }
 
-    res.json({ message: 'Reset instructions sent.' });
+    res.json({ message: 'Password reset link sent to registered mail' });
   } catch {
     res.status(500).json({ message: 'Reset failed' });
   }
