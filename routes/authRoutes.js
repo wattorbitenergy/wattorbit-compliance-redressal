@@ -486,12 +486,19 @@ router.patch('/admin/adjust-points', verifyToken, async (req, res) => {
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    user.walletBalance = Math.max(0, (user.walletBalance || 0) + amount);
+    // Explicitly parse and validate amount
+    const adjustAmount = Number(amount);
+    if (isNaN(adjustAmount)) {
+      return res.status(400).json({ message: 'Invalid amount provided' });
+    }
+
+    user.walletBalance = Math.max(0, (user.walletBalance || 0) + adjustAmount);
     await user.save();
 
     res.json({ message: 'Points adjusted', walletBalance: user.walletBalance });
   } catch (err) {
-    res.status(500).json({ message: 'Failed to adjust points' });
+    console.error('❌ Point Adjustment Error:', err);
+    res.status(500).json({ message: 'Failed to adjust points', details: err.message });
   }
 });
 
