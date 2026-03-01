@@ -38,6 +38,10 @@ const promotionSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Service'
     },
+    targetPackageId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'ServicePackage'
+    },
     isActive: {
         type: Boolean,
         default: true

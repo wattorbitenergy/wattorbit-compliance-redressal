@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const ReferralRule = require('../models/ReferralRule');
 const rateLimit = require('express-rate-limit');
 const User = require('../models/User');
 const mailer = require('./mailer');   // 🔥 Mailjet API (SMTP-free)
@@ -83,13 +84,34 @@ router.post('/register', async (req, res) => {
     });
 
     // Handle Referral
-    if (referralCodeInput && safeRole === 'user') {
-      const referrer = await User.findOne({ referralCode: referralCodeInput.toUpperCase().trim() });
-      if (referrer) {
-        user.referredBy = referrer._id;
-        user.walletBalance += 50; // Extra bonus for referee
-        referrer.walletBalance += 100; // Bonus for referrer
-        await referrer.save();
+    if (referralCodeInput && safeRole !== 'admin') {
+      const code = referralCodeInput.toUpperCase().trim();
+
+      // Special Promotional Code: EARN50
+      if (code === 'EARN50') {
+        user.walletBalance += 50;
+      } else {
+        const referrer = await User.findOne({ referralCode: code });
+        if (referrer) {
+          user.referredBy = referrer._id;
+
+          // Fetch dynamic rule based on referee's role and specialization
+          const rule = await ReferralRule.findOne({
+            targetRole: safeRole,
+            targetSpecialization: user.specialization || '',
+            isActive: true
+          });
+
+          if (rule) {
+            user.walletBalance += (rule.refereeReward || 0);
+            referrer.walletBalance += (rule.referrerReward || 0);
+          } else {
+            // Fallback to legacy defaults
+            user.walletBalance += 50;
+            referrer.walletBalance += 100;
+          }
+          await referrer.save();
+        }
       }
     }
 
@@ -540,6 +562,19 @@ router.get('/referral-info', verifyToken, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ message: 'Failed to fetch referral info' });
+  }
+});
+
+/* =========================
+   GET PROFILE BALANCE (Lightweight Sync)
+   ========================= */
+router.get('/profile-balance/:userId', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId).select('walletBalance isPlusMember');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: 'Sync failed' });
   }
 });
 
