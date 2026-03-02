@@ -97,6 +97,13 @@ app.use(
 app.use(express.json());
 
 /* =====================
+   STATIC ASSETS
+===================== */
+// Serve images from the frontend public folder for universal access (web/mobile)
+app.use('/images', express.static(path.join(__dirname, '../frontend/public/images')));
+app.use('/assets', express.static(path.join(__dirname, 'assets')));
+
+/* =====================
    REQUEST LOGGER
 ===================== */
 app.use((req, res, next) => {
