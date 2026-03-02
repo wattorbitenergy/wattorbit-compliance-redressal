@@ -181,17 +181,23 @@ router.get('/path-check', verifyToken, async (req, res) => {
 
     try {
         const root = path.join(__dirname, '../..');
-        if (fs.existsSync(root)) {
-            results.root_content = fs.readdirSync(root);
-        }
+        results.root_content = fs.existsSync(root) ? fs.readdirSync(root) : 'Not found';
+
+        const cwd = process.cwd();
+        results.cwd_content = fs.existsSync(cwd) ? fs.readdirSync(cwd) : 'Not found';
+
+        const parentCwd = path.join(cwd, '..');
+        results.parent_cwd_content = fs.existsSync(parentCwd) ? fs.readdirSync(parentCwd) : 'Not found';
 
         // Scan for images anywhere relative to root
         const potential = [
             path.join(root, 'frontend/public/images'),
             path.join(root, 'public/images'),
-            path.join(process.cwd(), '../frontend/public/images'),
-            path.join(process.cwd(), 'frontend/public/images'),
-            '/opt/render/project/src/frontend/public/images'
+            path.join(cwd, '../frontend/public/images'),
+            path.join(cwd, 'frontend/public/images'),
+            path.join(cwd, 'public/images'),
+            '/opt/render/project/src/frontend/public/images',
+            '/opt/render/project/src/public/images'
         ];
 
         potential.forEach(p => {
@@ -216,48 +222,61 @@ router.get('/images', verifyToken, async (req, res) => {
     const fs = require('fs');
     const path = require('path');
 
-    // Potential locations for the images folder
-    const relativePaths = [
-        '../../frontend/public/images',
-        '../frontend/public/images',
-        '../../../frontend/public/images',
-        '../../public/images',
-        '../public/images',
-        './frontend/public/images' // if cwd is root
+    // 1. Define common locations
+    const searchDirs = [
+        path.join(__dirname, '../../frontend/public/images'),
+        path.join(process.cwd(), 'frontend/public/images'),
+        path.join(process.cwd(), 'public/images'),
+        path.join(process.cwd(), '../frontend/public/images'),
+        path.join(__dirname, '../public/images'),
+        '/opt/render/project/src/frontend/public/images'
     ];
 
-    let imagesDir = null;
-    for (const rel of relativePaths) {
-        const p = path.join(__dirname, rel);
-        if (fs.existsSync(p)) {
-            imagesDir = p;
-            break;
-        }
-    }
+    let imagesDir = searchDirs.find(d => fs.existsSync(d) && fs.lstatSync(d).isDirectory());
 
-    // Fallback to searching from CWD
+    // 2. Aggressive search if still not found
     if (!imagesDir) {
-        for (const rel of relativePaths) {
-            const p = path.join(process.cwd(), rel.replace(/^\.\.\//, ''));
-            if (fs.existsSync(p)) {
-                imagesDir = p;
-                break;
-            }
-        }
+        console.log('Admin Images Debug - Starting Aggressive Search');
+        const root = process.cwd();
+        const findInDir = (currentDir, depth = 0) => {
+            if (depth > 3) return null;
+            try {
+                const items = fs.readdirSync(currentDir);
+                for (const item of items) {
+                    if (['node_modules', '.git', 'dist', 'build'].includes(item)) continue;
+                    const fullPath = path.join(currentDir, item);
+                    if (fs.lstatSync(fullPath).isDirectory()) {
+                        if (item === 'images') return fullPath;
+                        const found = findInDir(fullPath, depth + 1);
+                        if (found) return found;
+                    }
+                }
+            } catch (e) { }
+            return null;
+        };
+        imagesDir = findInDir(root) || findInDir(path.join(root, '..'));
     }
 
     try {
         if (!imagesDir) {
-            console.error('Admin Images Debug - Directory NOT found in any known locations.');
-            console.log('Admin Images Debug - CWD:', process.cwd());
-            console.log('Admin Images Debug - __dirname:', __dirname);
-            return res.json([]);
+            console.error('Admin Images Debug - FAILED to find images folder.');
+            console.log('CWD:', process.cwd());
+            console.log('__dirname:', __dirname);
+            // Return diagnostic info to the frontend
+            return res.json({
+                error: 'Folder not found',
+                debug: {
+                    cwd: process.cwd(),
+                    dirname: __dirname,
+                    cwd_files: fs.readdirSync(process.cwd()),
+                    parent_files: fs.existsSync(path.join(process.cwd(), '..')) ? fs.readdirSync(path.join(process.cwd(), '..')) : 'Not found'
+                }
+            });
         }
 
-        console.log('Admin Images Debug - Found Directory:', imagesDir);
+        console.log('Admin Images Debug - Success! Found:', imagesDir);
         const files = fs.readdirSync(imagesDir);
-        console.log('Admin Images Debug - Files Found:', files.length);
-        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp'];
+        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.ico'];
 
         const images = files
             .filter(file => imageExtensions.includes(path.extname(file).toLowerCase()))
