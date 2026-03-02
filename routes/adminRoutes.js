@@ -164,6 +164,47 @@ router.post('/config', verifyToken, async (req, res) => {
 });
 
 /* =================================================================
+   GET: DIAGNOSTIC (ADMIN ONLY)
+   ================================================================= */
+router.get('/path-check', verifyToken, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin access required' });
+
+    const fs = require('fs');
+    const path = require('path');
+
+    const results = {
+        cwd: process.cwd(),
+        dirname: __dirname,
+        root_dir: path.join(__dirname, '../..'),
+        found_folders: []
+    };
+
+    try {
+        const root = path.join(__dirname, '../..');
+        if (fs.existsSync(root)) {
+            results.root_content = fs.readdirSync(root);
+        }
+
+        // Scan for images anywhere relative to root
+        const potential = [
+            path.join(root, 'frontend/public/images'),
+            path.join(root, 'public/images'),
+            path.join(process.cwd(), '../frontend/public/images'),
+            path.join(process.cwd(), 'frontend/public/images'),
+            '/opt/render/project/src/frontend/public/images'
+        ];
+
+        potential.forEach(p => {
+            results.found_folders.push({ path: p, exists: fs.existsSync(p) });
+        });
+
+        res.json(results);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+/* =================================================================
    GET: LIST ALL UPLOADED IMAGES (ADMIN ONLY)
    Reads frontend/public/images and returns filenames
    ================================================================= */
@@ -174,15 +215,46 @@ router.get('/images', verifyToken, async (req, res) => {
 
     const fs = require('fs');
     const path = require('path');
-    const imagesDir = path.join(__dirname, '../../frontend/public/images');
+
+    // Potential locations for the images folder
+    const relativePaths = [
+        '../../frontend/public/images',
+        '../frontend/public/images',
+        '../../../frontend/public/images',
+        '../../public/images',
+        '../public/images',
+        './frontend/public/images' // if cwd is root
+    ];
+
+    let imagesDir = null;
+    for (const rel of relativePaths) {
+        const p = path.join(__dirname, rel);
+        if (fs.existsSync(p)) {
+            imagesDir = p;
+            break;
+        }
+    }
+
+    // Fallback to searching from CWD
+    if (!imagesDir) {
+        for (const rel of relativePaths) {
+            const p = path.join(process.cwd(), rel.replace(/^\.\.\//, ''));
+            if (fs.existsSync(p)) {
+                imagesDir = p;
+                break;
+            }
+        }
+    }
 
     try {
-        console.log('Admin Images Debug - Directory:', imagesDir);
-        if (!fs.existsSync(imagesDir)) {
-            console.warn('Admin Images Debug - Directory does NOT exist');
+        if (!imagesDir) {
+            console.error('Admin Images Debug - Directory NOT found in any known locations.');
+            console.log('Admin Images Debug - CWD:', process.cwd());
+            console.log('Admin Images Debug - __dirname:', __dirname);
             return res.json([]);
         }
 
+        console.log('Admin Images Debug - Found Directory:', imagesDir);
         const files = fs.readdirSync(imagesDir);
         console.log('Admin Images Debug - Files Found:', files.length);
         const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp'];

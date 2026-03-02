@@ -99,8 +99,29 @@ app.use(express.json());
 /* =====================
    STATIC ASSETS
 ===================== */
-// Serve images from the frontend public folder for universal access (web/mobile)
-app.use('/images', express.static(path.join(__dirname, '../frontend/public/images')));
+// Search for the images folder in common locations
+const potentialImagePaths = [
+  path.join(__dirname, '../frontend/public/images'),
+  path.join(__dirname, 'frontend/public/images'),
+  path.join(process.cwd(), 'frontend/public/images'),
+  path.join(process.cwd(), 'public/images')
+];
+
+let finalImagesDir = null;
+for (const p of potentialImagePaths) {
+  if (require('fs').existsSync(p)) {
+    finalImagesDir = p;
+    break;
+  }
+}
+
+if (finalImagesDir) {
+  console.log('✅ Serving images from:', finalImagesDir);
+  app.use('/images', express.static(finalImagesDir));
+} else {
+  console.warn('⚠️ Static images directory NOT found.');
+}
+
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
 /* =====================
