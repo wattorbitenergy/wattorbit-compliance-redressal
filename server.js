@@ -100,26 +100,20 @@ app.use(express.json());
    STATIC ASSETS
 ===================== */
 // Search for the images folder in common locations
-const potentialImagePaths = [
-  path.join(__dirname, '../frontend/public/images'),
-  path.join(__dirname, 'frontend/public/images'),
-  path.join(process.cwd(), 'frontend/public/images'),
-  path.join(process.cwd(), 'public/images')
-];
-
-let finalImagesDir = null;
-for (const p of potentialImagePaths) {
-  if (require('fs').existsSync(p)) {
-    finalImagesDir = p;
-    break;
-  }
-}
-
-if (finalImagesDir) {
-  console.log('✅ Serving images from:', finalImagesDir);
-  app.use('/images', express.static(finalImagesDir));
+// Serve images from the backend public folder (preferred for deployment)
+const imagesDir = path.join(__dirname, 'public/images');
+if (require('fs').existsSync(imagesDir)) {
+  console.log('✅ Serving images from:', imagesDir);
+  app.use('/images', express.static(imagesDir));
 } else {
-  console.warn('⚠️ Static images directory NOT found.');
+  // Fallback to legacy frontend path (local dev)
+  const legacyDir = path.join(__dirname, '../frontend/public/images');
+  if (require('fs').existsSync(legacyDir)) {
+    console.log('✅ Serving images from legacy path:', legacyDir);
+    app.use('/images', express.static(legacyDir));
+  } else {
+    console.warn('⚠️ Static images directory NOT found.');
+  }
 }
 
 app.use('/assets', express.static(path.join(__dirname, 'assets')));

@@ -164,53 +164,6 @@ router.post('/config', verifyToken, async (req, res) => {
 });
 
 /* =================================================================
-   GET: DIAGNOSTIC (ADMIN ONLY)
-   ================================================================= */
-router.get('/path-check', verifyToken, async (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin access required' });
-
-    const fs = require('fs');
-    const path = require('path');
-
-    const results = {
-        cwd: process.cwd(),
-        dirname: __dirname,
-        root_dir: path.join(__dirname, '../..'),
-        found_folders: []
-    };
-
-    try {
-        const root = path.join(__dirname, '../..');
-        results.root_content = fs.existsSync(root) ? fs.readdirSync(root) : 'Not found';
-
-        const cwd = process.cwd();
-        results.cwd_content = fs.existsSync(cwd) ? fs.readdirSync(cwd) : 'Not found';
-
-        const parentCwd = path.join(cwd, '..');
-        results.parent_cwd_content = fs.existsSync(parentCwd) ? fs.readdirSync(parentCwd) : 'Not found';
-
-        // Scan for images anywhere relative to root
-        const potential = [
-            path.join(root, 'frontend/public/images'),
-            path.join(root, 'public/images'),
-            path.join(cwd, '../frontend/public/images'),
-            path.join(cwd, 'frontend/public/images'),
-            path.join(cwd, 'public/images'),
-            '/opt/render/project/src/frontend/public/images',
-            '/opt/render/project/src/public/images'
-        ];
-
-        potential.forEach(p => {
-            results.found_folders.push({ path: p, exists: fs.existsSync(p) });
-        });
-
-        res.json(results);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-/* =================================================================
    GET: LIST ALL UPLOADED IMAGES (ADMIN ONLY)
    Reads frontend/public/images and returns filenames
    ================================================================= */
@@ -222,59 +175,22 @@ router.get('/images', verifyToken, async (req, res) => {
     const fs = require('fs');
     const path = require('path');
 
-    // 1. Define common locations
-    const searchDirs = [
-        path.join(__dirname, '../../frontend/public/images'),
-        path.join(process.cwd(), 'frontend/public/images'),
-        path.join(process.cwd(), 'public/images'),
-        path.join(process.cwd(), '../frontend/public/images'),
+    // Priority: 1. backend/public/images, 2. frontend/public/images
+    const potentialPaths = [
         path.join(__dirname, '../public/images'),
-        '/opt/render/project/src/frontend/public/images'
+        path.join(__dirname, '../../frontend/public/images'),
+        path.join(process.cwd(), 'public/images'),
+        path.join(process.cwd(), 'frontend/public/images')
     ];
 
-    let imagesDir = searchDirs.find(d => fs.existsSync(d) && fs.lstatSync(d).isDirectory());
-
-    // 2. Aggressive search if still not found
-    if (!imagesDir) {
-        console.log('Admin Images Debug - Starting Aggressive Search');
-        const root = process.cwd();
-        const findInDir = (currentDir, depth = 0) => {
-            if (depth > 3) return null;
-            try {
-                const items = fs.readdirSync(currentDir);
-                for (const item of items) {
-                    if (['node_modules', '.git', 'dist', 'build'].includes(item)) continue;
-                    const fullPath = path.join(currentDir, item);
-                    if (fs.lstatSync(fullPath).isDirectory()) {
-                        if (item === 'images') return fullPath;
-                        const found = findInDir(fullPath, depth + 1);
-                        if (found) return found;
-                    }
-                }
-            } catch (e) { }
-            return null;
-        };
-        imagesDir = findInDir(root) || findInDir(path.join(root, '..'));
-    }
+    const imagesDir = potentialPaths.find(p => fs.existsSync(p) && fs.lstatSync(p).isDirectory());
 
     try {
         if (!imagesDir) {
-            console.error('Admin Images Debug - FAILED to find images folder.');
-            console.log('CWD:', process.cwd());
-            console.log('__dirname:', __dirname);
-            // Return diagnostic info to the frontend
-            return res.json({
-                error: 'Folder not found',
-                debug: {
-                    cwd: process.cwd(),
-                    dirname: __dirname,
-                    cwd_files: fs.readdirSync(process.cwd()),
-                    parent_files: fs.existsSync(path.join(process.cwd(), '..')) ? fs.readdirSync(path.join(process.cwd(), '..')) : 'Not found'
-                }
-            });
+            console.error('Admin Images: Images folder not found.');
+            return res.json([]);
         }
 
-        console.log('Admin Images Debug - Success! Found:', imagesDir);
         const files = fs.readdirSync(imagesDir);
         const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.ico'];
 
@@ -285,7 +201,6 @@ router.get('/images', verifyToken, async (req, res) => {
                 url: `/images/${file}`
             }));
 
-        console.log('Admin Images Debug - Filtered Images:', images.length);
         res.json(images);
     } catch (err) {
         console.error('Error reading images directory:', err);
