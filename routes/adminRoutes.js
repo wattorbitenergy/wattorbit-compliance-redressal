@@ -177,11 +177,14 @@ router.get('/images', verifyToken, async (req, res) => {
     const imagesDir = path.join(__dirname, '../../frontend/public/images');
 
     try {
+        console.log('Admin Images Debug - Directory:', imagesDir);
         if (!fs.existsSync(imagesDir)) {
+            console.warn('Admin Images Debug - Directory does NOT exist');
             return res.json([]);
         }
 
         const files = fs.readdirSync(imagesDir);
+        console.log('Admin Images Debug - Files Found:', files.length);
         const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp'];
 
         const images = files
@@ -191,6 +194,7 @@ router.get('/images', verifyToken, async (req, res) => {
                 url: `/images/${file}`
             }));
 
+        console.log('Admin Images Debug - Filtered Images:', images.length);
         res.json(images);
     } catch (err) {
         console.error('Error reading images directory:', err);
