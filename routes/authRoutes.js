@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const ReferralRule = require('../models/ReferralRule');
 const rateLimit = require('express-rate-limit');
 const User = require('../models/User');
+const Config = require('../models/Config');
 const mailer = require('./mailer');   // 🔥 Mailjet API (SMTP-free)
 
 /* =========================
@@ -87,8 +88,11 @@ router.post('/register', async (req, res) => {
     if (referralCodeInput && safeRole !== 'admin') {
       const code = referralCodeInput.toUpperCase().trim();
 
-      // Special Promotional Code: EARN50
-      if (code === 'EARN50') {
+      // Special Promotional Code (Dynamic or Fallback to EARN50)
+      const config = await Config.findOne({ key: 'default_referral_code' });
+      const defaultPromoCode = (config?.value || 'EARN50').toUpperCase();
+
+      if (code === defaultPromoCode) {
         user.walletBalance += 50;
       } else {
         const referrer = await User.findOne({ referralCode: code });

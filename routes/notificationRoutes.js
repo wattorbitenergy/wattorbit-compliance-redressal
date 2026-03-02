@@ -43,7 +43,11 @@ router.post('/subscribe', verifyToken, async (req, res) => {
     try {
         // 🛡️ SECURITY FIX: Verify the role matches the authenticated user's role
         // This prevents users from subscribing to 'admin' or 'technician' topics maliciously.
-        if (role && role !== req.user.role && req.user.role !== 'admin') {
+        const isSelfUserTopic = role && role.startsWith('user_') && req.user.phone && role === `user_${req.user.phone.replace(/\D/g, "")}`;
+        const isSelfTechTopic = role && role.startsWith('tech_') && req.user.role === 'technician' && role === `tech_${req.user.username}`;
+        const isMatchingRole = role === req.user.role;
+
+        if (role && !isMatchingRole && !isSelfUserTopic && !isSelfTechTopic && req.user.role !== 'admin') {
             return res.status(403).json({ message: 'Unauthorized topic subscription' });
         }
 
