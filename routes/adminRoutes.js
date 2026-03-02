@@ -163,4 +163,39 @@ router.post('/config', verifyToken, async (req, res) => {
     }
 });
 
+/* =================================================================
+   GET: LIST ALL UPLOADED IMAGES (ADMIN ONLY)
+   Reads frontend/public/images and returns filenames
+   ================================================================= */
+router.get('/images', verifyToken, async (req, res) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Admin access required' });
+    }
+
+    const fs = require('fs');
+    const path = require('path');
+    const imagesDir = path.join(__dirname, '../../frontend/public/images');
+
+    try {
+        if (!fs.existsSync(imagesDir)) {
+            return res.json([]);
+        }
+
+        const files = fs.readdirSync(imagesDir);
+        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp'];
+
+        const images = files
+            .filter(file => imageExtensions.includes(path.extname(file).toLowerCase()))
+            .map(file => ({
+                name: file,
+                url: `/images/${file}`
+            }));
+
+        res.json(images);
+    } catch (err) {
+        console.error('Error reading images directory:', err);
+        res.status(500).json({ message: 'Failed to list images' });
+    }
+});
+
 module.exports = router;
