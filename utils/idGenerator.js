@@ -60,11 +60,22 @@ async function generateInvoiceId() {
     return `INV-${year}-${seq}`;
 }
 
+/**
+ * Generate Work Permit ID
+ * Format: WP-YYYY-NNN (e.g., WP-2026-001)
+ */
+async function generateWorkPermitId() {
+    const year = new Date().getFullYear();
+    const prefix = `WP-${year}`;
+    return await getNextSequence('work-permit', prefix, 3, '-');
+}
+
 module.exports = {
     getNextSequence,
     generateServiceId,
     generatePackageId,
     generateBookingId,
     generatePaymentId,
-    generateInvoiceId
+    generateInvoiceId,
+    generateWorkPermitId
 };

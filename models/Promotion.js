@@ -16,7 +16,7 @@ const promotionSchema = new mongoose.Schema({
     },
     layout: {
         type: String,
-        enum: ['standard', 'horizontal', 'parallel'],
+        enum: ['standard', 'horizontal', 'parallel', '3d_hero', '3d_feature', '3d_cta'],
         default: 'standard'
     },
     mediaUrl: {
