@@ -164,6 +164,54 @@ router.post('/config', verifyToken, async (req, res) => {
 });
 
 /* =================================================================
+   POST: UPLOAD NEW IMAGE (ADMIN ONLY)
+   Accepts single image up to 100KB, saved to public/images
+   ================================================================= */
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const dest = path.join(__dirname, '../public/images');
+        if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+        cb(null, dest);
+    },
+    filename: (req, file, cb) => {
+        cb(null, Date.now() + '-' + file.originalname.replace(/[^a-zA-Z0-9.\-]/g, ''));
+    }
+});
+const upload = multer({
+    storage,
+    limits: { fileSize: 100 * 1024 }, // 100KB limit
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) cb(null, true);
+        else cb(new Error('Only image files are allowed!'));
+    }
+});
+
+router.post('/upload-image', verifyToken, (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin access required' });
+
+    upload.single('image')(req, res, function (err) {
+        if (err instanceof multer.MulterError) {
+            if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ message: 'File too large. Max size is 100KB.' });
+            return res.status(500).json({ message: err.message });
+        } else if (err) {
+            return res.status(400).json({ message: err.message });
+        }
+
+        if (!req.file) return res.status(400).json({ message: 'Please upload a file' });
+
+        res.json({
+            message: 'Image uploaded successfully',
+            name: req.file.filename,
+            url: `/images/${req.file.filename}`
+        });
+    });
+});
+
+/* =================================================================
    GET: LIST ALL UPLOADED IMAGES (ADMIN ONLY)
    Reads frontend/public/images and returns filenames
    ================================================================= */
