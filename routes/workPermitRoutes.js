@@ -86,6 +86,26 @@ router.get('/', verifyToken, async (req, res) => {
     }
 });
 
+// GET: My Permits (No token required, searches by mobile)
+router.get('/my-permits', async (req, res) => {
+    try {
+        const { m } = req.query;
+        if (!m) return res.status(400).json({ message: "Mobile number required" });
+
+        const permits = await WorkPermit.find({
+            $or: [
+                { requesterMobile: m },
+                { engineerMobile: m },
+                { "approvers.mobileNo": m }
+            ]
+        }).sort({ createdAt: -1 });
+
+        res.json(permits);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // GET: Get specific work permit
 router.get('/:id', verifyToken, async (req, res) => {
     try {
@@ -300,24 +320,7 @@ router.patch('/:id/engineer-renew', verifyToken, async (req, res) => {
     }
 });
 
-router.get('/my-permits', async (req, res) => {
-    try {
-        const { m } = req.query;
-        if (!m) return res.status(400).json({ message: "Mobile number required" });
 
-        const permits = await WorkPermit.find({
-            $or: [
-                { requesterMobile: m },
-                { engineerMobile: m },
-                { "approvers.mobileNo": m }
-            ]
-        }).sort({ createdAt: -1 });
-
-        res.json(permits);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-});
 
 // GET: Public Print/Download (No token required, but uses permitId)
 router.get('/public/print/:permitId', async (req, res) => {
