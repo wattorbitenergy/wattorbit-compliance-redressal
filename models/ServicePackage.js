@@ -14,8 +14,7 @@ const servicePackageSchema = new mongoose.Schema({
     name: {
         type: String,
         required: true,
-        trim: true,
-        enum: ['Basic', 'Standard', 'Premium', 'Custom']
+        trim: true
     },
     description: {
         type: String,
