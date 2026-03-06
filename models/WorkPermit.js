@@ -149,6 +149,8 @@ const workPermitSchema = new mongoose.Schema({
         enum: [
             'Requested',
             'Engineered',
+            'Pending Isolation',
+            'Pending Issuer Approval',
             'Pending Approval',
             'Approved',
             'Accepted',

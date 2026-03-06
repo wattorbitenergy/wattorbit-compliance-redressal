@@ -165,18 +165,23 @@ router.patch('/:id/engineer-update', verifyToken, async (req, res) => {
         }
 
         permit.status = 'Engineered';
-        // After engineer signs, it moves to Pending Approval if approvers exist
-        if (permit.approvers.length > 0) {
-            permit.status = 'Pending Approval';
-            // Notify Approvers
-            for (const app of permit.approvers) {
-                const topic = `user_${app.mobileNo.replace(/\D/g, "")}`;
-                await sendTopicNotification(topic, "Permit Approval Required", `Permit for ${permit.jobDetails?.equipmentName || 'Equipment'} is ready for your approval.`);
-            }
+
+        // After engineer saves, if isolation is required, move to Pending Isolation
+        // Otherwise move to Pending Issuer Approval (Section J)
+        if (permit.isolation?.required) {
+            permit.status = 'Pending Isolation';
+            const topic = `user_${permit.isolation.mobileNo.replace(/\D/g, "")}`;
+            const link = `https://wattorbit.com/work-permit/${permit.permitId}`;
+            await sendTopicNotification(topic, "Permit Isolation Required", `Isolation for ${permit.equipment} is required. Sign here: ${link}`);
+        } else {
+            permit.status = 'Pending Issuer Approval';
+            const topic = `user_${permit.engineerMobile.replace(/\D/g, "")}`;
+            const link = `https://wattorbit.com/work-permit/${permit.permitId}`;
+            await sendTopicNotification(topic, "Permit Ready for Issuance", `Engineering complete. Please sign Section J: ${link}`);
         }
 
         await permit.save();
-        res.json({ message: 'Permit updated by engineer', permit });
+        res.json({ message: 'Permit updated by engineer. Transitioned to ' + permit.status, permit });
     } catch (err) {
         console.error('Error in engineer update:', err);
         res.status(500).json({ message: 'Failed to update permit' });
@@ -246,7 +251,16 @@ router.patch('/:id/approve', async (req, res) => {
             // Notify Requester
             if (permit.requesterMobile) {
                 const topic = `user_${permit.requesterMobile.replace(/\D/g, "")}`;
-                await sendTopicNotification(topic, "Permit Approved", `Your permit for ${permit.equipment} has been approved. Please accept to proceed.`);
+                const link = `https://wattorbit.com/work-permit/${permit.permitId}`;
+                await sendTopicNotification(topic, "Permit Approved", `Your permit for ${permit.equipment} has been approved. Please accept to proceed: ${link}`);
+            }
+        } else {
+            // Notify next pending approver (optional but good)
+            const nextApprover = permit.approvers.find(a => a.status === 'Pending');
+            if (nextApprover) {
+                const topic = `user_${nextApprover.mobileNo.replace(/\D/g, "")}`;
+                const link = `https://wattorbit.com/work-permit/${permit.permitId}`;
+                await sendTopicNotification(topic, "Permit Approval Required", `A permit for ${permit.equipment} is waiting for your signature: ${link}`);
             }
         }
 
@@ -255,6 +269,42 @@ router.patch('/:id/approve', async (req, res) => {
     } catch (err) {
         console.error('Error in approval:', err);
         res.status(500).json({ message: 'Failed to record approval' });
+    }
+});
+
+// PATCH: Update Permit Status (Sequential Flow)
+router.patch('/:id/status', verifyToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status, formData } = req.body;
+
+        const permit = await WorkPermit.findById(id);
+        if (!permit) return res.status(404).json({ message: 'Work permit not found' });
+
+        if (formData) {
+            // Update any submitted form data (signatures/certs)
+            if (formData.certifications) permit.certifications = { ...permit.certifications, ...formData.certifications };
+            if (formData.isolation) permit.isolation = { ...permit.isolation, ...formData.isolation };
+        }
+
+        permit.status = status;
+
+        // Notification Logic
+        const link = `https://wattorbit.com/work-permit/${permit.permitId}`;
+
+        if (status === 'Pending Issuer Approval' && permit.engineerMobile) {
+            await sendTopicNotification(`user_${permit.engineerMobile.replace(/\D/g, "")}`, "Section J Required", `Issuer signature needed for ${permit.permitId}: ${link}`);
+        } else if (status === 'Pending Approval' && permit.approvers.length > 0) {
+            const firstApp = permit.approvers[0];
+            await sendTopicNotification(`user_${firstApp.mobileNo.replace(/\D/g, "")}`, "Permit Approval Required", `Step K: Please sign for ${permit.permitId}: ${link}`);
+        } else if (status === 'Accepted' && permit.engineerMobile) {
+            await sendTopicNotification(`user_${permit.engineerMobile.replace(/\D/g, "")}`, "Work Started", `Permit ${permit.permitId} has been accepted and work has started.`);
+        }
+
+        await permit.save();
+        res.json({ message: `Status updated to ${status}`, permit });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
     }
 });
 
