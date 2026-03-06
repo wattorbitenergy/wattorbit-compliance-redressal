@@ -92,11 +92,15 @@ router.get('/my-permits', async (req, res) => {
         const { m } = req.query;
         if (!m) return res.status(400).json({ message: "Mobile number required" });
 
+        // Normalize searched mobile (remove +91 and non-digits)
+        const normalizedM = m.replace(/\D/g, "").slice(-10);
+
         const permits = await WorkPermit.find({
             $or: [
-                { requesterMobile: m },
-                { engineerMobile: m },
-                { "approvers.mobileNo": m }
+                { requesterMobile: { $regex: normalizedM } },
+                { engineerMobile: { $regex: normalizedM } },
+                { "approvers.mobileNo": { $regex: normalizedM } },
+                { "isolation.mobileNo": { $regex: normalizedM } }
             ]
         }).sort({ createdAt: -1 });
 

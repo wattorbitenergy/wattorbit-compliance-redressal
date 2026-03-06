@@ -129,11 +129,22 @@ router.post('/', verifyToken, async (req, res) => {
         let couponId = null;
 
         if (couponCode) {
-            const coupon = await Coupon.findOne({ code: couponCode.toUpperCase(), isActive: true });
-            if (coupon && coupon.isValid(basePrice)) {
-                discount = coupon.calculateDiscount(basePrice);
-                couponId = coupon._id;
+            const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
+            if (!coupon) {
+                return res.status(404).json({ message: 'Invalid coupon code' });
             }
+            if (!coupon.isActive || coupon.expiryDate < new Date()) {
+                return res.status(400).json({ message: 'Coupon has expired' });
+            }
+            if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) {
+                return res.status(400).json({ message: 'Coupon usage limit reached' });
+            }
+            if (!coupon.isValid(basePrice)) {
+                return res.status(400).json({ message: 'Coupon is not applicable for this order amount' });
+            }
+
+            discount = coupon.calculateDiscount(basePrice);
+            couponId = coupon._id;
         }
 
         // Apply package discount if no coupon discount (or as fallback)
@@ -348,8 +359,12 @@ router.patch('/:id/cancel', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Booking not found' });
         }
 
-        // Check if user owns the booking or is admin
-        if (booking.userId.toString() !== req.user.id && req.user.role !== 'admin') {
+        // Check if user owns the booking or is admin/engineer
+        const isOwner = booking.userId.toString() === req.user.id;
+        const isAdmin = req.user.role === 'admin';
+        const isEngineer = req.user.role === 'engineer';
+
+        if (!isOwner && !isAdmin && !isEngineer) {
             return res.status(403).json({ message: 'Access denied' });
         }
 
