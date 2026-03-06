@@ -183,6 +183,11 @@ router.post('/', verifyToken, async (req, res) => {
 
         await booking.save();
 
+        // Track coupon usage
+        if (couponId) {
+            await Coupon.findByIdAndUpdate(couponId, { $inc: { usedCount: 1 } });
+        }
+
         // Deduct points from wallet and update default payment method
         if (pointsToUse > 0) {
             user.walletBalance -= pointsToUse;
@@ -353,17 +358,8 @@ router.patch('/:id/cancel', verifyToken, async (req, res) => {
             return res.status(400).json({ message: 'Cannot cancel completed or already cancelled booking' });
         }
 
-        // Cancellation Policy: Users can only cancel within 1 hour of creation
-        if (req.user.role !== 'admin') {
-            const oneHour = 60 * 60 * 1000;
-            const timeSinceCreation = new Date() - new Date(booking.createdAt);
-
-            if (timeSinceCreation > oneHour) {
-                return res.status(400).json({
-                    message: 'Cancellation is only allowed within 1 hour of booking. Please contact support.'
-                });
-            }
-        }
+        // Cancellation Policy: Allow users and engineers to cancel without 1-hour block.
+        // We removed the block based on the requirements.
 
         booking.status = 'Cancelled';
         booking.cancellationReason = cancellationReason;

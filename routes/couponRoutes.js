@@ -99,7 +99,7 @@ router.post('/validate', verifyToken, async (req, res) => {
             const now = new Date();
             if (!coupon.isActive) reason = 'Coupon is inactive';
             else if (coupon.expiryDate < now) reason = 'Coupon has expired';
-            else if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) reason = 'Coupon usage limit reached';
+            else if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) reason = 'Coupon has expired';
             else if (amount < coupon.minOrderAmount) reason = `Minimum order amount of ₹${coupon.minOrderAmount} required`;
 
             return res.status(400).json({ message: reason });

@@ -127,21 +127,33 @@ router.get('/:id', verifyToken, async (req, res) => {
     }
 });
 
-// PATCH: Engineer update (Sections E, F, G + Approvers)
+// PATCH: Engineer update (Sections C to J + Approvers)
 router.patch('/:id/engineer-update', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
-        const { hazards, preparation, ppe, approvers, isolation, certifications } = req.body;
+        const {
+            natureOfWork, toolsAndEquipment, hazards, preparation,
+            ppe, approvers, isolation, certifications,
+            engineerName, engineerMobile, requesterName, requesterMobile
+        } = req.body;
 
         const permit = await WorkPermit.findById(id);
         if (!permit) return res.status(404).json({ message: 'Work permit not found' });
 
         // Update sections
+        if (natureOfWork) permit.natureOfWork = natureOfWork;
+        if (toolsAndEquipment) permit.toolsAndEquipment = toolsAndEquipment;
         if (hazards) permit.hazards = hazards;
         if (preparation) permit.preparation = preparation;
         if (ppe) permit.ppe = ppe;
         if (isolation) permit.isolation = { ...permit.isolation, ...isolation };
         if (certifications?.issuer) permit.certifications.issuer = { ...permit.certifications.issuer, ...certifications.issuer };
+
+        // Update basic details if provided
+        if (engineerName) permit.engineerName = engineerName;
+        if (engineerMobile) permit.engineerMobile = engineerMobile;
+        if (requesterName) permit.requesterName = requesterName;
+        if (requesterMobile) permit.requesterMobile = requesterMobile;
 
         // Add approvers (Section K mobile numbers)
         if (approvers && Array.isArray(approvers)) {
@@ -159,7 +171,7 @@ router.patch('/:id/engineer-update', verifyToken, async (req, res) => {
             // Notify Approvers
             for (const app of permit.approvers) {
                 const topic = `user_${app.mobileNo.replace(/\D/g, "")}`;
-                await sendTopicNotification(topic, "Permit Approval Required", `Permit for ${permit.equipment} is ready for your approval.`);
+                await sendTopicNotification(topic, "Permit Approval Required", `Permit for ${permit.jobDetails?.equipmentName || 'Equipment'} is ready for your approval.`);
             }
         }
 
@@ -168,6 +180,45 @@ router.patch('/:id/engineer-update', verifyToken, async (req, res) => {
     } catch (err) {
         console.error('Error in engineer update:', err);
         res.status(500).json({ message: 'Failed to update permit' });
+    }
+});
+
+// PATCH: Close permit (Section N)
+router.patch('/:id/close', verifyToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { closure } = req.body;
+
+        const permit = await WorkPermit.findById(id);
+        if (!permit) return res.status(404).json({ message: 'Work permit not found' });
+
+        if (closure) {
+            permit.closure = { ...permit.closure, ...closure };
+        }
+        permit.status = 'Closed';
+
+        await permit.save();
+
+        // Generate Final PDF (Version 2 / Closed)
+        try {
+            await generateWorkPermitPDF(permit);
+        } catch (pdfErr) {
+            console.error('Final PDF Generation Error:', pdfErr);
+        }
+
+        // Notify Requisitioner & Engineer
+        const notifyMsg = `Permit ${permit.permitId} has been formally closed.`;
+        if (permit.requesterMobile) {
+            await sendTopicNotification(`user_${permit.requesterMobile.replace(/\D/g, "")}`, "Permit Closed", notifyMsg);
+        }
+        if (permit.engineerMobile) {
+            await sendTopicNotification(`user_${permit.engineerMobile.replace(/\D/g, "")}`, "Permit Closed", notifyMsg);
+        }
+
+        res.json({ message: 'Permit closed successfully', permit });
+    } catch (err) {
+        console.error('Error in permit closure:', err);
+        res.status(500).json({ message: 'Failed to close permit' });
     }
 });
 
