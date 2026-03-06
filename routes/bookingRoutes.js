@@ -157,11 +157,10 @@ router.post('/', verifyToken, async (req, res) => {
 
         const totalAmount = Math.max(0, basePrice + taxes - discount - pointsToUse);
 
-        // Generate bookingId ONLY for COD. For Online, it's generated after payment.
-        let bookingId = undefined;
-        if (paymentMethod === 'COD') {
-            bookingId = await generateBookingId();
-        }
+        // Always generate bookingId upfront for all payment methods.
+        // Previously, online payments skipped this, resulting in bookingId=null
+        // which caused a duplicate key error on the unique index.
+        const bookingId = await generateBookingId();
 
         const booking = new Booking({
             bookingId,
