@@ -582,4 +582,89 @@ router.get('/profile-balance/:userId', verifyToken, async (req, res) => {
   }
 });
 
+/* =========================
+   UPDATE AVAILABILITY STATUS
+   ========================= */
+router.patch('/availability', verifyToken, async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['Available', 'Busy', 'Offline'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.availabilityStatus = status;
+    await user.save();
+
+    res.json({ message: 'Status updated', availabilityStatus: user.availabilityStatus });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to update status' });
+  }
+});
+
+/* =========================
+   ADMIN: SET ROLE & SPECIALIZATION
+   ========================= */
+router.patch('/set-role/:id', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && req.user.role !== 'organisation') {
+      return res.status(403).json({ message: 'Administrative access required' });
+    }
+
+    const { role, organisationId, specialization } = req.body;
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    if (role) user.role = role;
+    if (organisationId !== undefined) user.organisationId = organisationId;
+    if (specialization !== undefined) user.specialization = specialization;
+
+    // Reset specialization if not technician
+    if (user.role !== 'technician') {
+        user.specialization = '';
+    }
+
+    await user.save();
+    res.json({ message: 'User updated successfully', user });
+  } catch (err) {
+    console.error('Set role error:', err);
+    res.status(500).json({ message: 'Failed to update user role' });
+  }
+});
+
+/* =========================
+   ADMIN: UPDATE PROFILE
+   ========================= */
+router.patch('/update-profile/:id', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+
+    const { name, email, phone, city, role, specialization } = req.body;
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    if (name) user.name = name;
+    if (email) user.email = email;
+    if (phone) user.phone = phone;
+    if (city) user.city = city;
+    if (role) user.role = role;
+    if (specialization !== undefined) user.specialization = specialization;
+
+    // Reset specialization if not technician
+    if (user.role !== 'technician') {
+        user.specialization = '';
+    }
+
+    await user.save();
+    res.json({ message: 'Profile updated successfully', user });
+  } catch (err) {
+    console.error('Update profile error:', err);
+    res.status(500).json({ message: 'Failed to update profile' });
+  }
+});
+
 module.exports = router;

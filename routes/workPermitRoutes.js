@@ -72,7 +72,7 @@ router.get('/', verifyToken, async (req, res) => {
         } else if (req.user.role === 'organisation') {
             // query.organisationId = req.user.id;
         } else if (req.user.role === 'user') {
-            query.createdBy = req.user.id;
+            // query.createdBy = req.user.id; // Removed for broader visibility as requested
         }
 
         const permits = await WorkPermit.find(query)

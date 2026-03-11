@@ -998,4 +998,65 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
     }
 });
 
+// GET: Technician Dashboard Statistics
+router.get('/technician/stats', verifyToken, async (req, res) => {
+    try {
+        let techId = req.user.id;
+        const queryTechId = req.query.techId;
+
+        // Authorization
+        if (queryTechId && queryTechId !== techId) {
+            if (req.user.role !== 'admin' && req.user.role !== 'engineer') {
+                return res.status(403).json({ message: 'Unauthorized to view other technician stats' });
+            }
+            techId = queryTechId;
+        } else if (req.user.role !== 'technician' && !queryTechId) {
+             return res.status(400).json({ message: 'Technician ID required' });
+        }
+
+        // Fetch technician details for context (especially for engineers)
+        const technician = await User.findById(techId).select('name availabilityStatus');
+        if (!technician) return res.status(404).json({ message: 'Technician not found' });
+
+        // Fetch all jobs for basic counts
+        const allJobs = await Booking.find({ assignedTechnician: techId });
+
+        const stats = {
+            technicianName: technician.name,
+            availabilityStatus: technician.availabilityStatus,
+            totalEarnings: 0,
+            assignedJobs: 0,
+            completedJobs: 0,
+            cancelledJobs: 0,
+            weeklyEarnings: [0, 0, 0, 0, 0, 0, 0] // [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
+        };
+
+        const today = new Date();
+        const last7Days = new Date(today);
+        last7Days.setDate(today.getDate() - 7);
+
+        allJobs.forEach(job => {
+            if (job.status === 'Assigned') stats.assignedJobs++;
+            if (job.status === 'Completed') {
+                stats.completedJobs++;
+                const earnings = job.technicianCharges || 0;
+                stats.totalEarnings += earnings;
+
+                // Simple weekly grouping (0 = Sunday, but we want Mon-Sun for the UI graph later)
+                if (job.completedAt >= last7Days) {
+                    const day = job.completedAt.getDay(); // 0 is Sunday, 1 is Monday...
+                    const index = day === 0 ? 6 : day - 1; // Map to 0-6 starting Monday
+                    stats.weeklyEarnings[index] += earnings;
+                }
+            }
+            if (job.status === 'Cancelled') stats.cancelledJobs++;
+        });
+
+        res.json(stats);
+    } catch (err) {
+        console.error('Stats error:', err);
+        res.status(500).json({ message: 'Failed to fetch statistics' });
+    }
+});
+
 module.exports = router;
