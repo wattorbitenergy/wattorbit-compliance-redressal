@@ -34,6 +34,8 @@ const workPermitSchema = new mongoose.Schema({
 
     // Section H: Isolation
     isolation: {
+        required: { type: Boolean, default: false },
+        checklist: [String],
         name: { type: String },
         signature: { type: String }, // Base64 signature
         mobileNo: { type: String },
