@@ -190,7 +190,7 @@ router.post('/login', authLimiter, async (req, res) => {
         { email: identifier },
         { phone: String(username).trim() } // Phone is case-sensitive (usually numbers), keep original case but trim
       ]
-    });
+    }).select('+password');
     if (!user || !(await user.comparePassword(password))) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
