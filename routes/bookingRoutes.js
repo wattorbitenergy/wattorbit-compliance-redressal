@@ -535,6 +535,16 @@ router.patch('/:id/confirm', verifyToken, isAdminOrEngineer, async (req, res) =>
             return res.status(400).json({ message: 'Only pending bookings can be confirmed' });
         }
 
+        // 🛡️ SECURITY FIX: Scope Check
+        if (req.user.role === 'engineer') {
+            if (req.user.organisationId && booking.organisationId?.toString() !== req.user.organisationId) {
+                return res.status(403).json({ message: 'Access denied: Booking belongs to another organisation' });
+            }
+            if (!req.user.organisationId && booking.organisationId) {
+                return res.status(403).json({ message: 'Access denied: Global engineers manage individual bookings' });
+            }
+        }
+
         booking.status = 'Confirmed';
         booking.statusHistory.push({
             status: 'Confirmed',
@@ -574,6 +584,13 @@ router.patch('/:id/assign-agency', verifyToken, isAdminOrEngineer, async (req, r
 
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        // 🛡️ SECURITY FIX: Scope Check
+        if (req.user.role === 'engineer') {
+            if (req.user.organisationId && booking.organisationId?.toString() !== req.user.organisationId) {
+                return res.status(403).json({ message: 'Access denied: Target booking outside your scope' });
+            }
         }
 
         booking.organisationId = organisationId;
@@ -688,6 +705,19 @@ router.patch('/:id/status', verifyToken, canManageBookings, async (req, res) => 
 
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        // 🛡️ SECURITY FIX: Scope Check
+        if (req.user.role === 'organisation' && booking.organisationId?.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Access denied: Booking outside your organisation' });
+        }
+        if (req.user.role === 'engineer') {
+            if (req.user.organisationId && booking.organisationId?.toString() !== req.user.organisationId) {
+                return res.status(403).json({ message: 'Access denied: Booking outside your organisation' });
+            }
+            if (!req.user.organisationId && booking.organisationId) {
+                return res.status(403).json({ message: 'Access denied: Global engineers manage individual bookings' });
+            }
         }
 
         booking.status = status;
@@ -985,7 +1015,6 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
             if (status === 'Completed') {
                 // Trigger completion automations (notifications etc)
                 await triggerAutomation('booking.completed', booking);
-                console.log(`Booking ${booking.bookingId} completion notified`);
             }
         } else {
             await booking.save();

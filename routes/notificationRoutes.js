@@ -15,7 +15,7 @@ try {
         admin.initializeApp({
             credential: admin.credential.cert(serviceAccount)
         });
-        console.log("Firebase Admin Initialized");
+        // Firebase Admin init
     }
 } catch (e) {
     console.warn("Firebase Init Failed: Ensure serviceAccountKey.json exists or FIREBASE_SERVICE_ACCOUNT env is set.", e.message);
@@ -93,7 +93,7 @@ router.post('/', verifyToken, async (req, res) => {
 
         // Send to FCM
         const response = await admin.messaging().send(payload);
-        console.log('Successfully sent message:', response);
+        // Message sent successfully
 
         // No database storage as per request
         res.status(200).json({ message: 'Notification sent via FCM', fcmResponse: response });

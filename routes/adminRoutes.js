@@ -122,7 +122,7 @@ router.post('/send-weekly-summary', verifyToken, async (req, res) => {
                 html: summaryHtml
             });
 
-            console.log(`Summary sent to ${email} (${user.role}) - ${total} tickets found.`);
+            // Summary sent to user
         }));
 
         res.json({ message: `Processing completed for ${targetEmails.length} recipients.` });

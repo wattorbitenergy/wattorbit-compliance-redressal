@@ -32,7 +32,7 @@ router.post('/', async (req, res) => {
         // Send notification via FCM
         const response = await admin.messaging().send(payload);
 
-        console.log('✅ Test notification sent successfully:', response);
+        // Test notification success
 
         res.status(200).json({
             success: true,

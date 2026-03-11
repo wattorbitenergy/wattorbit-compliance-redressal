@@ -28,10 +28,7 @@ const verifyToken = (req, res, next) => {
 
 // 🚀 DEBUG MIDDLEWARE: Log every request to this router (MOVE TO TOP)
 router.use((req, res, next) => {
-    console.log(`[AddressRouter] ${req.method} ${req.path}`, {
-        user: req.user ? req.user.id : 'anonymous',
-        body: req.method === 'POST' ? 'BODY_DATA_PRESENT' : 'N/A'
-    });
+    // Address request logged internally
     next();
 });
 
@@ -51,7 +48,7 @@ router.get('/diagnostic/health', verifyToken, async (req, res) => {
         return res.status(403).json({ message: 'Admin access required for diagnostics' });
     }
     try {
-        console.log('--- DIAGNOSTIC HEALTH CHECK START ---');
+        // Health check start
         const count = await Address.countDocuments();
 
         // Trial Op: Create a dummy record and delete it
@@ -93,9 +90,7 @@ router.post('/', verifyToken, async (req, res) => {
         } = req.body;
 
         // Logging for Render
-        console.log('--- POST ADDRESS ATTEMPT ---');
-        console.log('Payload:', JSON.stringify(req.body));
-        console.log('User ID from token:', req.user?.id);
+        // Post address attempt
 
         // Validation
         if (!street || !city || !state || !pincode) {
@@ -133,7 +128,7 @@ router.post('/', verifyToken, async (req, res) => {
         const address = new Address(addressData);
         await address.save();
 
-        console.log('✅ Address saved successfully:', address._id);
+        // Address saved
 
         res.status(201).json({
             message: 'Address added successfully',

@@ -27,7 +27,7 @@ const transporter = {
           ]
         });
 
-      console.log("✅ Mailjet:", request.body.Messages[0].Status);
+      // Mailjet success
       return true;
     } catch (err) {
       console.error("❌ Mailjet API Error:", err.message);

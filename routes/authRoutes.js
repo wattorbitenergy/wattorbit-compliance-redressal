@@ -617,6 +617,18 @@ router.patch('/set-role/:id', verifyToken, async (req, res) => {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
+    // 🛡️ SECURITY FIX: Escalation Protection
+    if (req.user.role === 'organisation') {
+      // Organisations can only manage their own members
+      if (user.organisationId?.toString() !== req.user.id) {
+        return res.status(403).json({ message: 'Access denied: User belongs to another organisation' });
+      }
+      // Organisations cannot promote anyone to Admin or Organisation roles
+      if (role && ['admin', 'organisation'].includes(role)) {
+        return res.status(403).json({ message: 'Access denied: Cannot promote to Admin/Organisation role' });
+      }
+    }
+
     if (role) user.role = role;
     if (organisationId !== undefined) user.organisationId = organisationId;
     if (specialization !== undefined) user.specialization = specialization;
