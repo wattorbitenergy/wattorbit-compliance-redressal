@@ -146,11 +146,11 @@ router.post('/check-user', async (req, res) => {
       return res.status(400).json({ message: 'Identity (phone or email) is required' });
     }
 
-    const identifier = identity.toLowerCase().trim();
+    const identifier = String(identity).toLowerCase().trim();
     const user = await User.findOne({
       $or: [
         { email: identifier },
-        { phone: identity.trim() },
+        { phone: String(identity).trim() },
         { username: identifier }
       ]
     });
@@ -177,13 +177,18 @@ router.post('/check-user', async (req, res) => {
 router.post('/login', authLimiter, async (req, res) => {
   try {
     const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ message: 'Username/Email/Phone and password are required' });
+    }
+
     // Multi-Identifier Login: Username, Email, or Phone
-    const identifier = username.toLowerCase().trim();
+    const identifier = String(username).toLowerCase().trim();
     const user = await User.findOne({
       $or: [
         { username: identifier },
         { email: identifier },
-        { phone: username.trim() } // Phone is case-sensitive (usually numbers), keep original case but trim
+        { phone: String(username).trim() } // Phone is case-sensitive (usually numbers), keep original case but trim
       ]
     });
     if (!user || !(await user.comparePassword(password))) {
@@ -219,9 +224,11 @@ router.post('/login', authLimiter, async (req, res) => {
 router.post('/send-otp', authLimiter, async (req, res) => {
   try {
     const { identity } = req.body;
-    const identifier = identity.toLowerCase().trim();
+    if (!identity) return res.status(400).json({ message: 'Identity required' });
+
+    const identifier = String(identity).toLowerCase().trim();
     const user = await User.findOne({
-      $or: [{ email: identifier }, { phone: identity.trim() }, { username: identifier }]
+      $or: [{ email: identifier }, { phone: String(identity).trim() }, { username: identifier }]
     });
 
     if (!user) return res.status(404).json({ message: 'User not found' });
@@ -256,9 +263,11 @@ router.post('/send-otp', authLimiter, async (req, res) => {
 router.post('/otp-login', authLimiter, async (req, res) => {
   try {
     const { identity, otp, fcmToken } = req.body;
-    const identifier = identity.toLowerCase().trim();
+    if (!identity || !otp) return res.status(400).json({ message: 'Identity and OTP are required' });
+
+    const identifier = String(identity).toLowerCase().trim();
     const user = await User.findOne({
-      $or: [{ email: identifier }, { phone: identity.trim() }, { username: identifier }]
+      $or: [{ email: identifier }, { phone: String(identity).trim() }, { username: identifier }]
     });
 
     if (!user || user.loginOTP !== otp || user.loginOTPExpires < Date.now()) {
@@ -299,9 +308,12 @@ router.post('/otp-login', authLimiter, async (req, res) => {
 ========================= */
 router.post('/forgot-password', authLimiter, async (req, res) => {
   try {
-    const username = req.body.username.toLowerCase();
+    const { username } = req.body;
+    if (!username) return res.status(400).json({ message: 'Username is required' });
+
+    const identifier = String(username).toLowerCase().trim();
     const user = await User.findOne({
-      $or: [{ username }, { email: username }, { phone: username }]
+      $or: [{ username: identifier }, { email: identifier }, { phone: String(username).trim() }]
     });
 
     if (!user) return res.status(404).json({ message: 'This user is not registered' });
