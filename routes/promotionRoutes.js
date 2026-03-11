@@ -19,10 +19,10 @@ const verifyToken = (req, res, next) => {
     }
 };
 
-// Admin check middleware
-const isAdmin = (req, res, next) => {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ message: 'Admin access required' });
+// Admin/Engineer check middleware
+const isAuthorized = (req, res, next) => {
+    if (req.user.role !== 'admin' && req.user.role !== 'engineer') {
+        return res.status(403).json({ message: 'Elevated access required' });
     }
     next();
 };
@@ -42,7 +42,7 @@ router.get('/', async (req, res) => {
 // @desc    Get all promotions (including inactive)
 // @route   GET /api/promotions/admin
 // @access  Private/Admin
-router.get('/admin', verifyToken, isAdmin, async (req, res) => {
+router.get('/admin', verifyToken, isAuthorized, async (req, res) => {
     try {
         const promotions = await Promotion.find().sort({ order: 1, createdAt: -1 });
         res.json(promotions);
@@ -54,7 +54,7 @@ router.get('/admin', verifyToken, isAdmin, async (req, res) => {
 // @desc    Create new promotion
 // @route   POST /api/promotions
 // @access  Private/Admin
-router.post('/', verifyToken, isAdmin, async (req, res) => {
+router.post('/', verifyToken, isAuthorized, async (req, res) => {
     try {
         const promotion = new Promotion(req.body);
         const savedPromotion = await promotion.save();
@@ -67,7 +67,7 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
 // @desc    Update promotion
 // @route   PUT /api/promotions/:id
 // @access  Private/Admin
-router.put('/:id', verifyToken, isAdmin, async (req, res) => {
+router.put('/:id', verifyToken, isAuthorized, async (req, res) => {
     try {
         const promotion = await Promotion.findByIdAndUpdate(req.params.id, req.body, { new: true });
         if (!promotion) return res.status(404).json({ message: 'Promotion not found' });
@@ -80,7 +80,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
 // @desc    Delete promotion
 // @route   DELETE /api/promotions/:id
 // @access  Private/Admin
-router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
+router.delete('/:id', verifyToken, isAuthorized, async (req, res) => {
     try {
         const promotion = await Promotion.findByIdAndDelete(req.params.id);
         if (!promotion) return res.status(404).json({ message: 'Promotion not found' });

@@ -25,8 +25,13 @@ const promotionSchema = new mongoose.Schema({
     },
     mediaType: {
         type: String,
-        enum: ['image', 'video'],
+        enum: ['image', 'video', 'audio', 'website'],
         default: 'image'
+    },
+    size: {
+        type: String,
+        enum: ['small', 'medium', 'large', 'full'],
+        default: 'medium'
     },
     position: {
         type: String,
