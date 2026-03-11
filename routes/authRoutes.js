@@ -213,7 +213,8 @@ router.post('/login', authLimiter, async (req, res) => {
     );
 
     res.json({ token, user });
-  } catch {
+  } catch (err) {
+    console.error("Login Error ->", err);
     res.status(500).json({ message: 'Login failed' });
   }
 });
