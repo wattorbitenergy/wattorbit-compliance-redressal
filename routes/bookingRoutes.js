@@ -107,8 +107,9 @@ router.post('/', verifyToken, async (req, res) => {
         let pointsToUse = 0;
 
         // Check wallet balance
-        if (req.body.pointsUsed && req.body.pointsUsed > 0) {
-            const requestedPoints = Number(req.body.pointsUsed);
+        const pointsInBody = req.body.pointsToUse || req.body.pointsUsed;
+        if (pointsInBody && pointsInBody > 0) {
+            const requestedPoints = Number(pointsInBody);
             if (user.walletBalance < requestedPoints) {
                 return res.status(400).json({ message: 'Insufficient WattOrbit Cash Points' });
             }
@@ -972,13 +973,13 @@ router.get('/:id/whatsapp/technician', verifyToken, async (req, res) => {
 // PATCH: Generic update for technicians (Web Dashboard compatibility)
 router.patch('/:id/tech-update', verifyToken, async (req, res) => {
     try {
-        const { status, remark, paymentReceived, customerBehavior } = req.body;
+        const { status, remark, paymentReceived, customerBehavior, userRating } = req.body;
         const booking = await Booking.findById(req.params.id);
 
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
         // Access check: Only assigned technician or admin
-        if (req.user.role !== 'admin' && booking.assignedTechnician?.toString() !== req.user.id) {
+        if (req.user.role !== 'admin' && req.user.role !== 'engineer' && booking.assignedTechnician?.toString() !== req.user.id) {
             return res.status(403).json({ message: 'Access denied' });
         }
 
@@ -986,6 +987,26 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
         if (remark) booking.technicianNotes = remark;
         if (paymentReceived !== undefined) booking.paymentReceived = paymentReceived;
         if (customerBehavior) booking.customerBehavior = customerBehavior;
+
+        // Update User Rating if provided
+        if (userRating !== undefined && userRating > 0) {
+            const oldRating = booking.userRating || 0;
+            booking.userRating = userRating;
+
+            const user = await User.findById(booking.userId);
+            if (user) {
+                if (oldRating === 0) {
+                    // New rating
+                    const newTotal = user.totalRatings + 1;
+                    user.averageRating = ((user.averageRating * user.totalRatings) + userRating) / newTotal;
+                    user.totalRatings = newTotal;
+                } else {
+                    // Update existing rating
+                    user.averageRating = ((user.averageRating * user.totalRatings) - oldRating + userRating) / user.totalRatings;
+                }
+                await user.save();
+            }
+        }
 
         booking.statusHistory.push({
             status: status || booking.status,

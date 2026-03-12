@@ -166,6 +166,12 @@ const bookingSchema = new mongoose.Schema({
         enum: ['Excellent', 'Good', 'Neutral', 'Difficult', 'Abusive'],
         default: 'Neutral'
     },
+    userRating: {
+        type: Number,
+        min: 0,
+        max: 5,
+        default: 0
+    },
 
     // Tracking
     statusHistory: [{

@@ -75,6 +75,14 @@ const userSchema = new mongoose.Schema({
         type: String,
         enum: ['Available', 'Busy', 'Offline'],
         default: 'Available'
+    },
+    averageRating: {
+        type: Number,
+        default: 5
+    },
+    totalRatings: {
+        type: Number,
+        default: 0
     }
 }, { timestamps: true });
 
