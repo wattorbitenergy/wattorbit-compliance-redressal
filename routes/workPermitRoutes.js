@@ -39,15 +39,18 @@ router.post('/', verifyToken, async (req, res) => {
         const workPermit = new WorkPermit({
             ...req.body,
             permitId,
+            status: req.body.status || 'Submitted',
             createdBy: req.user.id
         });
 
         await workPermit.save();
 
-        // Notify Engineer
-        if (workPermit.engineerMobile) {
-            const topic = `user_${workPermit.engineerMobile.replace(/\D/g, "")}`;
-            await sendTopicNotification(topic, "New Permit Request", `A new permit for ${workPermit.equipment} has been requested.`);
+        // Notify relevant party based on initial status
+        // If Submitted, usually notify Issuer or Isolation Lead
+        const targetMobile = workPermit.isolation?.mobileNo || workPermit.certifications?.issuer?.mobileNo;
+        if (targetMobile) {
+            const topic = `user_${targetMobile.replace(/\D/g, "").slice(-10)}`;
+            await sendTopicNotification(topic, "New Permit Submission", `Permit ${permitId} is waiting for your attention.`);
         }
 
         res.status(201).json({ message: 'Work permit created successfully', workPermit });
@@ -110,8 +113,8 @@ router.get('/my-permits', async (req, res) => {
     }
 });
 
-// GET: Get specific work permit
-router.get('/:id', verifyToken, async (req, res) => {
+// GET: Get specific work permit (Supports public access for Accepted/Closed)
+router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         let query = {};
@@ -123,6 +126,22 @@ router.get('/:id', verifyToken, async (req, res) => {
 
         const permit = await WorkPermit.findOne(query).populate('createdBy', 'name username');
         if (!permit) return res.status(404).json({ message: 'Work permit not found' });
+
+        // Public access check
+        const isPublicStatus = ['Accepted', 'Closed'].includes(permit.status);
+        
+        if (!isPublicStatus) {
+            // Requirement for auth
+            const authHeader = req.headers.authorization;
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                return res.status(401).json({ message: 'Authorization required for this permit status' });
+            }
+            try {
+                jwt.verify(authHeader.split(' ')[1], process.env.JWT_SECRET);
+            } catch (err) {
+                return res.status(401).json({ message: 'Invalid or expired token' });
+            }
+        }
 
         res.json(permit);
     } catch (err) {
@@ -286,28 +305,44 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
         if (!permit) return res.status(404).json({ message: 'Work permit not found' });
 
         if (formData) {
-            // Update any submitted form data (signatures/certs)
-            if (formData.certifications) permit.certifications = { ...permit.certifications, ...formData.certifications };
-            if (formData.isolation) permit.isolation = { ...permit.isolation, ...formData.isolation };
+            // Bulk update from form if provided
+            Object.assign(permit, formData);
         }
 
+        const oldStatus = permit.status;
         permit.status = status;
 
-        // Notification Logic
+        // Notification Logic for New Flow: Draft -> Submitted -> Issued -> Approved -> Accepted -> Closed
         const link = `https://wattorbit.com/work-permit/${permit.permitId}`;
+        
+        const notify = async (mobile, title, body) => {
+            if (!mobile) return;
+            const topic = `user_${mobile.replace(/\D/g, "").slice(-10)}`;
+            await sendTopicNotification(topic, title, body);
+        };
 
-        if (status === 'Pending Issuer Approval' && permit.engineerMobile) {
-            await sendTopicNotification(`user_${permit.engineerMobile.replace(/\D/g, "")}`, "Section J Required", `Issuer signature needed for ${permit.permitId}: ${link}`);
-        } else if (status === 'Pending Approval' && permit.approvers.length > 0) {
-            const firstApp = permit.approvers[0];
-            await sendTopicNotification(`user_${firstApp.mobileNo.replace(/\D/g, "")}`, "Permit Approval Required", `Step K: Please sign for ${permit.permitId}: ${link}`);
-        } else if (status === 'Accepted' && permit.engineerMobile) {
-            await sendTopicNotification(`user_${permit.engineerMobile.replace(/\D/g, "")}`, "Work Started", `Permit ${permit.permitId} has been accepted and work has started.`);
+        if (status === 'Submitted') {
+            // Notify Isolation if required, else Issuer
+            if (permit.isolation?.required) {
+                await notify(permit.isolation.mobileNo, "Isolation Required", `Permit ${permit.permitId} needs isolation signature: ${link}`);
+            } else {
+                await notify(permit.certifications?.issuer?.mobileNo, "Permit Ready for Issuance", `Permit ${permit.permitId} is submitted and ready for issuance: ${link}`);
+            }
+        } else if (status === 'Issued') {
+            await notify(permit.certifications?.approver?.mobileNo, "Permit Approval Required", `Permit ${permit.permitId} has been issued and needs approval: ${link}`);
+        } else if (status === 'Approved') {
+            await notify(permit.certifications?.acceptor?.mobileNo, "Permit Operational Acceptance Required", `Permit ${permit.permitId} is approved. Please accept to start work: ${link}`);
+        } else if (status === 'Accepted') {
+            await notify(permit.certifications?.issuer?.mobileNo, "Work Started", `Work has started on permit ${permit.permitId}`);
+        } else if (status === 'Closed') {
+            await notify(permit.requesterMobile, "Permit Closed", `Permit ${permit.permitId} has been closed.`);
+            await notify(permit.certifications?.issuer?.mobileNo, "Permit Closed", `Permit ${permit.permitId} has been closed.`);
         }
 
         await permit.save();
         res.json({ message: `Status updated to ${status}`, permit });
     } catch (err) {
+        console.error('Status transition error:', err);
         res.status(500).json({ message: err.message });
     }
 });
@@ -446,6 +481,32 @@ router.get('/public/print/:permitId', async (req, res) => {
     } catch (err) {
         console.error('Public print error:', err);
         res.status(500).json({ message: 'Failed to generate/download permit' });
+    }
+});
+
+// GET: Public Search (No token required)
+router.get('/public/search', async (req, res) => {
+    try {
+        const { query } = req.query;
+        if (!query) return res.status(400).json({ message: "Search query required" });
+
+        const searchRegex = new RegExp(query, 'i');
+        const permits = await WorkPermit.find({
+            $and: [
+                { status: { $in: ['Accepted', 'Closed'] } },
+                {
+                    $or: [
+                        { permitId: { $regex: searchRegex } },
+                        { "certifications.acceptor.mobileNo": { $regex: searchRegex } }
+                    ]
+                }
+            ]
+        }).sort({ createdAt: -1 }).limit(10);
+
+        res.json(permits);
+    } catch (err) {
+        console.error('Public search error:', err);
+        res.status(500).json({ message: 'Search failed' });
     }
 });
 

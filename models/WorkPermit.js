@@ -149,20 +149,23 @@ const workPermitSchema = new mongoose.Schema({
     status: {
         type: String,
         enum: [
+            'Draft',
+            'Submitted',
+            'Issued',
+            'Approved',
+            'Accepted',
+            'Closed',
+            'Cancelled',
             'Requested',
             'Engineered',
             'Pending Isolation',
             'Pending Issuer Approval',
             'Pending Approval',
-            'Approved',
-            'Accepted',
-            'Closed',
-            'Cancelled',
             'Renewal Requested',
             'Renewal Engineered',
             'Renewal Pending Approval'
         ],
-        default: 'Requested'
+        default: 'Draft'
     },
 
     // Workflow Tracking

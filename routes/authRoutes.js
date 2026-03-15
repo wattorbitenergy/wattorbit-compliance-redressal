@@ -199,6 +199,9 @@ router.post('/login', authLimiter, async (req, res) => {
       return res.status(403).json({ message: 'Pending approval' });
     }
 
+    const isWeb = req.body.platform === 'web';
+    const expiresIn = isWeb ? '1h' : '30d';
+
     const token = jwt.sign(
       {
         id: user._id,
@@ -209,7 +212,7 @@ router.post('/login', authLimiter, async (req, res) => {
         name: user.name
       },
       JWT_SECRET,
-      { expiresIn: '30d' }
+      { expiresIn }
     );
 
     res.json({ token, user });
@@ -285,6 +288,9 @@ router.post('/otp-login', authLimiter, async (req, res) => {
     if (fcmToken) user.fcmToken = fcmToken;
     await user.save();
 
+    const isWeb = req.body.platform === 'web';
+    const expiresIn = isWeb ? '1h' : '30d';
+
     const token = jwt.sign(
       {
         id: user._id,
@@ -295,7 +301,7 @@ router.post('/otp-login', authLimiter, async (req, res) => {
         name: user.name
       },
       JWT_SECRET,
-      { expiresIn: '30d' }
+      { expiresIn }
     );
 
     res.json({ token, user });
