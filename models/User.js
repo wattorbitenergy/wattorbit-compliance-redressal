@@ -83,6 +83,10 @@ const userSchema = new mongoose.Schema({
     totalRatings: {
         type: Number,
         default: 0
+    },
+    smsNotificationsEnabled: {
+        type: Boolean,
+        default: true
     }
 }, { timestamps: true });
 

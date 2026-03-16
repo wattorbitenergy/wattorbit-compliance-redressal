@@ -7,6 +7,8 @@ const rateLimit = require('express-rate-limit');
 const User = require('../models/User');
 const Config = require('../models/Config');
 const mailer = require('./mailer');   // 🔥 Mailjet API (SMTP-free)
+const { sendOTPSms } = require('../utils/smsHelper'); // 📱 Fast2SMS
+const { sendWelcomeEmail } = require('../utils/emailHelper'); // ✉️ Email Templates
 
 /* =========================
    ENV CHECK
@@ -130,6 +132,12 @@ router.post('/register', async (req, res) => {
     user.referralCode = newReferralCode;
 
     await user.save();
+    
+    // 🔥 Email: Welcome — to new User
+    if (autoApprove) {
+      sendWelcomeEmail(user).catch(e => console.error('[Email] Welcome email error:', e));
+    }
+
     res.status(201).json({ message: autoApprove ? 'Registered successfully' : 'Awaiting approval' });
   } catch {
     res.status(500).json({ message: 'Registration failed' });
@@ -244,17 +252,25 @@ router.post('/send-otp', authLimiter, async (req, res) => {
     user.loginOTPExpires = Date.now() + 600000; // 10 minutes
     await user.save();
 
-    await mailer.sendMail({
-      to: user.email,
-      subject: 'WattOrbit Login OTP',
-      html: `
-        <h2>Login Verification</h2>
-        <p>Your OTP for login is: <strong>${otp}</strong></p>
-        <p>This code expires in 10 minutes.</p>
-      `
-    });
+    // Send OTP via email
+    if (user.email) {
+      await mailer.sendMail({
+        to: user.email,
+        subject: 'WattOrbit Login OTP',
+        html: `
+          <h2>Login Verification</h2>
+          <p>Your OTP for login is: <strong>${otp}</strong></p>
+          <p>This code expires in 10 minutes.</p>
+        `
+      });
+    }
 
-    res.json({ message: 'OTP sent to registered email' });
+    // Send OTP via SMS (Fast2SMS - WTORBT header)
+    if (user.phone) {
+      await sendOTPSms(user.phone, otp);
+    }
+
+    res.json({ message: 'OTP sent' });
   } catch (error) {
     console.error('OTP Send Error:', error);
     res.status(500).json({ message: 'Failed to send OTP' });
@@ -695,6 +711,50 @@ router.patch('/update-profile/:id', verifyToken, async (req, res) => {
   } catch (err) {
     console.error('Update profile error:', err);
     res.status(500).json({ message: 'Failed to update profile' });
+  }
+});
+
+/* =========================
+   SMS PREFERENCE TOGGLE
+   User can enable/disable booking SMS notifications
+========================= */
+router.patch('/sms-preference', verifyToken, async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ message: '"enabled" must be a boolean' });
+    }
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    user.smsNotificationsEnabled = enabled;
+    await user.save();
+    res.json({ message: `SMS notifications ${enabled ? 'enabled' : 'disabled'}`, smsNotificationsEnabled: enabled });
+  } catch (err) {
+    console.error('SMS preference error:', err);
+    res.status(500).json({ message: 'Failed to update SMS preference' });
+  }
+});
+
+/* =========================
+   ADMIN: TOGGLE USER SMS
+========================= */
+router.patch('/admin/toggle-sms/:userId', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ message: '"enabled" must be a boolean' });
+    }
+    user.smsNotificationsEnabled = enabled;
+    await user.save();
+    res.json({ message: `SMS for ${user.name || user.username} ${enabled ? 'enabled' : 'disabled'}`, smsNotificationsEnabled: enabled });
+  } catch (err) {
+    console.error('Admin toggle SMS error:', err);
+    res.status(500).json({ message: 'Failed to toggle SMS for user' });
   }
 });
 

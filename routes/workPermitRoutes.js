@@ -127,7 +127,7 @@ router.get('/:id', async (req, res) => {
             query = { permitId: id };
         }
 
-        const permit = await WorkPermit.findOne(query).populate('createdBy', 'name username');
+        const permit = await WorkPermit.findOne(query).populate('createdBy', '_id name username');
         if (!permit) return res.status(404).json({ message: 'Work permit not found' });
 
         // Public access check
@@ -150,6 +150,51 @@ router.get('/:id', async (req, res) => {
     } catch (err) {
         console.error('Error fetching work permit details:', err);
         res.status(500).json({ message: 'Failed to fetch work permit details' });
+    }
+});
+
+// PATCH: Requester update (Edit before issuance)
+router.patch('/:id/requester-update', verifyToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const permit = await WorkPermit.findById(id);
+        if (!permit) return res.status(404).json({ message: 'Work permit not found' });
+
+        // Security: Only creator can update
+        if (permit.createdBy.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Only the creator can edit this permit' });
+        }
+
+        // Restrict editing if already issued/accepted
+        const editableStatuses = ['Requested', 'Submitted', 'Engineered', 'Pending Isolation', 'Pending Issuer Approval'];
+        if (!editableStatuses.includes(permit.status)) {
+            return res.status(400).json({ message: `Cannot edit permit in status: ${permit.status}` });
+        }
+
+        const {
+            typeOfWork, jobDetails, natureOfWork, toolsAndEquipment,
+            hazards, preparation, ppe, workers, specialInstructions
+        } = req.body;
+
+        if (typeOfWork) permit.typeOfWork = typeOfWork;
+        if (jobDetails) permit.jobDetails = { ...permit.jobDetails, ...jobDetails };
+        if (natureOfWork) permit.natureOfWork = natureOfWork;
+        if (toolsAndEquipment) permit.toolsAndEquipment = toolsAndEquipment;
+        if (hazards) permit.hazards = hazards;
+        if (preparation) permit.preparation = preparation;
+        if (ppe) permit.ppe = ppe;
+        if (workers) permit.workers = workers;
+        if (specialInstructions !== undefined) permit.specialInstructions = specialInstructions;
+
+        // Note: We don't change status back to Submitted automatically here, 
+        // unless requested. Usually, edits during Submitted/Engineered status 
+        // are fine without reset.
+
+        await permit.save();
+        res.json({ message: 'Permit updated by creator', permit });
+    } catch (err) {
+        console.error('Error in requester update:', err);
+        res.status(500).json({ message: 'Failed to update permit' });
     }
 });
 

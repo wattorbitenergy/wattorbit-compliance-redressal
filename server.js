@@ -17,6 +17,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
 ===================== */
 console.log('Environment Check:');
 console.log('MAILJET_API:', process.env.MAILJET_API_KEY ? 'Loaded' : 'Missing');
+console.log('FAST2SMS_API:', process.env.FAST2SMS_API_KEY ? 'Loaded' : 'Missing');
 console.log('MONGO_URI:', process.env.MONGO_URI ? 'Loaded' : 'Missing');
 
 const app = express();

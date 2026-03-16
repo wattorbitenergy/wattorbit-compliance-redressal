@@ -99,7 +99,8 @@ const generateWorkPermitPDF = async (permit) => {
                 doc.save();
                 doc.rect(x, y, 7, 7).lineWidth(0.5).stroke('#000');
                 if (checked) {
-                    doc.fontSize(7).fillColor('#000').font('Helvetica-Bold').text('X', x + 1, y - 0.5);
+                    // Use a tick mark instead of 'X'
+                    doc.fontSize(8).fillColor('#000').font('Helvetica-Bold').text('\u2713', x + 0.5, y - 1);
                 }
                 doc.restore();
             };

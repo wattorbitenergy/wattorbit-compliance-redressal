@@ -10,6 +10,8 @@ const { generateBookingId } = require('../utils/idGenerator');
 const { triggerAutomation } = require('../utils/automationEngine');
 const { sendUserNotification, sendTopicNotification } = require('../utils/notificationHelper');
 const { autoGenerateInvoice } = require('../utils/invoiceHelper');
+const { sendBookingCreatedSms, sendTechnicianAssignedSms, sendJobAssignedToTechnicianSms, sendServiceCompletedSms } = require('../utils/smsHelper'); // 📱 Fast2SMS
+const { sendBookingCreatedEmail, sendTechnicianAssignedEmail, sendJobCompletedEmail } = require('../utils/emailHelper'); // ✉️ Email Templates
 const jwt = require('jsonwebtoken');
 
 // Verify token middleware
@@ -211,7 +213,7 @@ router.post('/', verifyToken, async (req, res) => {
         // Trigger automation hook
         await triggerAutomation('booking.created', booking);
 
-        // Notify Admin of new booking
+        // Notify Admin of new booking (push)
         await sendTopicNotification(
             'admin',
             paymentMethod === 'Online' ? 'New Online Booking Initiated' : 'New Booking Received',
@@ -220,6 +222,12 @@ router.post('/', verifyToken, async (req, res) => {
                 : `New booking ${booking.bookingId} for ${service.name}.`,
             { bookingId: booking._id.toString(), type: 'new_booking' }
         );
+
+        // SMS: Booking Created — to Customer
+        sendBookingCreatedSms(req.user.id, user.name || 'Customer', booking.bookingId, service.name).catch(e => console.error('[SMS] booking created error:', e));
+
+        // 🔥 Email: Booking Created — to Customer
+        sendBookingCreatedEmail(user, booking, service.name).catch(e => console.error('[Email] booking created error:', e));
 
         // Populate for response
         await booking.populate([
@@ -670,7 +678,7 @@ router.patch('/:id/assign', verifyToken, canManageBookings, async (req, res) => 
         // Trigger automation hook
         await triggerAutomation('booking.assigned', booking);
 
-        // Notify Technician
+        // Notify Technician (push)
         await sendUserNotification(
             technicianId,
             'New Service Assignment',
@@ -678,13 +686,34 @@ router.patch('/:id/assign', verifyToken, canManageBookings, async (req, res) => 
             { bookingId: booking._id.toString(), type: 'assignment' }
         );
 
-        // Direct Notification to User
+        // Notify User (push)
         await sendUserNotification(
             booking.userId,
             'Technician Assigned',
             `Technician ${technician.name} has been assigned to your booking ${booking.bookingId}.`,
             { bookingId: booking._id.toString(), type: 'assignment' }
         );
+
+        // SMS: Technician Assigned — to Customer
+        sendTechnicianAssignedSms(
+            booking.userId,
+            (await User.findById(booking.userId).select('name'))?.name || 'Customer',
+            booking.bookingId,
+            technician.name
+        ).catch(e => console.error('[SMS] technician assigned (user) error:', e));
+
+        // 🔥 Email: Technician Assigned — to Customer
+        (async () => {
+            const customer = await User.findById(booking.userId);
+            if (customer) sendTechnicianAssignedEmail(customer, technician, booking).catch(e => console.error('[Email] tech assignment error:', e));
+        })();
+
+        // SMS: Job Assigned — to Technician
+        sendJobAssignedToTechnicianSms(
+            technicianId,
+            technician.name,
+            booking.bookingId
+        ).catch(e => console.error('[SMS] job assigned (tech) error:', e));
 
         res.json({ message: 'Technician assigned successfully', booking });
     } catch (err) {
@@ -752,8 +781,21 @@ router.patch('/:id/status', verifyToken, canManageBookings, async (req, res) => 
                     { bookingId: booking._id.toString(), type: 'completion' }
                 );
 
-                // Auto-generate Invoice directly to ensure it exists for download
+                // Auto-generate Invoice
                 await autoGenerateInvoice(booking._id);
+
+                // SMS: Service Completed — to Customer
+                const completedUser = await User.findById(booking.userId).select('name email username');
+                sendServiceCompletedSms(
+                    booking.userId,
+                    completedUser?.name || 'Customer',
+                    booking.bookingId
+                ).catch(e => console.error('[SMS] service completed error:', e));
+
+                // 🔥 Email: Service Completed — to Customer
+                if (completedUser) {
+                    sendJobCompletedEmail(completedUser, booking).catch(e => console.error('[Email] job completed error:', e));
+                }
             }
         }
 
@@ -912,6 +954,17 @@ router.patch('/:id/complete', verifyToken, async (req, res) => {
 
         // Auto-generate Invoice directly to ensure it exists for download
         await autoGenerateInvoice(booking._id);
+
+        // 🔥 SMS & Email: Service Completed (via technician action)
+        (async () => {
+            const completedUser = await User.findById(booking.userId);
+            if (completedUser) {
+                // SMS
+                sendServiceCompletedSms(booking.userId, completedUser.name || 'Customer', booking.bookingId).catch(o => {});
+                // Email
+                sendJobCompletedEmail(completedUser, booking).catch(e => console.error('[Email] tech complete email error:', e));
+            }
+        })();
 
         res.json({ message: 'Service completed successfully', booking });
     } catch (err) {
