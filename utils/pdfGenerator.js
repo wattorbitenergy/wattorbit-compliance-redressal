@@ -4,22 +4,32 @@ const path = require('path');
 
 const generateWorkPermitPDF = async (permit) => {
     return new Promise((resolve, reject) => {
+        const filename = `Permit_${permit.permitId}_V1.pdf`;
+        const finalPath = path.join(__dirname, '../uploads/permits', filename);
+        // Atomic write: use a temp file and rename only on success
+        const tempPath = `${finalPath}.tmp`;
+
         try {
             const doc = new PDFDocument({ margin: 30, size: 'A4' });
-            const filename = `Permit_${permit.permitId}_V1.pdf`;
-            const filePath = path.join(__dirname, '../uploads/permits', filename);
-
-            const dir = path.dirname(filePath);
+            
+            const dir = path.dirname(finalPath);
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-            const stream = fs.createWriteStream(filePath);
+            const stream = fs.createWriteStream(tempPath);
             doc.pipe(stream);
 
             const pageWidth = doc.page.width - 60;
-            const HINDI_FONT = 'C:\\Windows\\Fonts\\aparaj.ttf';
+            // Use bundled font in assets for cross-platform compatibility
+            const HINDI_FONT = path.join(__dirname, '../assets/aparajita.ttf');
 
             // Register Fonts
-            doc.registerFont('Aparajita', HINDI_FONT);
+            if (fs.existsSync(HINDI_FONT)) {
+                doc.registerFont('Aparajita', HINDI_FONT);
+            } else {
+                console.warn('Aparajita font not found, falling back to Helvetica');
+                // Use a standard font as fallback to prevent crash
+                doc.registerFont('Aparajita', 'Helvetica');
+            }
 
             // ─── Constants for Form Options (Synced with Hard Copy) ───
             const OPTIONS = {
@@ -109,7 +119,7 @@ const generateWorkPermitPDF = async (permit) => {
                 doc.fontSize(7).font('Helvetica').text(`Sig: ____________________`, x, y + 24);
                 doc.text(`Date: ${cert?.date || '__________'}   Time: ${cert?.time || '__________'}`, x, y + 36);
                 
-                if (cert?.signature) {
+                if (cert?.signature && typeof cert.signature === 'string' && cert.signature.startsWith('data:image')) {
                     const method = cert.signatureMethod;
                     if (method === 'digital') {
                         doc.fontSize(6).font('Helvetica-Bold').fillColor('#059669').text('[DIGITALLY VERIFIED]', x + 30, y + 24);
@@ -117,7 +127,9 @@ const generateWorkPermitPDF = async (permit) => {
                         try {
                             const buffer = Buffer.from(cert.signature.replace(/^data:image\/\w+;base64,/, ""), 'base64');
                             doc.image(buffer, x + 35, y + 20, { width: 45, height: 18 });
-                        } catch (e) {}
+                        } catch (e) {
+                            console.error('Error drawing signature image:', e.message);
+                        }
                     }
                 }
             };
@@ -277,8 +289,33 @@ const generateWorkPermitPDF = async (permit) => {
             drawSignatureLine('Permit Issuer', permit.closure?.issuer, 380, syN);
 
             doc.end();
-            stream.on('finish', () => resolve(filePath));
-        } catch (err) { reject(err); }
+
+            stream.on('finish', () => {
+                try {
+                    fs.renameSync(tempPath, finalPath);
+                    resolve(finalPath);
+                } catch (renameErr) {
+                    reject(renameErr);
+                }
+            });
+
+            stream.on('error', (streamErr) => {
+                // Cleanup temp file on stream error
+                if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+                reject(streamErr);
+            });
+
+            doc.on('error', (docErr) => {
+                // Cleanup temp file on doc error
+                if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+                reject(docErr);
+            });
+
+        } catch (err) {
+            // Final cleanup
+            if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+            reject(err);
+        }
     });
 };
 
