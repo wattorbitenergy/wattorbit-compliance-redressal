@@ -38,6 +38,7 @@ const workPermitSchema = new mongoose.Schema({
         checklist: [String],
         name: { type: String },
         signature: { type: String }, // Base64 signature
+        signatureMethod: { type: String, enum: ['digital', 'visual'], default: 'digital' },
         mobileNo: { type: String },
         date: { type: Date },
         time: { type: String }
@@ -68,6 +69,7 @@ const workPermitSchema = new mongoose.Schema({
         issuer: {
             name: { type: String },
             signature: { type: String },
+            signatureMethod: { type: String, enum: ['digital', 'visual'], default: 'digital' },
             mobileNo: { type: String },
             date: { type: Date },
             time: { type: String }
@@ -75,6 +77,7 @@ const workPermitSchema = new mongoose.Schema({
         approver: {
             name: { type: String },
             signature: { type: String },
+            signatureMethod: { type: String, enum: ['digital', 'visual'], default: 'digital' },
             mobileNo: { type: String },
             date: { type: Date },
             time: { type: String }
@@ -93,6 +96,7 @@ const workPermitSchema = new mongoose.Schema({
         name: { type: String },
         mobileNo: { type: String },
         signature: { type: String },
+        signatureMethod: { type: String, enum: ['digital', 'visual'], default: 'digital' },
         status: { type: String, enum: ['Pending', 'Approved', 'Rejected'], default: 'Pending' },
         updatedAt: { type: Date }
     }],
@@ -129,18 +133,21 @@ const workPermitSchema = new mongoose.Schema({
         powerRestoredBy: {
             name: { type: String },
             signature: { type: String },
+            signatureMethod: { type: String, enum: ['digital', 'visual'], default: 'digital' },
             date: { type: Date },
             time: { type: String }
         },
         acceptor: {
             name: { type: String },
             signature: { type: String },
+            signatureMethod: { type: String, enum: ['digital', 'visual'], default: 'digital' },
             date: { type: Date },
             time: { type: String }
         },
         issuer: {
             name: { type: String },
             signature: { type: String },
+            signatureMethod: { type: String, enum: ['digital', 'visual'], default: 'digital' },
             date: { type: Date },
             time: { type: String }
         }

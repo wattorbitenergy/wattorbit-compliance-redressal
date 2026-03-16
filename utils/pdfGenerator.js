@@ -5,192 +5,245 @@ const path = require('path');
 const generateWorkPermitPDF = async (permit) => {
     return new Promise((resolve, reject) => {
         try {
-            const doc = new PDFDocument({ margin: 50, size: 'A4' });
+            const doc = new PDFDocument({ margin: 30, size: 'A4' });
             const filename = `Permit_${permit.permitId}_V1.pdf`;
             const filePath = path.join(__dirname, '../uploads/permits', filename);
 
-            // Ensure directory exists
             const dir = path.dirname(filePath);
-            if (!fs.existsSync(dir)) {
-                fs.mkdirSync(dir, { recursive: true });
-            }
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
             const stream = fs.createWriteStream(filePath);
             doc.pipe(stream);
 
-            const pageWidth = doc.page.width - 100; // 50 margin each side
+            const pageWidth = doc.page.width - 60;
 
-            // ─── HEADER ───
-            doc.rect(0, 0, doc.page.width, 80).fill('#1e3a8a');
-            doc.fillColor('white').fontSize(20).font('Helvetica-Bold')
-                .text('BALRAMPUR CHINI MILLS LIMITED', 50, 20, { align: 'center', width: pageWidth });
-            doc.fontSize(11).font('Helvetica')
-                .text('UNIT - AKBARPUR  |  INDUSTRIAL COMPLIANCE DIVISION', 50, 48, { align: 'center', width: pageWidth });
+            // ─── Constants for Form Options (Synced with Hard Copy) ───
+            const OPTIONS = {
+                typeOfWork: [
+                    { key: 'coldWork', en: 'Cold Work', hi: 'कोल्ड वर्क' },
+                    { key: 'hotWork', en: 'Hot Work', hi: 'हॉट वर्क' },
+                    { key: 'confinedSpace', en: 'Confined Space/Vessel Entry', hi: 'सीमित स्थान/वेसल एंट्री' },
+                    { key: 'excavation', en: 'Excavation', hi: 'एक्सकैवेशन/खनन' },
+                    { key: 'workAtHeight', en: 'Work at Height', hi: 'ऊंचाई पर काम' },
+                    { key: 'electrical', en: 'Electrical', hi: 'इलेक्ट्रिकल' }
+                ],
+                nature: [
+                    { en: "Work at Height", hi: "ऊंचाई पर काम" }, { en: "Welding/Gas Cutting", hi: "वेल्डिंग/गैस कटिंग" },
+                    { en: "Hot Tapping", hi: "हॉट टैपिंग" }, { en: "Opening Line/ Equipment", hi: "ओपनिंग लाइन/उपकरण" },
+                    { en: "Excavation", hi: "खनन/खुदाई" }, { en: "Radiation Sources", hi: "विकिरण स्रोत" },
+                    { en: "Insulation", hi: "इन्सुलेशन" }, { en: "Material Handling", hi: "मटेरियल हैंडलिंग" },
+                    { en: "Painting", hi: "पेंटिंग" }, { en: "Work on Electrical System", hi: "इलेक्ट्रिकल सिस्टम पर काम" },
+                    { en: "Electrical Lockout", hi: "इलेक्ट्रिकल लॉकआउट" }, { en: "Mechanical Lockout", hi: "मैकेनिकल लॉकआउट" },
+                    { en: "Work on Fragile Roofs", hi: "कमजोर छत/सतह पर काम" }, { en: "Closure of Roads Work", hi: "सड़क का बंद होना" },
+                    { en: "Inst. Systems", hi: "इंस्ट्रूमेंट सिस्टम पर काम" }, { en: "Others", hi: "अन्य" }
+                ],
+                hazards: [
+                    { en: "Fire Hazard", hi: "आग से खतरा" }, { en: "Fall from Height", hi: "ऊंचाई से गिरने का" },
+                    { en: "Oxygen Deficiency", hi: "ऑक्सीजन की कमी" }, { en: "Toxic Gas Exposure", hi: "विषाक्त गैसों का होना" },
+                    { en: "Electrical Shock", hi: "बिजली का झटका" }, { en: "Corrosive Mat.", hi: "संक्षारक सामग्री" },
+                    { en: "Radiation Hazard", hi: "विकिरण का खतरा" }, { en: "Hot Surface", hi: "गर्म सतह" },
+                    { en: "Stored Energy", hi: "संग्रहीत ऊर्जा" }, { en: "Crush/Cut Injury", hi: "दबना/कटना" },
+                    { en: "Pressurized Equip.", hi: "दबाव वाले उपकरण" }, { en: "Noise Exposure", hi: "शोर का होना" },
+                    { en: "Dust Exposure", hi: "धूल का होना" }, { en: "Others", hi: "अन्य" }
+                ],
+                prep: [
+                    { en: "Isolation", hi: "आइसोलेशन" }, { en: "Equip./Pipe Blinded", hi: "ब्लाइन्ड" },
+                    { en: "Grounding Elec.", hi: "ग्राउंडिंग" }, { en: "Barricading Area", hi: "बैरिकेडिंग" },
+                    { en: "Protect from Spark", hi: "चिंगारी सुरक्षा" }, { en: "Height Proc. Comp.", hi: "हाइट प्रोसीजर" },
+                    { en: "Excavation Cleared", hi: "खुदाई मंजूरी" }, { en: "Confined Space Entry", hi: "सीमित स्थान" },
+                    { en: "Special Inst.", hi: "विशेष निर्देश" }, { en: "De-pressurized", hi: "दबाव रहित" },
+                    { en: "24V Lamp Use", hi: "24V लैंप" }, { en: "Vehicle Entry Proc.", hi: "वाहन प्रवेश" },
+                    { en: "Hot Work Proc.", hi: "हॉट कार्य" }, { en: "LOTO Proc.", hi: "LOTO" },
+                    { en: "Scaffold Safety", hi: "भाड़ा सुरक्षा" }, { en: "Stand-by Person", hi: "स्टैंड-बाय" },
+                    { en: "Fire Watcher", hi: "फायर वॉचर" }, { en: "Rescue Plan", hi: "रेस्क्यू प्लान" },
+                    { en: "Road Closed", hi: "रोड बंद" }, { en: "Atmos. Tested", hi: "वायुमंडल परीक्षण" },
+                    { en: "HIRA Completed", hi: "HIRA पूरा" }
+                ],
+                ppe: [
+                    { en: "Safety Helmet", hi: "हेलमेट" }, { en: "Gum Boot", hi: "गम बूट" },
+                    { en: "Dust mask", hi: "डस्ट मास्क" }, { en: "Safety Glasses", hi: "चश्मा" },
+                    { en: "Fire Extinguishers", hi: "फायर एक्स।" }, { en: "Gloves", hi: "दस्ताने" },
+                    { en: "Ear Plugs", hi: "ईयर प्लग" }, { en: "Splash Goggles", hi: "स्प्लैश चश्मा" },
+                    { en: "Fire Water/Hose", hi: "होज रील" }, { en: "Gas Mask", hi: "गैस मास्क" },
+                    { en: "Ear Muffs", hi: "ईयर मफ" }, { en: "Fire blanket", hi: "कंबल" },
+                    { en: "Leg/Arm Guards", hi: "लेग गार्ड" }, { en: "Face Shield", hi: "फेस शील्ड" },
+                    { en: "SCBA", hi: "SCBA" }, { en: "Protective suit", hi: "सूट" },
+                    { en: "Safety Harness", hi: "हार्नेस" }, { en: "Others", hi: "अन्य" }
+                ],
+                tools: [
+                    { en: "Welding Machine", hi: "वेल्डिंग मशीन" }, { en: "Gas Cylinders", hi: "सिलिंडर" },
+                    { en: "Man Lift", hi: "मैन लिफ्ट" }, { en: "Non-Sparking", hi: "नॉन-स्पार्किंग" },
+                    { en: "Mobile Crane", hi: "मोबाइल क्रेन" }, { en: "Fixed Cranes", hi: "फिक्स्ड क्रेन" },
+                    { en: "Lifting Tools", hi: "लिफ्टिंग टूल्स" }, { en: "Electric Tools", hi: "इलेक्ट्रिक टूल्स" },
+                    { en: "Scaffold", hi: "भाड़ा" }, { en: "Ladder", hi: "सीढ़ी" },
+                    { en: "Hydraulic Tools", hi: "हाइड्रोलिक टूल्स" }, { en: "Others", hi: "अन्य" }
+                ]
+            };
 
-            // ─── PERMIT ID & META ───
-            doc.moveDown(1.5);
-            doc.fillColor('#ea580c').fontSize(16).font('Helvetica-Bold')
-                .text(`WORK PERMIT: ${permit.permitId}`, 50);
-            doc.moveDown(0.3);
-            doc.fillColor('#333').fontSize(10).font('Helvetica')
-                .text(`Status: ${permit.status}  |  Generated: ${new Date().toLocaleString()}`, 50);
-            doc.moveDown(1.5);
+            // ─── Drawing Helpers ───
+            const drawCheckbox = (x, y, checked) => {
+                doc.save();
+                doc.rect(x, y, 8, 8).lineWidth(0.5).stroke('#000');
+                if (checked) {
+                    doc.fontSize(8).fillColor('#000').font('Helvetica-Bold').text('X', x + 1.2, y - 0.5);
+                }
+                doc.restore();
+            };
 
-            // ─── Helper Functions ───
-            const sectionHeader = (title) => {
-                doc.moveDown(0.5);
+            const sectionHeader = (id, title, hiTitle) => {
                 const y = doc.y;
-                doc.rect(50, y, pageWidth, 24).fill('#e5e7eb');
-                doc.fillColor('#111').fontSize(11).font('Helvetica-Bold')
-                    .text(title, 58, y + 6);
-                doc.y = y + 32;
+                doc.rect(30, y, pageWidth, 15).fill('#E2E8F0');
+                doc.fillColor('#000').fontSize(8).font('Helvetica-Bold').text(`Section ${id}: ${title}`, 35, y + 4, { continued: true });
+                doc.font('Helvetica').fontSize(7).text(` (${hiTitle})`);
+                doc.y = y + 18;
             };
 
-            const labelValue = (label, value) => {
-                doc.fontSize(9).font('Helvetica-Bold').fillColor('#555')
-                    .text(`${label}:  `, 58, doc.y, { continued: true });
-                doc.font('Helvetica').fillColor('#111')
-                    .text(value || 'N/A');
-            };
-
-            const checklistGroup = (title, items) => {
-                if (!items || items.length === 0) return;
-                doc.fontSize(9).font('Helvetica-Bold').fillColor('#444').text(`${title}:`, 58);
-                doc.moveDown(0.2);
-                doc.fontSize(8).font('Helvetica').fillColor('#333')
-                    .text(items.join('  •  '), 66, doc.y, { width: pageWidth - 20 });
-                doc.moveDown(0.5);
+            const drawSignatureLine = (label, cert, x, y) => {
+                doc.fontSize(7).font('Helvetica-Bold').fillColor('#000').text(label, x, y);
+                doc.fontSize(7).font('Helvetica').text(`Name: ${cert?.name || '____________________'}`, x, y + 10);
+                doc.text(`Sig: ____________________`, x, y + 20);
+                doc.text(`Date: ${cert?.date || '__________'}   Time: ${cert?.time || '__________'}`, x, y + 30);
+                if (cert?.signature) {
+                    const method = cert.signatureMethod;
+                    if (method === 'digital') {
+                        doc.fontSize(6).fillColor('#059669').text('[DIGITALLY VERIFIED]', x + 30, y + 20);
+                    } else {
+                        try {
+                            const buffer = Buffer.from(cert.signature.replace(/^data:image\/\w+;base64,/, ""), 'base64');
+                            doc.image(buffer, x + 30, y + 15, { width: 40, height: 15 });
+                        } catch (e) {}
+                    }
+                }
             };
 
             // ─── PAGE 1 ───
-
-            // SECTION A: TYPE OF WORK
-            sectionHeader('SECTION A: TYPE OF WORK');
-            const workTypes = Object.entries(permit.typeOfWork || {})
-                .filter(([_, v]) => v)
-                .map(([k]) => k.replace(/([A-Z])/g, ' $1').trim().toUpperCase());
-            doc.fontSize(10).font('Helvetica').fillColor('#111')
-                .text(workTypes.join('  •  ') || 'N/A', 58);
-            doc.moveDown(0.8);
-
-            // SECTION B: JOB DETAILS
-            sectionHeader('SECTION B: JOB DETAILS');
-            labelValue('Department', permit.jobDetails?.dept);
-            labelValue('Location', permit.jobDetails?.location);
-            labelValue('Equipment', `${permit.jobDetails?.equipmentName || 'N/A'} (Tag: ${permit.jobDetails?.equipmentTagNo || 'N/A'})`);
-            doc.moveDown(0.3);
-            labelValue('Job Description', permit.jobDetails?.jobDescription);
-            doc.moveDown(0.8);
-
-            // SECTION C & D: NATURE & TOOLS
-            sectionHeader('SECTION C & D: SCOPE & TOOLS');
-            checklistGroup('C. Nature of Work', permit.natureOfWork);
-            checklistGroup('D. Tools & Equipment', permit.toolsAndEquipment);
+            // Header
+            doc.fontSize(14).font('Helvetica-Bold').text('Balrampur', { align: 'center' });
+            doc.fontSize(8).font('Helvetica').text('Chini Mills Limited\nUNIT - AKBARPUR', { align: 'center' });
+            doc.fontSize(12).font('Helvetica-Bold').text('PERMIT TO WORK', { align: 'center' });
+            doc.fontSize(8).text(`Work Permit No.: A ${permit.permitId || '______'}`, pageWidth - 40, 45);
             doc.moveDown(0.5);
 
-            // SECTION E, F, G: SAFETY
-            sectionHeader('SECTION E, F, G: SAFETY CHECKLISTS');
-            checklistGroup('E. Hazards Identified', permit.hazards);
-            checklistGroup('F. Preparation Made', permit.preparation);
-            checklistGroup('G. PPE Required', permit.ppe);
+            // A
+            sectionHeader('A', 'Type of Work', 'किस प्रकार का कार्य करना');
+            let sx = 40; let sy = doc.y;
+            OPTIONS.typeOfWork.forEach((opt, i) => {
+                const c = i % 3; const r = Math.floor(i / 3);
+                drawCheckbox(sx + (c * 170), sy + (r * 12), permit.typeOfWork?.[opt.key]);
+                doc.fontSize(7).font('Helvetica').text(`${opt.en} (${opt.hi})`, sx + (c * 170) + 12, sy + (r * 12) + 1);
+            });
+            doc.y = sy + 25;
+
+            // B
+            sectionHeader('B', 'Job Details', 'कार्य का विवरण');
+            doc.fontSize(7).text(`Dept: ${permit.jobDetails?.dept || '__________'}   Location: ${permit.jobDetails?.location || '____________________'}`, 40);
+            doc.text(`Equipment: ${permit.jobDetails?.equipmentName || '__________'}   Tag No: ${permit.jobDetails?.equipmentTagNo || '__________'}`, 40);
+            doc.text(`Description: ${permit.jobDetails?.jobDescription || '____________________'}`, 40);
+            doc.text(`Execution By: ${permit.jobDetails?.executionBy || '__________'}   Persons at Work: ${permit.jobDetails?.personsAtWork || '___'}`, 40);
             doc.moveDown(0.5);
 
-            // SECTION H: ISOLATION
-            if (permit.isolation?.name) {
-                sectionHeader('SECTION H: ISOLATION CERTIFICATION');
-                doc.fontSize(8).font('Helvetica-Oblique').fillColor('#b91c1c')
-                    .text('I certify that the machine/equipment is isolated from every source of energy by Switching off /fuse removal/LOTO/Mechanical Isolation etc.', 58);
-                doc.moveDown(0.3);
-                labelValue('Certified By', `${permit.isolation.name}  |  Date: ${permit.isolation.date || 'N/A'}  |  Time: ${permit.isolation.time || 'N/A'}`);
-                doc.moveDown(0.8);
-            }
+            // C & D
+            const yCD = doc.y;
+            sectionHeader('C', 'Nature of Work', 'कार्य की प्रकृति');
+            sy = doc.y;
+            OPTIONS.nature.forEach((opt, i) => {
+                const c = i % 2; const r = Math.floor(i / 2);
+                drawCheckbox(40 + (c * 240), sy + (r * 10), permit.natureOfWork?.includes(opt.en));
+                doc.fontSize(6).text(`${opt.en} (${opt.hi})`, 52 + (c * 240), sy + (r * 10) + 1);
+            });
+            doc.y = sy + 85;
+
+            sectionHeader('D', 'Tools & Equipment', 'उपकरण और सामग्री');
+            sy = doc.y;
+            OPTIONS.tools.forEach((opt, i) => {
+                const c = i % 2; const r = Math.floor(i / 2);
+                drawCheckbox(40 + (c * 240), sy + (r * 10), permit.toolsAndEquipment?.includes(opt.en));
+                doc.fontSize(6).text(`${opt.en} (${opt.hi})`, 52 + (c * 240), sy + (r * 10) + 1);
+            });
+            doc.y = sy + 65;
+
+            // E & G
+            sectionHeader('E', 'Hazard/Risk Considerations', 'खतरे');
+            sy = doc.y;
+            OPTIONS.hazards.forEach((opt, i) => {
+                const c = i % 2; const r = Math.floor(i / 2);
+                drawCheckbox(40 + (c * 240), sy + (r * 10), permit.hazards?.includes(opt.en));
+                doc.fontSize(6).text(`${opt.en} (${opt.hi})`, 52 + (c * 240), sy + (r * 10) + 1);
+            });
+            doc.y = sy + 75;
+
+            sectionHeader('G', 'PPE and Fire Protection', 'आवश्यक पीपीई');
+            sy = doc.y;
+            OPTIONS.ppe.forEach((opt, i) => {
+                const c = i % 3; const r = Math.floor(i / 3);
+                drawCheckbox(40 + (c * 170), sy + (r * 10), permit.ppe?.includes(opt.en));
+                doc.fontSize(6).text(`${opt.en} (${opt.hi})`, 52 + (c * 170), sy + (r * 10) + 1);
+            });
+            doc.y = sy + 65;
+
+            // F
+            sectionHeader('F', 'Job/Equipment Preparation', 'की गई तैयारी');
+            sy = doc.y;
+            OPTIONS.prep.forEach((opt, i) => {
+                const c = i % 2; const r = Math.floor(i / 2);
+                drawCheckbox(40 + (c * 240), sy + (r * 8.5), permit.preparation?.includes(opt.en));
+                doc.fontSize(5.5).text(`${opt.en} (${opt.hi})`, 52 + (c * 240), sy + (r * 8.5) + 0.5);
+            });
+            doc.y = sy + 95;
+
+            // H, J, K, L (Signatures)
+            const ySigs = doc.y;
+            drawSignatureLine('H. Isolation Certification', permit.isolation, 40, ySigs);
+            drawSignatureLine('J. Permit Issuer', permit.certifications?.issuer, 280, ySigs);
+            drawSignatureLine('L. Permit Acceptor', permit.certifications?.acceptor, 40, ySigs + 45);
+            drawSignatureLine('K. Permit Approver', permit.certifications?.approver, 280, ySigs + 45);
 
             // ─── PAGE 2 ───
             doc.addPage();
+            doc.y = 35;
 
-            // SECTION I: GAS TEST RECORD
-            if (permit.gasTestLogs?.length > 0) {
-                sectionHeader('SECTION I: GAS TEST RECORD');
-                const startY = doc.y;
-                const cols = [50, 100, 150, 210, 260, 310, 360, pageWidth + 50];
-                const headers = ['Date', 'Time', 'Flam %', 'O2', 'CO', 'H2S/SO2', 'Tester'];
+            // M
+            sectionHeader('M', 'Name of individual working', 'कार्य करने वाले व्यक्तियों का नाम');
+            doc.rect(40, doc.y, pageWidth, 100).stroke();
+            doc.fontSize(7).text('NAME', 50, doc.y + 5);
+            doc.text('Emp. Code', 150, doc.y);
+            doc.text('NAME', 280, doc.y);
+            doc.text('Emp. Code', 380, doc.y);
+            
+            let my = doc.y + 15;
+            (permit.workers || []).slice(0, 10).forEach((w, i) => {
+                const c = i % 2; const r = Math.floor(i / 2);
+                doc.text(w.name || '', 50 + (c * 230), my + (r * 12));
+                doc.text(w.empCode || '', 150 + (c * 230), my + (r * 12));
+            });
+            doc.y = my + 80;
 
-                // Table Headers bg
-                doc.rect(50, startY, pageWidth, 20).fill('#f3f4f6');
-                doc.fillColor('#111').fontSize(8).font('Helvetica-Bold');
-                headers.forEach((h, i) => doc.text(h, cols[i] + 5, startY + 6));
+            // RENEWAL
+            sectionHeader('RENEWAL', 'Permit Renewal Record', 'नवीनीकरण रिकॉर्ड');
+            doc.rect(40, doc.y, pageWidth, 60).stroke();
+            doc.fontSize(6).text('DATE | TIME | ISSUER SIG | ACCEPTOR SIG', 50, doc.y + 5);
+            doc.y += 65;
 
-                let currentY = startY + 20;
-                permit.gasTestLogs.forEach(log => {
-                    doc.rect(50, currentY, pageWidth, 20).stroke('#ddd');
-                    doc.fillColor('#333').fontSize(7).font('Helvetica');
-                    doc.text(String(log.date || '').split('T')[0], cols[0] + 5, currentY + 6);
-                    doc.text(log.time || '', cols[1] + 5, currentY + 6);
-                    doc.text(log.flammablePercentage || '', cols[2] + 5, currentY + 6);
-                    doc.text(log.o2 || '', cols[3] + 5, currentY + 6);
-                    doc.text(log.co || '', cols[4] + 5, currentY + 6);
-                    doc.text(log.so2_h2s || '', cols[5] + 5, currentY + 6);
-                    doc.text(log.testedBy || '', cols[6] + 5, currentY + 6);
-                    currentY += 20;
-                });
-                doc.y = currentY + 10;
-            }
+            // GAS TEST
+            sectionHeader('I', 'Gas Test Record', 'गैस परीक्षण रिकॉर्ड');
+            doc.rect(40, doc.y, pageWidth, 80).stroke();
+            doc.fontSize(6).text('DATE | TIME | LEL% | O2 | CO | H2S | TESTED BY | SIG', 50, doc.y + 5);
+            doc.y += 85;
 
-            // SECTION M: WORKER LIST
-            if (permit.workers?.length > 0) {
-                sectionHeader('SECTION M: WORKER LIST');
-                permit.workers.forEach((w, i) => {
-                    doc.fontSize(8).font('Helvetica').fillColor('#111')
-                        .text(`${i + 1}. ${w.name || 'N/A'}  (Code/Vendor: ${w.empCode || 'N/A'})`, 58);
-                });
-                doc.moveDown(0.8);
-            }
-
-            // RENEWAL RECORDS
-            if (permit.renewals?.length > 0) {
-                sectionHeader('PERMIT RENEWAL RECORD');
-                permit.renewals.forEach((r, i) => {
-                    doc.fontSize(8).font('Helvetica').fillColor('#111')
-                        .text(`${i + 1}. ${r.date} | ${r.timeFrom}-${r.timeTo} | Issuer: ${r.issuerName} | Acceptor: ${r.acceptorName}`, 58);
-                });
-                doc.moveDown(0.8);
-            }
-
-            // SECTION N: CLOSURE
-            if (permit.closure?.status) {
-                sectionHeader('SECTION N: PERMIT CLOSURE');
-                labelValue('Closure Status', permit.closure.status);
-                if (permit.closure.reason) labelValue('Reason', permit.closure.reason);
-                doc.moveDown(0.5);
-
-                doc.fontSize(8).font('Helvetica-Bold').text('Authorizations:', 58);
-                doc.fontSize(8).font('Helvetica').fillColor('#333');
-                doc.text(`Power Restored: ${permit.closure.powerRestoredBy?.name || 'N/A'} (Date: ${permit.closure.powerRestoredBy?.date || 'N/A'})`, 66);
-                doc.text(`Acceptor Sign-off: ${permit.closure.acceptor?.name || 'N/A'} (Date: ${permit.closure.acceptor?.date || 'N/A'})`, 66);
-                doc.text(`Issuer Sign-off: ${permit.closure.issuer?.name || 'N/A'} (Date: ${permit.closure.issuer?.date || 'N/A'})`, 66);
-                doc.moveDown(0.8);
-            }
-
-            // AUTHORIZATIONS (Main Approvers)
-            sectionHeader('INITIAL APPROVALS');
-            if (permit.approvers?.length > 0) {
-                permit.approvers.forEach((app, i) => {
-                    doc.fontSize(9).font('Helvetica').fillColor('#111')
-                        .text(`${i + 1}. ${app.name || 'Unknown'} (${app.mobileNo}) — ${app.status} ${app.updatedAt ? '(On: ' + new Date(app.updatedAt).toLocaleString() + ')' : ''}`, 58);
-                });
-            }
-
-            // ─── FOOTER ───
-            const footerY = doc.page.height - 50;
-            doc.fontSize(7).fillColor('#999').font('Helvetica')
-                .text('This document is system-generated by WattOrbit Industrial Compliance. Verification via permitId on portal.', 50, footerY, { align: 'center', width: pageWidth });
+            // N
+            sectionHeader('N', 'Permit Closure/Cancellation', 'परमिट बंद/रद्द करना');
+            const yN = doc.y;
+            drawCheckbox(40, yN, permit.closure?.status?.includes('Completed')); doc.text('Job Completed & Housekeeping restored', 55, yN);
+            drawCheckbox(40, yN + 12, permit.closure?.status?.includes('new Permit')); doc.text('Job to be Completed. Issue new Permit', 55, yN + 12);
+            
+            const syN = yN + 35;
+            drawSignatureLine('Power Restored by', permit.closure?.powerRestoredBy, 40, syN);
+            drawSignatureLine('Permit Acceptor', permit.closure?.acceptor, 200, syN);
+            drawSignatureLine('Permit Issuer', permit.closure?.issuer, 360, syN);
 
             doc.end();
             stream.on('finish', () => resolve(filePath));
-            stream.on('error', reject);
-        } catch (err) {
-            reject(err);
-        }
+        } catch (err) { reject(err); }
     });
 };
 

@@ -103,7 +103,10 @@ router.get('/my-permits', async (req, res) => {
                 { requesterMobile: { $regex: normalizedM } },
                 { engineerMobile: { $regex: normalizedM } },
                 { "approvers.mobileNo": { $regex: normalizedM } },
-                { "isolation.mobileNo": { $regex: normalizedM } }
+                { "isolation.mobileNo": { $regex: normalizedM } },
+                { "certifications.issuer.mobileNo": { $regex: normalizedM } },
+                { "certifications.approver.mobileNo": { $regex: normalizedM } },
+                { "certifications.acceptor.mobileNo": { $regex: normalizedM } }
             ]
         }).sort({ createdAt: -1 });
 
