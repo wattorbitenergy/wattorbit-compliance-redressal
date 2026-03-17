@@ -118,20 +118,39 @@ const generateWorkPermitPDF = async (permit) => {
             };
 
             const drawSignatureLine = (label, cert, x, y) => {
+                const formatDate = (dateStr) => {
+                    if (!dateStr) return '__________';
+                    try {
+                        const d = new Date(dateStr);
+                        if (isNaN(d.getTime())) return dateStr;
+                        return d.toISOString().split('T')[0].split('-').reverse().join('/'); // DD/MM/YYYY
+                    } catch { return dateStr; }
+                };
+
+                const formatTime = (timeStr) => {
+                    if (!timeStr) return '__________';
+                    // If time is full ISO or long string, extract HH:mm
+                    if (timeStr.includes(':')) {
+                        const parts = timeStr.split(':');
+                        if (parts.length >= 2) return `${parts[0]}:${parts[1]}`;
+                    }
+                    return timeStr;
+                };
+
                 doc.fontSize(7).font('Helvetica-Bold').fillColor('#000').text(label, x, y);
-                doc.fontSize(7).font('Helvetica').text(`Name:`, x, y + 12);
-                doc.fontSize(8).font('Aparajita').text(cert?.name || '____________________', x + 25, y + 12);
-                doc.fontSize(7).font('Helvetica').text(`Sig: ____________________`, x, y + 24);
-                doc.text(`Date: ${cert?.date || '__________'}   Time: ${cert?.time || '__________'}`, x, y + 36);
+                doc.fontSize(7).font('Helvetica').text(`Name:`, x, y + 10);
+                doc.fontSize(8).font('Aparajita').text(cert?.name || '____________________', x + 25, y + 10);
+                doc.fontSize(7).font('Helvetica').text(`Sig: ____________________`, x, y + 20);
+                doc.text(`Date: ${formatDate(cert?.date)}   Time: ${formatTime(cert?.time)}`, x, y + 30);
                 
                 if (cert?.signature && typeof cert.signature === 'string' && cert.signature.startsWith('data:image')) {
                     const method = cert.signatureMethod;
                     if (method === 'digital') {
-                        doc.fontSize(6).font('Helvetica-Bold').fillColor('#059669').text('[DIGITALLY VERIFIED]', x + 30, y + 24);
+                        doc.fontSize(5).font('Helvetica-Bold').fillColor('#059669').text('[DIGITALLY VERIFIED]', x + 30, y + 20);
                     } else {
                         try {
                             const buffer = Buffer.from(cert.signature.replace(/^data:image\/\w+;base64,/, ""), 'base64');
-                            doc.image(buffer, x + 35, y + 20, { width: 45, height: 18 });
+                            doc.image(buffer, x + 35, y + 15, { width: 45, height: 18 });
                         } catch (e) {
                             console.error('Error drawing signature image:', e.message);
                         }
