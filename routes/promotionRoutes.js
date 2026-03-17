@@ -21,7 +21,7 @@ const verifyToken = (req, res, next) => {
 
 // Admin/Engineer check middleware
 const isAuthorized = (req, res, next) => {
-    if (req.user.role !== 'admin' && req.user.role !== 'engineer') {
+    if (req.user.role !== 'admin' && req.user.role !== 'engineer' && req.user.role !== 'employee') {
         return res.status(403).json({ message: 'Elevated access required' });
     }
     next();

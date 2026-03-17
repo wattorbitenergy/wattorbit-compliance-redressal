@@ -97,8 +97,7 @@ router.post('/register', async (req, res) => {
       role: safeRole,
       isApproved: autoApprove,
       organisationId,
-      specialization: safeRole === 'technician' ? (specialization || req.body.specialistType || 'Electrician') : '',
-      walletBalance: 100 // Welcome Bonus
+      specialization: safeRole === 'technician' ? (specialization || req.body.specialistType || 'Electrician') : ''
     });
 
     // Handle Referral

@@ -22,9 +22,10 @@ const verifyToken = (req, res, next) => {
 };
 
 // Admin check middleware
-const isAdmin = (req, res, next) => {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ message: 'Admin access required' });
+const isAuthorized = (req, res, next) => {
+    const allowedRoles = ['admin', 'employee'];
+    if (!allowedRoles.includes(req.user.role)) {
+        return res.status(403).json({ message: 'Administrative access required' });
     }
     next();
 };
@@ -72,7 +73,7 @@ router.get('/:id', async (req, res) => {
 ===================== */
 
 // POST: Create package for service (admin only)
-router.post('/', verifyToken, isAdmin, async (req, res) => {
+router.post('/', verifyToken, isAuthorized, async (req, res) => {
     try {
         const {
             serviceId,
@@ -129,7 +130,7 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
 });
 
 // PUT: Update package (admin only)
-router.put('/:id', verifyToken, isAdmin, async (req, res) => {
+router.put('/:id', verifyToken, isAuthorized, async (req, res) => {
     try {
         const {
             name,
@@ -185,7 +186,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 // PATCH: Toggle package active status (admin only)
-router.patch('/:id/toggle', verifyToken, isAdmin, async (req, res) => {
+router.patch('/:id/toggle', verifyToken, isAuthorized, async (req, res) => {
     try {
         const servicePackage = await ServicePackage.findById(req.params.id);
 
@@ -207,7 +208,7 @@ router.patch('/:id/toggle', verifyToken, isAdmin, async (req, res) => {
 });
 
 // DELETE: Delete package (admin only)
-router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
+router.delete('/:id', verifyToken, isAuthorized, async (req, res) => {
     try {
         const servicePackage = await ServicePackage.findByIdAndDelete(req.params.id);
 
@@ -223,7 +224,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 // GET: Get all packages including inactive (admin only)
-router.get('/admin/all', verifyToken, isAdmin, async (req, res) => {
+router.get('/admin/all', verifyToken, isAuthorized, async (req, res) => {
     try {
         const packages = await ServicePackage.find()
             .populate('serviceId', 'name category')

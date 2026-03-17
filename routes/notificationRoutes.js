@@ -82,12 +82,14 @@ router.post('/', verifyToken, async (req, res) => {
 
     try {
         // Topic strategy: 'all', 'user', 'technician', etc.
+        const { title, message, targetRole, imageUrl } = req.body;
         const topic = targetRole || 'all';
 
         const payload = {
             notification: {
                 title: title,
-                body: message
+                body: message,
+                ...(imageUrl && { image: imageUrl })
             },
             topic: topic
         };
