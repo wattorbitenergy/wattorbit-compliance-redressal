@@ -201,16 +201,6 @@ async function sendJobAssignedToTechnicianSms(technicianId, technicianName, book
     return sendSMS(tech.phone, templateId, vars, 'WATORB');
 }
 
-module.exports = {
-    sendSMS,
-    sendOTPSms,
-    sendTechnicianAssignedSms,
-    sendServiceCompletedSms,
-    sendBookingCreatedSms,
-    sendJobAssignedToTechnicianSms,
-    sendServiceRequestOTPSms
-};
-
 /**
  * 6. Service Request OTP — to Customer (Sender: WTORBT)
  * Template: Dear Customer, Your WattOrbit service request verification OTP is {#VAR#}.
@@ -221,3 +211,13 @@ async function sendServiceRequestOTPSms(phone, otp) {
     if (!templateId) return false;
     return sendSMS(phone, templateId, otp, 'WTORBT', true);
 }
+
+module.exports = {
+    sendSMS,
+    sendOTPSms,
+    sendTechnicianAssignedSms,
+    sendServiceCompletedSms,
+    sendBookingCreatedSms,
+    sendJobAssignedToTechnicianSms,
+    sendServiceRequestOTPSms
+};

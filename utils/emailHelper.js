@@ -196,11 +196,6 @@ async function sendJobCompletedEmail(user, booking, invoice) {
     }
 }
 
-    sendTechnicianAssignedEmail,
-    sendJobCompletedEmail,
-    sendServiceRequestOTPEmail
-};
-
 /**
  * 5. Service Request OTP Email
  */
@@ -233,3 +228,11 @@ async function sendServiceRequestOTPEmail(user, otp) {
         console.error(`[Email] Failed to send service OTP to ${user.email}:`, err.message);
     }
 }
+
+module.exports = {
+    sendWelcomeEmail,
+    sendBookingCreatedEmail,
+    sendTechnicianAssignedEmail,
+    sendJobCompletedEmail,
+    sendServiceRequestOTPEmail
+};
