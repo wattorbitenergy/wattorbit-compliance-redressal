@@ -20,12 +20,12 @@ const userSchema = new mongoose.Schema({
     },
     password: {
         type: String,
-        required: true,
+        required: false,
         select: false
     },
     role: {
         type: String,
-        enum: ['user', 'admin', 'technician', 'engineer', 'organisation'],
+        enum: ['user', 'admin', 'technician', 'engineer', 'organisation', 'employee'],
         default: 'user'
     },
     organisationId: {

@@ -1,6 +1,7 @@
 const AutomationHook = require('../models/AutomationHook');
 const User = require('../models/User');
 const Booking = require('../models/Booking');
+const Config = require('../models/Config');
 const mailer = require('../routes/mailer');
 const admin = require('firebase-admin');
 
@@ -186,6 +187,13 @@ async function executeAction(action, data, hook) {
  */
 async function sendEmail(config, data) {
     try {
+        // Global toggle check
+        const globalEmailConfig = await Config.findOne({ key: 'enable_email' });
+        if (globalEmailConfig && globalEmailConfig.value === false) {
+            console.log('[Automation] Email Skipped: Global email notifications are disabled.');
+            return;
+        }
+
         // Populate data if needed
         if (data.userId && !data.userId.email) {
             await data.populate('userId');
@@ -218,6 +226,13 @@ async function sendEmail(config, data) {
  */
 async function sendSMS(config, data) {
     try {
+        // Global toggle check
+        const globalSmsConfig = await Config.findOne({ key: 'enable_sms' });
+        if (globalSmsConfig && globalSmsConfig.value === false) {
+            console.log('[Automation] SMS Skipped: Global SMS notifications are disabled.');
+            return;
+        }
+
         const to = interpolate(config.to, data);
         const message = interpolate(config.message, data);
 

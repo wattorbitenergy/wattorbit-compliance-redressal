@@ -146,8 +146,9 @@ router.get('/config/:key', verifyToken, async (req, res) => {
 });
 
 router.post('/config', verifyToken, async (req, res) => {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ message: 'Admin access required' });
+    const allowedRoles = ['admin', 'employee'];
+    if (!allowedRoles.includes(req.user.role)) {
+        return res.status(403).json({ message: 'Administrative access required' });
     }
 
     const { key, value } = req.body;
@@ -191,7 +192,8 @@ const upload = multer({
 });
 
 router.post('/upload-image', verifyToken, (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin access required' });
+    const allowedRoles = ['admin', 'employee'];
+    if (!allowedRoles.includes(req.user.role)) return res.status(403).json({ message: 'Administrative access required' });
 
     upload.single('image')(req, res, function (err) {
         if (err instanceof multer.MulterError) {
@@ -216,8 +218,9 @@ router.post('/upload-image', verifyToken, (req, res) => {
    Reads frontend/public/images and returns filenames
    ================================================================= */
 router.get('/images', verifyToken, async (req, res) => {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ message: 'Admin access required' });
+    const allowedRoles = ['admin', 'employee'];
+    if (!allowedRoles.includes(req.user.role)) {
+        return res.status(403).json({ message: 'Administrative access required' });
     }
 
     const fs = require('fs');

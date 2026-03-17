@@ -22,9 +22,10 @@ const verifyToken = (req, res, next) => {
 };
 
 // Admin check middleware
-const isAdmin = (req, res, next) => {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ message: 'Admin access required' });
+const isAuthorized = (req, res, next) => {
+    const allowedRoles = ['admin', 'employee'];
+    if (!allowedRoles.includes(req.user.role)) {
+        return res.status(403).json({ message: 'Administrative access required' });
     }
     next();
 };
@@ -110,7 +111,7 @@ router.get('/meta/categories', async (req, res) => {
 ===================== */
 
 // POST: Create new service (admin only)
-router.post('/', verifyToken, isAdmin, async (req, res) => {
+router.post('/', verifyToken, isAuthorized, async (req, res) => {
     try {
         const {
             name,
@@ -164,7 +165,7 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
 });
 
 // PUT: Update service (admin only)
-router.put('/:id', verifyToken, isAdmin, async (req, res) => {
+router.put('/:id', verifyToken, isAuthorized, async (req, res) => {
     try {
         const {
             name,
@@ -210,7 +211,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 // PATCH: Toggle service active status (admin only)
-router.patch('/:id/toggle', verifyToken, isAdmin, async (req, res) => {
+router.patch('/:id/toggle', verifyToken, isAuthorized, async (req, res) => {
     try {
         const service = await Service.findById(req.params.id);
 
@@ -232,7 +233,7 @@ router.patch('/:id/toggle', verifyToken, isAdmin, async (req, res) => {
 });
 
 // PATCH: Toggle service curation status (admin only)
-router.patch('/:id/curate', verifyToken, isAdmin, async (req, res) => {
+router.patch('/:id/curate', verifyToken, isAuthorized, async (req, res) => {
     try {
         const service = await Service.findById(req.params.id);
 
@@ -254,7 +255,7 @@ router.patch('/:id/curate', verifyToken, isAdmin, async (req, res) => {
 });
 
 // DELETE: Delete service (admin only)
-router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
+router.delete('/:id', verifyToken, isAuthorized, async (req, res) => {
     try {
         // Check if service has associated packages
         const packagesCount = await ServicePackage.countDocuments({
@@ -281,7 +282,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 // GET: Get all services including inactive (admin only)
-router.get('/admin/all', verifyToken, isAdmin, async (req, res) => {
+router.get('/admin/all', verifyToken, isAuthorized, async (req, res) => {
     try {
         const services = await Service.find()
             .populate('createdBy', 'name username')

@@ -1,5 +1,6 @@
 const https = require('https');
 const User = require('../models/User');
+const Config = require('../models/Config');
 
 const API_KEY = process.env.FAST2SMS_API_KEY;
 
@@ -10,10 +11,21 @@ const API_KEY = process.env.FAST2SMS_API_KEY;
  * @param {string} variablesValues - Pipe separated values for variables (e.g. "Value1|Value2")
  * @param {string} senderId - DLT Sender ID (e.g., WTORBT or WATORB)
  */
-async function sendSMS(phone, messageId, variablesValues = '', senderId = 'WATORB') {
+async function sendSMS(phone, messageId, variablesValues = '', senderId = 'WATORB', isBypass = false) {
     if (!API_KEY) {
         console.warn('[SMS] Skipped: FAST2SMS_API_KEY not set in environment.');
         return false;
+    }
+
+    // Global toggle check
+    try {
+        const globalSmsConfig = await Config.findOne({ key: 'enable_sms' });
+        if (globalSmsConfig && globalSmsConfig.value === false && !isBypass) {
+            console.log('[SMS] Skipped: Global SMS notifications are disabled in settings.');
+            return false;
+        }
+    } catch (err) {
+        console.error('[SMS] Error checking global toggle:', err.message);
     }
 
     if (!messageId) {
@@ -115,7 +127,7 @@ async function sendOTPSms(phone, otp) {
         console.warn('[SMS] OTP skipped: FAST2SMS_OTP_TEMPLATE_ID missing in .env');
         return false;
     }
-    return sendSMS(phone, templateId, otp, 'WTORBT');
+    return sendSMS(phone, templateId, otp, 'WTORBT', true);
 }
 
 /**
@@ -195,5 +207,17 @@ module.exports = {
     sendTechnicianAssignedSms,
     sendServiceCompletedSms,
     sendBookingCreatedSms,
-    sendJobAssignedToTechnicianSms
+    sendJobAssignedToTechnicianSms,
+    sendServiceRequestOTPSms
 };
+
+/**
+ * 6. Service Request OTP — to Customer (Sender: WTORBT)
+ * Template: Dear Customer, Your WattOrbit service request verification OTP is {#VAR#}.
+ *           Please do not share this OTP with anyone. Team WattOrbit
+ */
+async function sendServiceRequestOTPSms(phone, otp) {
+    const templateId = process.env.FAST2SMS_SERVICE_OTP_TEMPLATE_ID || process.env.FAST2SMS_OTP_TEMPLATE_ID;
+    if (!templateId) return false;
+    return sendSMS(phone, templateId, otp, 'WTORBT', true);
+}

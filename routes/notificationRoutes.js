@@ -69,8 +69,9 @@ router.post('/subscribe', verifyToken, async (req, res) => {
 
 /* POST: Send Push Notification (FCM) */
 router.post('/', verifyToken, async (req, res) => {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ message: 'Admin access required' });
+    const allowedRoles = ['admin', 'employee'];
+    if (!allowedRoles.includes(req.user.role)) {
+        return res.status(403).json({ message: 'Administrative access required' });
     }
 
     const { title, message, targetRole } = req.body;

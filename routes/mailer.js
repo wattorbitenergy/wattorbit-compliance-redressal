@@ -5,7 +5,7 @@ const mailjet = require("node-mailjet").apiConnect(
 
 // This object mimics Nodemailer transporter
 const transporter = {
-  async sendMail({ to, subject, html }) {
+  async sendMail({ to, subject, html, attachments }) {
     try {
       const request = await mailjet
         .post("send", { version: "v3.1" })
@@ -22,7 +22,8 @@ const transporter = {
                 }
               ],
               Subject: subject,
-              HTMLPart: html
+              HTMLPart: html,
+              Attachments: attachments || []
             }
           ]
         });

@@ -99,8 +99,12 @@ const generateWorkPermitPDF = async (permit) => {
                 doc.save();
                 doc.rect(x, y, 7, 7).lineWidth(0.5).stroke('#000');
                 if (checked) {
-                    // Use a tick mark instead of 'X'
-                    doc.fontSize(8).fillColor('#000').font('Helvetica-Bold').text('\u2713', x + 0.5, y - 1);
+                    // Use vector-based tick mark for maximum visibility/compatibility
+                    doc.lineWidth(1)
+                       .moveTo(x + 1.5, y + 3.5)
+                       .lineTo(x + 3, y + 5.5)
+                       .lineTo(x + 5.5, y + 1.5)
+                       .stroke('#000');
                 }
                 doc.restore();
             };

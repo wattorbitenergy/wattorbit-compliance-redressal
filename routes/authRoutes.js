@@ -66,6 +66,21 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: 'Email and Phone number are required' });
     }
 
+    // Determine if password is required
+    const token = req.headers.authorization?.split(' ')[1];
+    let requesterRole = 'user';
+    if (token) {
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET);
+            requesterRole = decoded.role;
+        } catch (e) { /* ignore verify error here */ }
+    }
+
+    const isAdminOrEmployee = ['admin', 'employee'].includes(requesterRole);
+    if (!password && !isAdminOrEmployee) {
+      return res.status(400).json({ message: 'Password is required' });
+    }
+
     const exists = await User.findOne({ $or: [{ username }, { email }, { phone }] });
     if (exists) return res.status(409).json({ message: 'User already exists' });
 
@@ -161,7 +176,7 @@ router.post('/check-user', async (req, res) => {
         { phone: String(identity).trim() },
         { username: identifier }
       ]
-    });
+    }).select('+password'); // We need to check if password exists
 
     if (user) {
       return res.json({
@@ -169,7 +184,8 @@ router.post('/check-user', async (req, res) => {
         phone: user.phone,
         email: user.email,
         name: user.name,
-        role: user.role
+        role: user.role,
+        hasPassword: !!user.password
       });
     }
 
@@ -199,7 +215,17 @@ router.post('/login', authLimiter, async (req, res) => {
         { phone: String(username).trim() } // Phone is case-sensitive (usually numbers), keep original case but trim
       ]
     }).select('+password');
-    if (!user || !(await user.comparePassword(password))) {
+    
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    // Check for passwordless users
+    if (!user.password && password) {
+        return res.status(401).json({ message: 'Password not set for this account. Please use OTP Login.' });
+    }
+
+    if (!(await user.comparePassword(password))) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
@@ -394,7 +420,7 @@ router.post('/reset-password', async (req, res) => {
 router.get('/users', verifyToken, async (req, res) => {
   try {
     // Only allow specific administrative roles
-    const allowedRoles = ['admin', 'organisation', 'engineer'];
+    const allowedRoles = ['admin', 'organisation', 'engineer', 'employee'];
     if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({ message: `Access denied: ${req.user.role} role not authorized for user management` });
     }
@@ -459,7 +485,7 @@ router.patch('/admin-reset-password/:id', verifyToken, async (req, res) => {
 ========================= */
 router.patch('/approve/:id', verifyToken, async (req, res) => {
   try {
-    const allowedRoles = ['admin', 'organisation'];
+    const allowedRoles = ['admin', 'organisation', 'employee'];
     if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({ message: 'Access denied' });
     }
@@ -644,7 +670,7 @@ router.patch('/availability', verifyToken, async (req, res) => {
    ========================= */
 router.patch('/set-role/:id', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && req.user.role !== 'organisation') {
+    if (req.user.role !== 'admin' && req.user.role !== 'organisation' && req.user.role !== 'employee') {
       return res.status(403).json({ message: 'Administrative access required' });
     }
 

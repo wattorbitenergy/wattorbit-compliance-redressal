@@ -10,8 +10,19 @@ const { generateBookingId } = require('../utils/idGenerator');
 const { triggerAutomation } = require('../utils/automationEngine');
 const { sendUserNotification, sendTopicNotification } = require('../utils/notificationHelper');
 const { autoGenerateInvoice } = require('../utils/invoiceHelper');
-const { sendBookingCreatedSms, sendTechnicianAssignedSms, sendJobAssignedToTechnicianSms, sendServiceCompletedSms } = require('../utils/smsHelper'); // 📱 Fast2SMS
-const { sendBookingCreatedEmail, sendTechnicianAssignedEmail, sendJobCompletedEmail } = require('../utils/emailHelper'); // ✉️ Email Templates
+const { 
+    sendBookingCreatedSms, 
+    sendTechnicianAssignedSms, 
+    sendJobAssignedToTechnicianSms, 
+    sendServiceCompletedSms,
+    sendServiceRequestOTPSms // 🆕
+} = require('../utils/smsHelper'); 
+const { 
+    sendBookingCreatedEmail, 
+    sendTechnicianAssignedEmail, 
+    sendJobCompletedEmail,
+    sendServiceRequestOTPEmail // 🆕
+} = require('../utils/emailHelper');
 const jwt = require('jsonwebtoken');
 
 // Verify token middleware
@@ -40,7 +51,7 @@ const isAdmin = (req, res, next) => {
 
 // Admin, Engineer, or Partner (Organisation) check middleware
 const canManageBookings = (req, res, next) => {
-    const roles = ['admin', 'engineer', 'organisation'];
+    const roles = ['admin', 'engineer', 'organisation', 'employee'];
     if (!roles.includes(req.user.role)) {
         return res.status(403).json({ message: 'Access denied: Requires Admin, Engineer, or Partner role' });
     }
@@ -49,8 +60,9 @@ const canManageBookings = (req, res, next) => {
 
 // Admin or Engineer check middleware
 const isAdminOrEngineer = (req, res, next) => {
-    if (req.user.role !== 'admin' && req.user.role !== 'engineer') {
-        return res.status(403).json({ message: 'Admin or Engineer access required' });
+    const roles = ['admin', 'engineer', 'employee'];
+    if (!roles.includes(req.user.role)) {
+        return res.status(403).json({ message: 'Administrative access required' });
     }
     next();
 };
@@ -782,7 +794,7 @@ router.patch('/:id/status', verifyToken, canManageBookings, async (req, res) => 
                 );
 
                 // Auto-generate Invoice
-                await autoGenerateInvoice(booking._id);
+                const invoice = await autoGenerateInvoice(booking._id);
 
                 // SMS: Service Completed — to Customer
                 const completedUser = await User.findById(booking.userId).select('name email username');
@@ -794,7 +806,7 @@ router.patch('/:id/status', verifyToken, canManageBookings, async (req, res) => 
 
                 // 🔥 Email: Service Completed — to Customer
                 if (completedUser) {
-                    sendJobCompletedEmail(completedUser, booking).catch(e => console.error('[Email] job completed error:', e));
+                    sendJobCompletedEmail(completedUser, booking, invoice).catch(e => console.error('[Email] job completed error:', e));
                 }
             }
         }
@@ -1159,6 +1171,194 @@ router.get('/technician/stats', verifyToken, async (req, res) => {
     } catch (err) {
         console.error('Stats error:', err);
         res.status(500).json({ message: 'Failed to fetch statistics' });
+    }
+});
+
+/* =====================
+   EMPLOYEE-INITIATED REQUESTS
+===================== */
+
+/**
+ * POST: Initiate service request for a user (Existing or New)
+ * Requires OTP confirmation from the user to finalize.
+ */
+router.post('/employee/initiate-request', verifyToken, isAdminOrEngineer, async (req, res) => {
+    try {
+        const {
+            phone,
+            email,
+            name,
+            serviceId,
+            packageId,
+            addressDetails, // { flatNo, building, street, landmark, city, state, pincode }
+            addressId,      // If using existing address
+            scheduledDate,
+            scheduledTimeSlot,
+            customerNotes
+        } = req.body;
+
+        if (!phone || !serviceId || !packageId || !scheduledDate || !scheduledTimeSlot) {
+            return res.status(400).json({ message: 'Missing required fields' });
+        }
+
+        // 1. Find or Create User
+        let user = await User.findOne({ phone: phone.trim() });
+        let isNewUser = false;
+
+        if (!user) {
+            // Create user without password (OTP Login only)
+            user = new User({
+                phone: phone.trim(),
+                email: email ? email.toLowerCase().trim() : undefined,
+                name: name || 'Customer',
+                username: phone.trim(),
+                role: 'user',
+                isApproved: true,
+                walletBalance: 100 // Welcome Bonus
+            });
+            await user.save();
+            isNewUser = true;
+        }
+
+        // 2. Handle Address
+        let finalAddressId = addressId;
+        if (!finalAddressId && addressDetails) {
+            const newAddress = new Address({
+                userId: user._id,
+                ...addressDetails,
+                contactName: user.name,
+                contactPhone: user.phone
+            });
+            await newAddress.save();
+            finalAddressId = newAddress._id;
+        }
+
+        if (!finalAddressId) {
+            return res.status(400).json({ message: 'Address is required (addressId or addressDetails)' });
+        }
+
+        // 3. Service & Package Validation
+        const service = await Service.findById(serviceId);
+        const servicePackage = await ServicePackage.findById(packageId);
+
+        if (!service || !servicePackage || servicePackage.serviceId.toString() !== serviceId) {
+            return res.status(404).json({ message: 'Invalid service or package' });
+        }
+
+        // 4. Calculate Pricing (Simplified for Employee Dashboard)
+        const technicianCharges = servicePackage.technicianCharges || 0;
+        const platformFees = servicePackage.platformFees || 0;
+        const taxes = Math.round((platformFees * 18) / 100);
+        const basePrice = technicianCharges + platformFees;
+        const totalAmount = basePrice + taxes;
+
+        // 5. Generate OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpExpires = Date.now() + 600000; // 10 minutes
+
+        // 6. Create Booking (Awaiting Confirmation)
+        const bookingId = await generateBookingId();
+        const booking = new Booking({
+            bookingId,
+            userId: user._id,
+            serviceId,
+            packageId,
+            addressId: finalAddressId,
+            scheduledDate: new Date(scheduledDate),
+            scheduledTimeSlot,
+            customerNotes,
+            basePrice,
+            technicianCharges,
+            platformFees,
+            taxes,
+            totalAmount,
+            paymentMethod: 'COD',
+            status: 'Awaiting Confirmation',
+            serviceOTP: otp,
+            serviceOTPExpires: otpExpires,
+            statusHistory: [{
+                status: 'Awaiting Confirmation',
+                timestamp: new Date(),
+                updatedBy: req.user.id,
+                notes: `Initiated by employee ${req.user.name || req.user.id}`
+            }]
+        });
+
+        await booking.save();
+
+        // 7. Send OTP
+        sendServiceRequestOTPSms(user.phone, otp).catch(e => console.error('[SMS] Service OTP error:', e));
+        if (user.email) {
+            sendServiceRequestOTPEmail(user, otp).catch(e => console.error('[Email] Service OTP error:', e));
+        }
+
+        res.status(201).json({
+            message: 'Service request initiated. OTP sent to user.',
+            bookingId: booking._id,
+            displayId: booking.bookingId,
+            isNewUser
+        });
+
+    } catch (err) {
+        console.error('Initiate request error:', err);
+        res.status(500).json({ message: 'Failed to initiate service request' });
+    }
+});
+
+/**
+ * POST: Confirm employee-initiated request with OTP
+ */
+router.post('/employee/confirm-request', verifyToken, isAdminOrEngineer, async (req, res) => {
+    try {
+        const { bookingId, otp } = req.body;
+
+        if (!bookingId || !otp) {
+            return res.status(400).json({ message: 'Booking ID and OTP are required' });
+        }
+
+        const booking = await Booking.findById(bookingId);
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+        if (booking.status !== 'Awaiting Confirmation') {
+            return res.status(400).json({ message: 'Booking is not in awaiting confirmation state' });
+        }
+
+        // Verify OTP
+        if (booking.serviceOTP !== otp || booking.serviceOTPExpires < Date.now()) {
+            return res.status(401).json({ message: 'Invalid or expired OTP' });
+        }
+
+        // Clear OTP and update status to Pending
+        booking.serviceOTP = undefined;
+        booking.serviceOTPExpires = undefined;
+        booking.status = 'Pending';
+        booking.statusHistory.push({
+            status: 'Pending',
+            timestamp: new Date(),
+            updatedBy: req.user.id,
+            notes: 'User verified via OTP. Booking confirmed.'
+        });
+
+        await booking.save();
+
+        // Trigger Standard automations
+        const service = await Service.findById(booking.serviceId);
+        const user = await User.findById(booking.userId);
+
+        await triggerAutomation('booking.created', booking);
+        
+        // Notify Customer (Push + SMS + Email)
+        sendBookingCreatedSms(user._id, user.name || 'Customer', booking.bookingId, service.name).catch(o => {});
+        sendBookingCreatedEmail(user, booking, service.name).catch(o => {});
+
+        res.json({
+            message: 'Booking confirmed successfully',
+            booking
+        });
+
+    } catch (err) {
+        console.error('Confirm request error:', err);
+        res.status(500).json({ message: 'Failed to confirm booking' });
     }
 });
 

@@ -63,6 +63,7 @@ const bookingSchema = new mongoose.Schema({
     status: {
         type: String,
         enum: [
+            'Awaiting Confirmation',
             'Pending',
             'Confirmed',
             'Assigned',
@@ -73,6 +74,8 @@ const bookingSchema = new mongoose.Schema({
         ],
         default: 'Pending'
     },
+    serviceOTP: String,
+    serviceOTPExpires: Date,
 
     // Pricing
     basePrice: {
