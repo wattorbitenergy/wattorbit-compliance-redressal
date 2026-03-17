@@ -9,6 +9,7 @@ const Config = require('../models/Config');
 const mailer = require('./mailer');   // 🔥 Mailjet API (SMTP-free)
 const { sendOTPSms } = require('../utils/smsHelper'); // 📱 Fast2SMS
 const { sendWelcomeEmail } = require('../utils/emailHelper'); // ✉️ Email Templates
+const cache = require('../utils/cache');
 
 /* =========================
    ENV CHECK
@@ -146,6 +147,7 @@ router.post('/register', async (req, res) => {
     user.referralCode = newReferralCode;
 
     await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
     
     // 🔥 Email: Welcome — to new User
     if (autoApprove) {
@@ -276,6 +278,7 @@ router.post('/send-otp', authLimiter, async (req, res) => {
     user.loginOTP = otp;
     user.loginOTPExpires = Date.now() + 600000; // 10 minutes
     await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
 
     // Send OTP via email
     if (user.email) {
@@ -328,6 +331,7 @@ router.post('/otp-login', authLimiter, async (req, res) => {
     user.loginOTPExpires = undefined;
     if (fcmToken) user.fcmToken = fcmToken;
     await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
 
     const isWeb = req.body.platform === 'web';
     const expiresIn = isWeb ? '1h' : '30d';
@@ -370,6 +374,7 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
     user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
     user.resetPasswordExpires = Date.now() + 3600000;
     await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
 
     const origin = process.env.FRONTEND_URL || req.get('origin') || 'https://wattorbit.com';
     const resetUrl = `${origin}/reset-password?token=${resetToken}`;
@@ -440,7 +445,7 @@ router.get('/users', verifyToken, async (req, res) => {
     }
 
     // Exclude password for security.
-    const users = await User.find(query).select('-password').sort({ createdAt: -1 });
+    const users = await User.find(query).select('-password').sort({ createdAt: -1 }).lean();
 
     res.json(users);
   } catch (err) {
@@ -471,6 +476,7 @@ router.patch('/admin-reset-password/:id', verifyToken, async (req, res) => {
     // Directly setting password triggers pre-save hook for hashing (usually)
     user.password = newPassword;
     await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
 
     res.json({ message: `Password reset for ${user.username}` });
   } catch (err) {
@@ -501,6 +507,7 @@ router.patch('/approve/:id', verifyToken, async (req, res) => {
 
     user.isApproved = true;
     await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
 
     res.json({ message: `User ${user.username} approved successfully`, user });
   } catch (err) {
@@ -517,7 +524,8 @@ router.get('/public-organisations', async (req, res) => {
   try {
     const organisations = await User.find({ role: 'organisation' })
       .select('name city _id')
-      .sort({ name: 1 });
+      .sort({ name: 1 })
+      .lean();
     res.json(organisations);
   } catch (err) {
     console.error('Fetch public organisations error:', err);
@@ -536,6 +544,7 @@ router.patch('/update-payment-method', verifyToken, async (req, res) => {
 
     user.defaultPaymentMethod = defaultPaymentMethod;
     await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
 
     res.json({ message: 'Payment method updated', defaultPaymentMethod: user.defaultPaymentMethod });
   } catch (err) {
@@ -553,6 +562,7 @@ router.post('/upgrade-membership', verifyToken, async (req, res) => {
 
     user.isPlusMember = true;
     await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
 
     res.json({ message: 'Successfully upgraded to Plus Membership!', isPlusMember: true });
   } catch (err) {
@@ -580,6 +590,7 @@ router.patch('/admin/adjust-points', verifyToken, async (req, res) => {
 
     user.walletBalance = Math.max(0, (user.walletBalance || 0) + adjustAmount);
     await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
 
     res.json({ message: 'Points adjusted', walletBalance: user.walletBalance });
   } catch (err) {
@@ -602,6 +613,7 @@ router.patch('/admin/toggle-membership', verifyToken, async (req, res) => {
 
     user.isPlusMember = isPlusMember;
     await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
 
     res.json({ message: 'Membership updated', isPlusMember: user.isPlusMember });
   } catch (err) {
@@ -657,6 +669,7 @@ router.patch('/availability', verifyToken, async (req, res) => {
 
     user.availabilityStatus = status;
     await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
 
     res.json({ message: 'Status updated', availabilityStatus: user.availabilityStatus });
   } catch (err) {
@@ -699,6 +712,7 @@ router.patch('/set-role/:id', verifyToken, async (req, res) => {
     }
 
     await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
     res.json({ message: 'User updated successfully', user });
   } catch (err) {
     console.error('Set role error:', err);
@@ -732,6 +746,7 @@ router.patch('/update-profile/:id', verifyToken, async (req, res) => {
     }
 
     await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
     res.json({ message: 'Profile updated successfully', user });
   } catch (err) {
     console.error('Update profile error:', err);
@@ -753,6 +768,7 @@ router.patch('/sms-preference', verifyToken, async (req, res) => {
     if (!user) return res.status(404).json({ message: 'User not found' });
     user.smsNotificationsEnabled = enabled;
     await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
     res.json({ message: `SMS notifications ${enabled ? 'enabled' : 'disabled'}`, smsNotificationsEnabled: enabled });
   } catch (err) {
     console.error('SMS preference error:', err);
@@ -776,6 +792,7 @@ router.patch('/admin/toggle-sms/:userId', verifyToken, async (req, res) => {
     }
     user.smsNotificationsEnabled = enabled;
     await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
     res.json({ message: `SMS for ${user.name || user.username} ${enabled ? 'enabled' : 'disabled'}`, smsNotificationsEnabled: enabled });
   } catch (err) {
     console.error('Admin toggle SMS error:', err);

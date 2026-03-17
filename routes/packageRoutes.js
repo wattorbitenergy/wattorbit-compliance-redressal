@@ -42,7 +42,8 @@ router.get('/service/:serviceId', async (req, res) => {
             isActive: true
         })
             .populate('serviceId', 'name category')
-            .sort({ price: 1 });
+            .sort({ price: 1 })
+            .lean();
 
         res.json(packages);
     } catch (err) {
@@ -228,7 +229,8 @@ router.get('/admin/all', verifyToken, isAuthorized, async (req, res) => {
     try {
         const packages = await ServicePackage.find()
             .populate('serviceId', 'name category')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .lean();
 
         res.json(packages);
     } catch (err) {

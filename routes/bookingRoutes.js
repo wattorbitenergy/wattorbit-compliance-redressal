@@ -17,6 +17,7 @@ const {
     sendServiceCompletedSms,
     sendServiceRequestOTPSms // 🆕
 } = require('../utils/smsHelper'); 
+const cache = require('../utils/cache');
 const { 
     sendBookingCreatedEmail, 
     sendTechnicianAssignedEmail, 
@@ -172,10 +173,10 @@ router.post('/', verifyToken, async (req, res) => {
 
         const totalAmount = Math.max(0, basePrice + taxes - discount - pointsToUse);
 
-        // Always generate bookingId upfront for all payment methods.
-        // Previously, online payments skipped this, resulting in bookingId=null
-        // which caused a duplicate key error on the unique index.
-        const bookingId = await generateBookingId();
+        // For Online payments: defer bookingId generation until payment is verified.
+        // For COD/Wallet: generate bookingId immediately.
+        const isOnlinePayment = paymentMethod === 'Online';
+        const bookingId = isOnlinePayment ? null : await generateBookingId();
 
         const booking = new Booking({
             bookingId,
@@ -202,11 +203,12 @@ router.post('/', verifyToken, async (req, res) => {
                 status: 'Pending',
                 timestamp: new Date(),
                 updatedBy: req.user.id,
-                notes: paymentMethod === 'Online' ? 'Booking initiated (Awaiting Payment)' : 'Booking created'
+                notes: isOnlinePayment ? 'Booking initiated (Awaiting Payment)' : 'Booking created'
             }]
         });
 
         await booking.save();
+        cache.del('dashboard_stats:role=admin&org=global'); // Simple bust for now
 
         // Track coupon usage
         if (couponId) {
@@ -225,21 +227,23 @@ router.post('/', verifyToken, async (req, res) => {
         // Trigger automation hook
         await triggerAutomation('booking.created', booking);
 
-        // Notify Admin of new booking (push)
-        await sendTopicNotification(
-            'admin',
-            paymentMethod === 'Online' ? 'New Online Booking Initiated' : 'New Booking Received',
-            paymentMethod === 'Online'
-                ? `New online booking initiated for ${service.name}. (Awaiting Payment)`
-                : `New booking ${booking.bookingId} for ${service.name}.`,
-            { bookingId: booking._id.toString(), type: 'new_booking' }
-        );
+        // For Online payments: NO notifications until payment is verified (handled in paymentRoutes.js).
+        // For COD/Wallet: send notifications immediately.
+        if (!isOnlinePayment) {
+            // Notify Admin of new booking (push)
+            await sendTopicNotification(
+                'admin',
+                'New Booking Received',
+                `New booking ${booking.bookingId} for ${service.name}.`,
+                { bookingId: booking._id.toString(), type: 'new_booking' }
+            );
 
-        // SMS: Booking Created — to Customer
-        sendBookingCreatedSms(req.user.id, user.name || 'Customer', booking.bookingId, service.name).catch(e => console.error('[SMS] booking created error:', e));
+            // SMS: Booking Created — to Customer
+            sendBookingCreatedSms(req.user.id, user.name || 'Customer', booking.bookingId, service.name).catch(e => console.error('[SMS] booking created error:', e));
 
-        // 🔥 Email: Booking Created — to Customer
-        sendBookingCreatedEmail(user, booking, service.name).catch(e => console.error('[Email] booking created error:', e));
+            // 🔥 Email: Booking Created — to Customer
+            sendBookingCreatedEmail(user, booking, service.name).catch(e => console.error('[Email] booking created error:', e));
+        }
 
         // Populate for response
         await booking.populate([
@@ -283,7 +287,8 @@ router.get('/my-bookings', verifyToken, async (req, res) => {
             .populate('packageId', 'name price')
             .populate('addressId')
             .populate('assignedTechnician', 'name phone')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .lean();
 
         res.json(bookings);
     } catch (err) {
@@ -306,7 +311,8 @@ router.get('/track', async (req, res) => {
             .populate('serviceId', 'name category')
             .populate('addressId', 'city street pincode')
             .populate('assignedTechnician', 'name phone')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .lean();
 
         res.json(bookings);
     } catch (err) {
@@ -406,6 +412,7 @@ router.patch('/:id/cancel', verifyToken, async (req, res) => {
         });
 
         await booking.save();
+        cache.del('dashboard_stats:role=admin&org=global');
 
         // Trigger automation hook
         await triggerAutomation('booking.cancelled', booking);
@@ -471,6 +478,7 @@ router.patch('/:id/reschedule', verifyToken, async (req, res) => {
         });
 
         await booking.save();
+        cache.del('dashboard_stats:role=admin&org=global');
 
         // Trigger automation hook
         await triggerAutomation('booking.rescheduled', booking);
@@ -534,7 +542,8 @@ router.get('/admin/all', verifyToken, isAdminOrEngineer, async (req, res) => {
             .populate('packageId', 'name price')
             .populate('addressId')
             .populate('assignedTechnician', 'name phone')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .lean();
 
         res.json(bookings);
     } catch (err) {
@@ -575,6 +584,7 @@ router.patch('/:id/confirm', verifyToken, isAdminOrEngineer, async (req, res) =>
         });
 
         await booking.save();
+        cache.del('dashboard_stats:role=admin&org=global');
 
         // Trigger automation hook
         await triggerAutomation('booking.confirmed', booking);

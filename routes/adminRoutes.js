@@ -3,6 +3,9 @@ const router = express.Router();
 const User = require('../models/User');
 const Booking = require('../models/Booking');
 const Config = require('../models/Config');
+const Service = require('../models/Service');
+const ServicePackage = require('../models/ServicePackage');
+const cache = require('../utils/cache');
 const mailer = require('./mailer');
 const jwt = require('jsonwebtoken');
 
@@ -256,6 +259,82 @@ router.get('/images', verifyToken, async (req, res) => {
     } catch (err) {
         console.error('Error reading images directory:', err);
         res.status(500).json({ message: 'Failed to list images' });
+    }
+});
+
+/* =================================================================
+   GET: DASHBOARD STATS (ADMIN/EMPLOYEE)
+   Cached for performance
+   ================================================================= */
+router.get('/dashboard-stats', verifyToken, async (req, res) => {
+    const allowedRoles = ['admin', 'employee'];
+    if (!allowedRoles.includes(req.user.role)) {
+        return res.status(403).json({ message: 'Administrative access required' });
+    }
+
+    const { role, organisationId } = req.user;
+    
+    // Generate cache key based on user role and org (for scoped stats)
+    const cacheKey = cache.generateKey('dashboard_stats', { role, org: organisationId || 'global' });
+    
+    // Check cache
+    const cachedData = cache.get(cacheKey);
+    if (cachedData) {
+        return res.json(cachedData);
+    }
+
+    try {
+        let bookingQuery = {};
+        let userQuery = { role: { $ne: 'admin' } };
+
+        // Scoping logic for Engineers/Employees if needed in future
+        if (role === 'employee' || role === 'engineer') {
+            // Placeholder for future scoping if employees become scoped like engineers
+        }
+
+        const [
+            allUsers,
+            allBookings,
+            totalServices,
+            totalPackages
+        ] = await Promise.all([
+            User.find(userQuery).select('role').lean(),
+            Booking.find(bookingQuery).select('status organisationId').lean(),
+            Service.countDocuments({}),
+            ServicePackage.countDocuments({})
+        ]);
+
+        const stats = {
+            users: {
+                total: allUsers.length,
+                technicians: allUsers.filter(u => u.role === 'technician').length,
+                organisations: allUsers.filter(u => u.role === 'organisation').length,
+                engineers: allUsers.filter(u => u.role === 'engineer').length,
+                customers: allUsers.filter(u => u.role === 'user').length
+            },
+            bookings: {
+                total: allBookings.length,
+                pending: allBookings.filter(b => b.status === 'Pending').length,
+                confirmed: allBookings.filter(b => b.status === 'Confirmed').length,
+                assigned: allBookings.filter(b => b.status === 'Assigned').length,
+                inProgress: allBookings.filter(b => b.status === 'In Progress').length,
+                completed: allBookings.filter(b => b.status === 'Completed').length,
+                cancelled: allBookings.filter(b => b.status === 'Cancelled').length
+            },
+            modules: {
+                services: totalServices,
+                packages: totalPackages
+            },
+            timestamp: new Date()
+        };
+
+        // Cache for 5 minutes
+        cache.set(cacheKey, stats);
+
+        res.json(stats);
+    } catch (err) {
+        console.error('Dashboard Stats Error:', err);
+        res.status(500).json({ message: 'Failed to fetch dashboard stats' });
     }
 });
 

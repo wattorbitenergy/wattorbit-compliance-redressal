@@ -4,6 +4,7 @@ const Service = require('../models/Service');
 const ServicePackage = require('../models/ServicePackage');
 const { generateServiceId } = require('../utils/idGenerator');
 const jwt = require('jsonwebtoken');
+const cache = require('../utils/cache');
 
 // Verify token middleware
 const verifyToken = (req, res, next) => {
@@ -63,7 +64,8 @@ router.get('/', async (req, res) => {
 
         const services = await Service.find(query)
             .populate('createdBy', 'name username')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .lean();
 
         res.json(services);
     } catch (err) {
@@ -86,7 +88,7 @@ router.get('/:id', async (req, res) => {
         const packages = await ServicePackage.find({
             serviceId: service._id,
             isActive: true
-        }).sort({ price: 1 });
+        }).sort({ price: 1 }).lean();
 
         res.json({ service, packages });
     } catch (err) {
@@ -153,6 +155,7 @@ router.post('/', verifyToken, isAuthorized, async (req, res) => {
         });
 
         await service.save();
+        cache.del('dashboard_stats:role=admin&org=global');
 
         res.status(201).json({
             message: 'Service created successfully',
@@ -221,6 +224,7 @@ router.patch('/:id/toggle', verifyToken, isAuthorized, async (req, res) => {
 
         service.isActive = !service.isActive;
         await service.save();
+        cache.del('dashboard_stats:role=admin&org=global');
 
         res.json({
             message: `Service ${service.isActive ? 'activated' : 'deactivated'} successfully`,
@@ -243,6 +247,7 @@ router.patch('/:id/curate', verifyToken, isAuthorized, async (req, res) => {
 
         service.isCurated = !service.isCurated;
         await service.save();
+        cache.del('dashboard_stats:role=admin&org=global');
 
         res.json({
             message: `Service ${service.isCurated ? 'curated' : 'removed from curations'} successfully`,
@@ -286,7 +291,8 @@ router.get('/admin/all', verifyToken, isAuthorized, async (req, res) => {
     try {
         const services = await Service.find()
             .populate('createdBy', 'name username')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .lean();
 
         res.json(services);
     } catch (err) {

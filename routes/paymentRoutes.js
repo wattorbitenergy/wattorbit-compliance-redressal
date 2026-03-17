@@ -4,9 +4,13 @@ const Razorpay = require('razorpay');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const Booking = require('../models/Booking');
+const User = require('../models/User');
+const Service = require('../models/Service');
 const Config = require('../models/Config');
 const { generateBookingId } = require('../utils/idGenerator');
 const { sendUserNotification, sendTopicNotification } = require('../utils/notificationHelper');
+const { sendBookingCreatedSms } = require('../utils/smsHelper');
+const { sendBookingCreatedEmail } = require('../utils/emailHelper');
 
 // Verify token middleware
 const verifyToken = (req, res, next) => {
@@ -108,7 +112,7 @@ router.post('/verify-payment', verifyToken, async (req, res) => {
             booking.razorpaySignature = razorpay_signature;
             booking.status = 'Confirmed'; // Auto confirm if payment is received
 
-            // Generate Booking ID if missing (for Online Payments)
+            // Generate Booking ID now that payment is confirmed
             if (!booking.bookingId) {
                 booking.bookingId = await generateBookingId();
             }
@@ -122,13 +126,27 @@ router.post('/verify-payment', verifyToken, async (req, res) => {
 
             await booking.save();
 
-            // Notify Admin of confirmed online booking
+            // --- Fire all deferred notifications now that payment is confirmed ---
+
+            // 1. Push: Notify Admin
             await sendTopicNotification(
                 'admin',
                 'Online Payment Confirmed',
                 `Payment confirmed for booking ${booking.bookingId}. Status updated to Confirmed.`,
                 { bookingId: booking._id.toString(), type: 'payment_confirmed' }
             );
+
+            // 2. SMS & Email: Notify Customer (deferred from booking creation)
+            try {
+                const user = await User.findById(booking.userId);
+                const service = await Service.findById(booking.serviceId);
+                if (user && service) {
+                    sendBookingCreatedSms(user._id, user.name || 'Customer', booking.bookingId, service.name).catch(e => console.error('[SMS] post-payment booking created error:', e));
+                    sendBookingCreatedEmail(user, booking, service.name).catch(e => console.error('[Email] post-payment booking created error:', e));
+                }
+            } catch (notifErr) {
+                console.error('[Payment Verify] Error sending deferred notifications:', notifErr);
+            }
 
             res.json({ message: 'Payment verified successfully', booking });
         } else {
