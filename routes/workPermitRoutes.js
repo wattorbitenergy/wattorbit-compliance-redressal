@@ -7,6 +7,9 @@ const { generateWorkPermitPDF } = require('../utils/pdfGenerator');
 const { sendTopicNotification } = require('../utils/notificationHelper');
 const path = require('path');
 const fs = require('fs');
+const { sendOTPSms } = require('../utils/smsHelper');
+const cache = require('../utils/cache');
+const Config = require('../models/Config');
 
 // Verify token middleware
 const verifyToken = (req, res, next) => {
@@ -97,6 +100,81 @@ router.get('/my-permits', async (req, res) => {
 
         // Normalize searched mobile (remove +91 and non-digits)
         const normalizedM = m.replace(/\D/g, "").slice(-10);
+
+        const permits = await WorkPermit.find({
+            $or: [
+                { "isolation.mobileNo": { $regex: normalizedM } },
+                { "certifications.issuer.mobileNo": { $regex: normalizedM } },
+                { "certifications.approver.mobileNo": { $regex: normalizedM } },
+                { "certifications.acceptor.mobileNo": { $regex: normalizedM } },
+                { "closure.contractor.mobileNo": { $regex: normalizedM } },
+                { "closure.issuer.mobileNo": { $regex: normalizedM } }
+            ]
+        }).sort({ createdAt: -1 });
+
+        res.json(permits);
+    } catch (err) {
+        console.error('Error fetching my permits:', err);
+        res.status(500).json({ message: 'Failed to fetch my permits' });
+    }
+});
+
+// POST: Send OTP for Permit Signing
+router.post('/send-otp', async (req, res) => {
+    const { mobileNo, permitId, role } = req.body;
+    if (!mobileNo) return res.status(400).json({ message: "Mobile number required" });
+
+    try {
+        // Generate a 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        // Store in cache (5 mins)
+        const cacheKey = `permit_otp_${mobileNo}_${permitId}_${role}`;
+        cache.set(cacheKey, otp, 300);
+
+        console.log(`[Permit OTP] Sending ${otp} to ${mobileNo} for Permit ${permitId} (${role})`);
+        
+        const success = await sendOTPSms(mobileNo, otp);
+        if (success) {
+            res.json({ message: "OTP sent successfully" });
+        } else {
+            // For development/testing if SMS fails, we might return success if it's bypass
+            res.status(500).json({ message: "Failed to send OTP via SMS" });
+        }
+    } catch (err) {
+        console.error('Error sending permit OTP:', err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+// POST: Verify OTP for Permit Signing
+router.post('/verify-otp', async (req, res) => {
+    const { mobileNo, permitId, role, otp } = req.body;
+    if (!mobileNo || !otp) return res.status(400).json({ message: "Mobile and OTP required" });
+
+    try {
+        const cacheKey = `permit_otp_${mobileNo}_${permitId}_${role}`;
+        const storedOtp = cache.get(cacheKey);
+
+        if (!storedOtp) {
+            return res.status(400).json({ message: "OTP expired or not found. Please resend." });
+        }
+
+        if (storedOtp === otp) {
+            cache.del(cacheKey);
+            // Return a "proof" or just success with timestamp
+            res.json({ 
+                message: "OTP verified", 
+                timestamp: new Date().toISOString() 
+            });
+        } else {
+            res.status(400).json({ message: "Invalid OTP" });
+        }
+    } catch (err) {
+        console.error('Error verifying permit OTP:', err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
 
         const permits = await WorkPermit.find({
             $or: [
@@ -302,7 +380,7 @@ router.patch('/:id/close', verifyToken, async (req, res) => {
 router.patch('/:id/approve', async (req, res) => {
     try {
         const { id } = req.params;
-        const { mobileNo, signature, name } = req.body;
+        const { mobileNo, signature, name, signatureMethod, verifiedAt } = req.body;
 
         const permit = await WorkPermit.findById(id);
         if (!permit) return res.status(404).json({ message: 'Work permit not found' });
@@ -312,6 +390,8 @@ router.patch('/:id/approve', async (req, res) => {
 
         approver.signature = signature;
         approver.name = name;
+        if (signatureMethod) approver.signatureMethod = signatureMethod;
+        if (verifiedAt) approver.verifiedAt = verifiedAt;
         approver.status = 'Approved';
         approver.updatedAt = new Date();
 
@@ -354,7 +434,14 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
 
         if (formData) {
             // Bulk update from form if provided
-            Object.assign(permit, formData);
+            // Ensure deep merges for nested objects like isolation, certifications, closure
+            if (formData.isolation) permit.isolation = { ...permit.isolation, ...formData.isolation };
+            if (formData.certifications) permit.certifications = { ...permit.certifications, ...formData.certifications };
+            if (formData.closure) permit.closure = { ...permit.closure, ...formData.closure };
+            
+            // For other fields, simple assign
+            const { isolation, certifications, closure, ...otherData } = formData;
+            Object.assign(permit, otherData);
         }
 
         const oldStatus = permit.status;

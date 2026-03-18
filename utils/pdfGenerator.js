@@ -143,17 +143,15 @@ const generateWorkPermitPDF = async (permit) => {
                 doc.fontSize(7).font('Helvetica').text(`Sig: ____________________`, x, y + 20);
                 doc.text(`Date: ${formatDate(cert?.date)}   Time: ${formatTime(cert?.time)}`, x, y + 30);
                 
-                if (cert?.signature && typeof cert.signature === 'string' && cert.signature.startsWith('data:image')) {
-                    const method = cert.signatureMethod;
-                    if (method === 'digital') {
-                        doc.fontSize(5).font('Helvetica-Bold').fillColor('#059669').text('[DIGITALLY VERIFIED]', x + 30, y + 20);
-                    } else {
-                        try {
-                            const buffer = Buffer.from(cert.signature.replace(/^data:image\/\w+;base64,/, ""), 'base64');
-                            doc.image(buffer, x + 35, y + 15, { width: 45, height: 18 });
-                        } catch (e) {
-                            console.error('Error drawing signature image:', e.message);
-                        }
+                if (cert?.signatureMethod === 'digital' || (cert?.verifiedAt)) {
+                    const timestamp = cert?.verifiedAt ? new Date(cert.verifiedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : (cert?.date ? new Date(cert.date).toLocaleDateString() : 'Verified');
+                    doc.fontSize(5).font('Helvetica-Bold').fillColor('#059669').text(`Digitally Signed at ${timestamp}`, x + 25, y + 20);
+                } else if (cert?.signature && typeof cert.signature === 'string' && cert.signature.startsWith('data:image')) {
+                    try {
+                        const buffer = Buffer.from(cert.signature.replace(/^data:image\/\w+;base64,/, ""), 'base64');
+                        doc.image(buffer, x + 35, y + 15, { width: 45, height: 18 });
+                    } catch (e) {
+                        console.error('Error drawing signature image:', e.message);
                     }
                 }
             };
@@ -311,6 +309,11 @@ const generateWorkPermitPDF = async (permit) => {
             drawSignatureLine('Power Restored by', permit.closure?.powerRestoredBy, 40, syN);
             drawSignatureLine('Permit Acceptor', permit.closure?.acceptor, 200, syN);
             drawSignatureLine('Permit Issuer', permit.closure?.issuer, 380, syN);
+            
+            if (permit.isEdited) {
+                doc.moveDown(2);
+                doc.fontSize(8).font('Helvetica-Bold').fillColor('red').text(`* THIS PERMIT WAS EDITED AFTER INITIAL APPROVAL AT ${permit.editedAt ? new Date(permit.editedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A'} *`, { align: 'center' });
+            }
 
             doc.end();
 

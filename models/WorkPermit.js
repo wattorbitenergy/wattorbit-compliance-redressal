@@ -41,7 +41,8 @@ const workPermitSchema = new mongoose.Schema({
         signatureMethod: { type: String, enum: ['digital', 'visual'], default: 'digital' },
         mobileNo: { type: String },
         date: { type: Date },
-        time: { type: String }
+        time: { type: String },
+        verifiedAt: { type: Date }
     },
 
     // Section I & Gas Test Record (Page 2)
@@ -72,7 +73,8 @@ const workPermitSchema = new mongoose.Schema({
             signatureMethod: { type: String, enum: ['digital', 'visual'], default: 'digital' },
             mobileNo: { type: String },
             date: { type: Date },
-            time: { type: String }
+            time: { type: String },
+            verifiedAt: { type: Date }
         },
         approver: {
             name: { type: String },
@@ -80,14 +82,16 @@ const workPermitSchema = new mongoose.Schema({
             signatureMethod: { type: String, enum: ['digital', 'visual'], default: 'digital' },
             mobileNo: { type: String },
             date: { type: Date },
-            time: { type: String }
+            time: { type: String },
+            verifiedAt: { type: Date }
         },
         acceptor: {
             name: { type: String },
             signature: { type: String },
             mobileNo: { type: String },
             date: { type: Date },
-            time: { type: String }
+            time: { type: String },
+            verifiedAt: { type: Date }
         }
     },
 
@@ -98,7 +102,8 @@ const workPermitSchema = new mongoose.Schema({
         signature: { type: String },
         signatureMethod: { type: String, enum: ['digital', 'visual'], default: 'digital' },
         status: { type: String, enum: ['Pending', 'Approved', 'Rejected'], default: 'Pending' },
-        updatedAt: { type: Date }
+        updatedAt: { type: Date },
+        verifiedAt: { type: Date }
     }],
 
     specialInstructions: { type: String },
@@ -132,24 +137,30 @@ const workPermitSchema = new mongoose.Schema({
         newPermitDate: { type: Date },
         powerRestoredBy: {
             name: { type: String },
+            mobileNo: { type: String },
             signature: { type: String },
             signatureMethod: { type: String, enum: ['digital', 'visual'], default: 'digital' },
             date: { type: Date },
-            time: { type: String }
+            time: { type: String },
+            verifiedAt: { type: Date }
         },
         acceptor: {
             name: { type: String },
+            mobileNo: { type: String },
             signature: { type: String },
             signatureMethod: { type: String, enum: ['digital', 'visual'], default: 'digital' },
             date: { type: Date },
-            time: { type: String }
+            time: { type: String },
+            verifiedAt: { type: Date }
         },
         issuer: {
             name: { type: String },
+            mobileNo: { type: String },
             signature: { type: String },
             signatureMethod: { type: String, enum: ['digital', 'visual'], default: 'digital' },
             date: { type: Date },
-            time: { type: String }
+            time: { type: String },
+            verifiedAt: { type: Date }
         }
     },
 
@@ -192,6 +203,10 @@ const workPermitSchema = new mongoose.Schema({
         createdAt: { type: Date, default: Date.now }
     }],
 
+    // Audit Trails
+    isEdited: { type: Boolean, default: false },
+    editedAt: { type: Date },
+    
     // Ownership
     createdBy: {
         type: mongoose.Schema.Types.ObjectId,
