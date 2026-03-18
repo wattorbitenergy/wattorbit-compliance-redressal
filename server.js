@@ -61,6 +61,7 @@ const allowedOrigins = [
   "http://localhost:5175",
   "http://localhost",
   "https://localhost",
+  "capacitor://localhost",
   "https://wattorbit.in",
   "https://wattorbit.com",
   "https://www.wattorbit.com",
@@ -73,18 +74,23 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+
+      // Normalize origin: remove trailing slash
+      const normalizedOrigin = origin.endsWith('/') ? origin.slice(0, -1) : origin;
+
       if (
-        !origin || // Android, Postman, server-to-server
-        origin.startsWith("capacitor://") ||
-        origin.startsWith("file://") ||
-        origin.startsWith("http://192.168.") ||
-        origin.startsWith("http://10.") ||
-        allowedOrigins.includes(origin)
+        normalizedOrigin.startsWith("capacitor://") ||
+        normalizedOrigin.startsWith("file://") ||
+        normalizedOrigin.startsWith("http://192.168.") ||
+        normalizedOrigin.startsWith("http://10.") ||
+        normalizedOrigin.includes(".onrender.com") || // Allow all Render subdomains
+        allowedOrigins.includes(normalizedOrigin)
       ) {
         return callback(null, true);
       }
 
-      console.error("❌ Blocked CORS origin:", origin);
+      console.error(`❌ Blocked CORS origin: ${origin} (Normalized: ${normalizedOrigin})`);
       return callback(new Error("Not allowed by CORS"));
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
