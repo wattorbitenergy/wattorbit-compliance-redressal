@@ -103,6 +103,9 @@ router.get('/my-permits', async (req, res) => {
 
         const permits = await WorkPermit.find({
             $or: [
+                { requesterMobile: { $regex: normalizedM } },
+                { engineerMobile: { $regex: normalizedM } },
+                { "approvers.mobileNo": { $regex: normalizedM } },
                 { "isolation.mobileNo": { $regex: normalizedM } },
                 { "certifications.issuer.mobileNo": { $regex: normalizedM } },
                 { "certifications.approver.mobileNo": { $regex: normalizedM } },
@@ -176,23 +179,6 @@ router.post('/verify-otp', async (req, res) => {
     }
 });
 
-        const permits = await WorkPermit.find({
-            $or: [
-                { requesterMobile: { $regex: normalizedM } },
-                { engineerMobile: { $regex: normalizedM } },
-                { "approvers.mobileNo": { $regex: normalizedM } },
-                { "isolation.mobileNo": { $regex: normalizedM } },
-                { "certifications.issuer.mobileNo": { $regex: normalizedM } },
-                { "certifications.approver.mobileNo": { $regex: normalizedM } },
-                { "certifications.acceptor.mobileNo": { $regex: normalizedM } }
-            ]
-        }).sort({ createdAt: -1 });
-
-        res.json(permits);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-});
 
 // GET: Get specific work permit (Supports public access for Accepted/Closed)
 router.get('/:id', async (req, res) => {
