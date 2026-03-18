@@ -74,15 +74,13 @@ router.post('/', verifyToken, async (req, res) => {
         return res.status(403).json({ message: 'Administrative access required' });
     }
 
-    const { title, message, targetRole } = req.body;
+    const { title, message, targetRole, targetServiceId, targetPackageId, link, imageUrl } = req.body;
 
     if (!admin.apps.length) {
         return res.status(503).json({ message: 'Firebase not configured on server' });
     }
 
     try {
-        // Topic strategy: 'all', 'user', 'technician', etc.
-        const { title, message, targetRole, imageUrl } = req.body;
         const topic = targetRole || 'all';
 
         const payload = {
@@ -90,6 +88,12 @@ router.post('/', verifyToken, async (req, res) => {
                 title: title,
                 body: message,
                 ...(imageUrl && { image: imageUrl })
+            },
+            data: {
+                targetServiceId: targetServiceId || "",
+                targetPackageId: targetPackageId || "",
+                link: link || "",
+                imageUrl: imageUrl || ""
             },
             topic: topic
         };

@@ -156,6 +156,7 @@ router.post('/config', verifyToken, async (req, res) => {
 
     const { key, value } = req.body;
     try {
+        console.log(`[Config Update] Admin (${req.user.role}): Setting ${key} -> ${value}`);
         const config = await Config.findOneAndUpdate(
             { key },
             { value },

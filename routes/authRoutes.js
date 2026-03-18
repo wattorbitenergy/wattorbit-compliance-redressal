@@ -47,6 +47,21 @@ const verifyToken = (req, res, next) => {
 };
 
 /* =========================
+   PUBLIC FEATURES (Before Login)
+========================= */
+router.get('/public-features', async (req, res) => {
+    try {
+        const whitelist = ['ff_onboarding', 'ff_promo_images'];
+        const configs = await Config.find({ key: { $in: whitelist } });
+        const flags = {};
+        configs.forEach(c => flags[c.key] = c.value);
+        res.json(flags);
+    } catch {
+        res.status(500).json({ flags: {} });
+    }
+});
+
+/* =========================
    REGISTER
 ========================= */
 router.post('/register', async (req, res) => {
