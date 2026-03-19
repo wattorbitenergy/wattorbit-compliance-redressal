@@ -736,6 +736,24 @@ router.patch('/set-role/:id', verifyToken, async (req, res) => {
 });
 
 /* =========================
+   ADMIN: DELETE USER
+========================= */
+router.delete('/admin/delete-user/:id', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    const user = await User.findByIdAndDelete(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    cache.del('dashboard_stats:role=admin&org=global');
+    res.json({ message: 'User successfully deleted' });
+  } catch (err) {
+    console.error('Delete user error:', err);
+    res.status(500).json({ message: 'Failed to delete user' });
+  }
+});
+
+/* =========================
    ADMIN: UPDATE PROFILE
    ========================= */
 router.patch('/update-profile/:id', verifyToken, async (req, res) => {

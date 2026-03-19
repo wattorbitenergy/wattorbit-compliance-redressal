@@ -631,4 +631,19 @@ router.get('/public/search', async (req, res) => {
     }
 });
 
+// DELETE: Admin hard delete permit
+router.delete('/admin/:id', verifyToken, isAdminOrEngineer, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ message: 'Only Admins can delete permits' });
+        }
+        const permit = await WorkPermit.findByIdAndDelete(req.params.id);
+        if (!permit) return res.status(404).json({ message: 'Work permit not found' });
+        res.json({ message: 'Work permit deleted successfully' });
+    } catch (err) {
+        console.error('Admin delete permit error:', err);
+        res.status(500).json({ message: 'Failed to delete permit' });
+    }
+});
+
 module.exports = router;

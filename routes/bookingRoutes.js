@@ -828,6 +828,22 @@ router.patch('/:id/status', verifyToken, canManageBookings, async (req, res) => 
     }
 });
 
+// DELETE: Delete booking (Admin Only)
+router.delete('/admin/:id', verifyToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ message: 'Admin access required' });
+        }
+        const booking = await Booking.findByIdAndDelete(req.params.id);
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+        cache.del('dashboard_stats:role=admin&org=global');
+        res.json({ message: 'Booking deleted successfully' });
+    } catch (err) {
+        console.error('Error deleting booking:', err);
+        res.status(500).json({ message: 'Failed to delete booking' });
+    }
+});
+
 /* =====================
    TECHNICIAN ENDPOINTS
 ===================== */
