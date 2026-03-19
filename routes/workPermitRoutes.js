@@ -632,7 +632,7 @@ router.get('/public/search', async (req, res) => {
 });
 
 // DELETE: Admin hard delete permit
-router.delete('/admin/:id', verifyToken, isAdminOrEngineer, async (req, res) => {
+router.delete('/admin/:id', verifyToken, async (req, res) => {
     try {
         if (req.user.role !== 'admin') {
             return res.status(403).json({ message: 'Only Admins can delete permits' });
