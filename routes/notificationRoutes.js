@@ -35,35 +35,40 @@ const verifyToken = (req, res, next) => {
     }
 };
 
-/* POST: Subscribe to Topic */
 router.post('/subscribe', verifyToken, async (req, res) => {
-    const { token, role } = req.body;
+    const { token } = req.body;
     if (!token) return res.status(400).json({ message: 'Token required' });
 
     try {
-        // 🛡️ SECURITY FIX: Verify the role matches the authenticated user's role
-        // This prevents users from subscribing to 'admin' or 'technician' topics maliciously.
-        const isSelfUserTopic = role && role.startsWith('user_') && req.user.phone && role === `user_${req.user.phone.replace(/\D/g, "")}`;
-        const isSelfTechTopic = role && role.startsWith('tech_') && req.user.role === 'technician' && role === `tech_${req.user.username}`;
-        const isMatchingRole = role === req.user.role;
+        const subscriptions = [];
 
-        if (role && !isMatchingRole && !isSelfUserTopic && !isSelfTechTopic && req.user.role !== 'admin') {
-            return res.status(403).json({ message: 'Unauthorized topic subscription' });
+        // 1. General Broadcast
+        subscriptions.push(admin.messaging().subscribeToTopic(token, 'all'));
+
+        // 2. Role-specific Topic
+        if (req.user.role) {
+            subscriptions.push(admin.messaging().subscribeToTopic(token, req.user.role));
         }
 
-        // Subscribe to 'all' for broadcasts
-        await admin.messaging().subscribeToTopic(token, 'all');
-
-        // Subscribe to role-specific topic (if role exists and verified)
-        const targetTopic = role || req.user.role;
-        if (targetTopic) {
-            await admin.messaging().subscribeToTopic(token, targetTopic);
+        // 3. User-specific Personal Topic (Phone)
+        if (req.user.phone) {
+            const phoneTopic = `user_${req.user.phone.replace(/\D/g, "")}`;
+            subscriptions.push(admin.messaging().subscribeToTopic(token, phoneTopic));
         }
 
-        res.status(200).json({ message: `Subscribed to topics (including ${targetTopic})` });
+        // 4. Technician-specific Topic (Username)
+        if (req.user.role === 'technician' && req.user.username) {
+            const techTopic = `tech_${req.user.username}`;
+            subscriptions.push(admin.messaging().subscribeToTopic(token, techTopic));
+        }
+
+        // Wait for all subscriptions (using allSettled as some might fail if topic names are invalid, though unlikely)
+        await Promise.allSettled(subscriptions);
+
+        res.status(200).json({ message: 'Device subscribed to all relevant topics successfully' });
     } catch (err) {
-        console.error('Topic Subscription Error:', err);
-        res.status(500).json({ message: 'Subscription failed' });
+        console.error('Unified Subscription Error:', err);
+        res.status(500).json({ message: 'Unified subscription failed' });
     }
 });
 

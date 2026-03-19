@@ -176,7 +176,7 @@ router.post('/', verifyToken, async (req, res) => {
         // For Online payments: defer bookingId generation until payment is verified.
         // For COD/Wallet: generate bookingId immediately.
         const isOnlinePayment = paymentMethod === 'Online';
-        const bookingId = isOnlinePayment ? null : await generateBookingId();
+        const bookingId = isOnlinePayment ? undefined : await generateBookingId();
 
         const booking = new Booking({
             bookingId,
