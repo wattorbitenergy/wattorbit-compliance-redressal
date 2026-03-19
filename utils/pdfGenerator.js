@@ -190,7 +190,9 @@ const generateWorkPermitPDF = async (permit) => {
             doc.font('Helvetica-Bold').text('Equipment:', 40, doc.y, { continued: true });
             doc.font('Helvetica').text(` ${permit.jobDetails?.equipmentName || '__________'} `, { continued: true });
             doc.font('Helvetica-Bold').text(' Tag No:', { continued: true });
-            doc.font('Helvetica').text(` ${permit.jobDetails?.equipmentTagNo || '__________'}`);
+            doc.font('Helvetica').text(` ${permit.jobDetails?.equipmentTagNo || '__________'} `, { continued: true });
+            doc.font('Helvetica-Bold').text(' ID No:', { continued: true });
+            doc.font('Helvetica').text(` ${permit.jobDetails?.equipmentId || '__________'}`);
             
             doc.font('Helvetica-Bold').text('Description:', 40, doc.y, { continued: true });
             doc.font('Helvetica').text(` ${permit.jobDetails?.jobDescription || '____________________'}`);

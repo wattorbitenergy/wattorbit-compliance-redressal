@@ -20,6 +20,7 @@ const workPermitSchema = new mongoose.Schema({
         dept: { type: String, required: true },
         location: { type: String, required: true },
         equipmentName: { type: String, required: true },
+        equipmentId: { type: String, required: true },
         equipmentTagNo: { type: String, required: true },
         jobDescription: { type: String, required: true },
         executionBy: { type: String, enum: ['Own Employees', 'Contractor'], required: true },

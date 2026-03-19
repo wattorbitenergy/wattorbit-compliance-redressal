@@ -228,6 +228,7 @@ app.use('/api/invoices', require('./routes/invoiceRoutes'));
 app.use('/api/feedback', require('./routes/feedbackRoutes'));
 app.use('/api/automation', require('./routes/automationRoutes'));
 app.use('/api/promotions', require('./routes/promotionRoutes'));
+app.use('/api/curations', require('./routes/curationRoutes'));
 app.use('/api/categories', require('./routes/categoryRoutes'));
 app.use('/api/referral-rules', require('./routes/referralRuleRoutes'));
 app.use('/api/work-permit', require('./routes/workPermitRoutes'));
