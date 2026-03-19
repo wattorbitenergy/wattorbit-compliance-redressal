@@ -10,8 +10,6 @@ const compression = require('compression');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
-const mongoSanitize = require('express-mongo-sanitize');
-const xss = require('xss-clean');
 const cityRoutes = require("./routes/cityRoutes");
 const notificationRoutes = require('./routes/notificationRoutes');
 
@@ -106,10 +104,28 @@ app.use(
 ===================== */
 app.use(express.json());
 
-// 🛡️ SECURITY: Data Sanitization against NoSQL query injection
-app.use(mongoSanitize());
-// 🛡️ SECURITY: Data Sanitization against XSS (Cross-Site Scripting)
-app.use(xss());
+// 🛡️ SECURITY: Custom sanitization middleware (Express 5 compatible)
+// Note: req.query is read-only in Express 5, so we only sanitize req.body and req.params
+const sanitizeObject = (obj) => {
+  if (!obj || typeof obj !== 'object') return obj;
+  for (const key in obj) {
+    if (typeof obj[key] === 'string') {
+      // Strip NoSQL operators
+      obj[key] = obj[key].replace(/\$|\.{2,}/g, '');
+      // Strip XSS script tags
+      obj[key] = obj[key].replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+      obj[key] = obj[key].replace(/<[^>]*on\w+\s*=.*?>/gi, '');
+    } else if (typeof obj[key] === 'object') {
+      sanitizeObject(obj[key]);
+    }
+  }
+  return obj;
+};
+app.use((req, res, next) => {
+  if (req.body) sanitizeObject(req.body);
+  if (req.params) sanitizeObject(req.params);
+  next();
+});
 
 /* =====================
    STATIC ASSETS
