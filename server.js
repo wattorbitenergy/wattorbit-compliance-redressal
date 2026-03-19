@@ -10,6 +10,9 @@ const compression = require('compression');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
+const mongoSanitize = require('express-mongo-sanitize');
+const xss = require('xss-clean');
+const hpp = require('hpp');
 const cityRoutes = require("./routes/cityRoutes");
 const notificationRoutes = require('./routes/notificationRoutes');
 
@@ -100,9 +103,16 @@ app.use(
 );
 
 /* =====================
-   BODY PARSER
+   BODY PARSER & SANITIZATION
 ===================== */
 app.use(express.json());
+
+// 🛡️ SECURITY: Data Sanitization against NoSQL query injection
+app.use(mongoSanitize());
+// 🛡️ SECURITY: Data Sanitization against XSS (Cross-Site Scripting)
+app.use(xss());
+// 🛡️ SECURITY: Prevent HTTP Parameter Pollution
+app.use(hpp());
 
 /* =====================
    STATIC ASSETS

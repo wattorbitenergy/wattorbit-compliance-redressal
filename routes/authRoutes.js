@@ -23,9 +23,9 @@ const JWT_SECRET = process.env.JWT_SECRET;
    RATE LIMITER
 ========================= */
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: { message: 'Too many attempts. Try again later.' }
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 🛡️ SECURITY: Strict limit to 5 to completely block brute-forcing
+  message: { message: 'Maximum login attempts exceeded. Please try again after 15 minutes to protect your account.' }
 });
 
 /* =========================

@@ -349,7 +349,7 @@ router.get('/:id', verifyToken, async (req, res) => {
 
         // Check access: user can see their own, admin can see all, technician can see assigned, org see theirs, engineer sees scoped
         const isOwner = booking.userId._id.toString() === req.user.id;
-        const isAdminUser = req.user.role === 'admin';
+        const isAdminUser = ['admin', 'employee'].includes(req.user.role);
         const isAssignedTech = booking.assignedTechnician && booking.assignedTechnician._id.toString() === req.user.id;
         const isOrgAdmin = req.user.role === 'organisation' && booking.organisationId?.toString() === req.user.id;
 
