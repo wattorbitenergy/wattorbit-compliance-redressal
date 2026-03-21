@@ -6,6 +6,7 @@ const ServicePackage = require('../models/ServicePackage');
 const Address = require('../models/Address');
 const User = require('../models/User');
 const Coupon = require('../models/Coupon');
+const Config = require('../models/Config');
 const { generateBookingId } = require('../utils/idGenerator');
 const { triggerAutomation } = require('../utils/automationEngine');
 const { sendUserNotification, sendTopicNotification } = require('../utils/notificationHelper');
@@ -178,6 +179,32 @@ router.post('/', verifyToken, async (req, res) => {
         const isOnlinePayment = paymentMethod === 'Online';
         const bookingId = isOnlinePayment ? undefined : await generateBookingId();
 
+        // 🆕 AUTO-ASSIGNMENT LOGIC via Notes (Controlled by Feature Flag)
+        let autoAssignedTech = null;
+        try {
+            const autoAssignFlag = await Config.findOne({ key: 'ff_auto_assign_by_note' });
+            if (autoAssignFlag && autoAssignFlag.value === true && customerNotes) {
+                // Extract 10-digit phone number
+                const phoneMatch = customerNotes.match(/\b\d{10}\b/);
+                if (phoneMatch) {
+                    const extractedPhone = phoneMatch[0];
+                    const technician = await User.findOne({ 
+                        role: 'technician', 
+                        phone: extractedPhone 
+                    });
+
+                    if (technician) {
+                        autoAssignedTech = technician;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[Auto-Assign] Error checking flag/user:', e);
+        }
+
+        const isAssigned = !!autoAssignedTech;
+        const bookingStatus = isAssigned ? 'Assigned' : 'Pending';
+
         const booking = new Booking({
             bookingId,
             userId: req.user.id,
@@ -198,12 +225,16 @@ router.post('/', verifyToken, async (req, res) => {
             pointsUsed: pointsToUse,
             totalAmount,
             paymentMethod: paymentMethod || 'COD',
-            status: 'Pending',
+            assignedTechnician: isAssigned ? autoAssignedTech._id : undefined,
+            assignedAt: isAssigned ? new Date() : undefined,
+            status: bookingStatus,
             statusHistory: [{
-                status: 'Pending',
+                status: bookingStatus,
                 timestamp: new Date(),
                 updatedBy: req.user.id,
-                notes: isOnlinePayment ? 'Booking initiated (Awaiting Payment)' : 'Booking created'
+                notes: isAssigned 
+                    ? `Auto-assigned to ${autoAssignedTech.name} via booking notes`
+                    : (isOnlinePayment ? 'Booking initiated (Awaiting Payment)' : 'Booking created')
             }]
         });
 
@@ -243,6 +274,46 @@ router.post('/', verifyToken, async (req, res) => {
 
             // 🔥 Email: Booking Created — to Customer
             sendBookingCreatedEmail(user, booking, service.name).catch(e => console.error('[Email] booking created error:', e));
+
+            // 🆕 Auto-assignment notifications if applicable
+            if (isAssigned) {
+                // Trigger automation hook for assignment
+                triggerAutomation('booking.assigned', booking).catch(e => console.error('[Auto-Assign] Automation error:', e));
+
+                // Notify Technician (push)
+                sendUserNotification(
+                    autoAssignedTech._id,
+                    'New Service Assignment (Auto)',
+                    `You have been automatically assigned to booking ${booking.bookingId} via customer request.`,
+                    { bookingId: booking._id.toString(), type: 'assignment' }
+                ).catch(e => console.error('[Auto-Assign] Tech notification error:', e));
+
+                // Notify User (push)
+                sendUserNotification(
+                    booking.userId,
+                    'Technician Assigned',
+                    `Technician ${autoAssignedTech.name} has been assigned to your booking ${booking.bookingId}.`,
+                    { bookingId: booking._id.toString(), type: 'assignment' }
+                ).catch(e => console.error('[Auto-Assign] User notification error:', e));
+
+                // SMS: Technician Assigned — to Customer
+                sendTechnicianAssignedSms(
+                    booking.userId,
+                    user.name || 'Customer',
+                    booking.bookingId,
+                    autoAssignedTech.name
+                ).catch(e => console.error('[Auto-Assign] SMS customer error:', e));
+
+                // Email: Technician Assigned — to Customer
+                sendTechnicianAssignedEmail(user, autoAssignedTech, booking).catch(e => console.error('[Auto-Assign] Email customer error:', e));
+
+                // SMS: Job Assigned — to Technician
+                sendJobAssignedToTechnicianSms(
+                    autoAssignedTech._id,
+                    autoAssignedTech.name,
+                    booking.bookingId
+                ).catch(e => console.error('[Auto-Assign] SMS tech error:', e));
+            }
         }
 
         // Populate for response
