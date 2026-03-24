@@ -26,6 +26,26 @@ const {
     sendServiceRequestOTPEmail // 🆕
 } = require('../utils/emailHelper');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const { uploadToCloudinary } = require('../utils/cloudinaryHelper');
+
+// Configure Multer for temp storage
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadDir = 'uploads/temp';
+        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, `job-${Date.now()}-${file.originalname}`);
+    }
+});
+const upload = multer({ 
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
 
 // Verify token middleware
 const verifyToken = (req, res, next) => {
@@ -211,6 +231,17 @@ router.post('/', verifyToken, async (req, res) => {
             organisationId, // Capture Org context
             serviceId,
             packageId,
+            services: [{
+                serviceId,
+                packageId,
+                name: `${service.name} (${servicePackage.name})`,
+                basePrice: servicePackage.basePrice || service.basePrice,
+                technicianCharges: servicePackage.technicianCharges || 0,
+                platformFees: servicePackage.platformFees || 0,
+                discount: discount, // Initial discount (coupon/package)
+                finalPrice: totalAmount, // Initial final price logic preserved
+                isAdditional: false
+            }],
             addressId,
             scheduledDate: new Date(scheduledDate),
             scheduledTimeSlot,
@@ -1456,6 +1487,207 @@ router.post('/employee/confirm-request', verifyToken, isAdminOrEngineer, async (
     } catch (err) {
         console.error('Confirm request error:', err);
         res.status(500).json({ message: 'Failed to confirm booking' });
+    }
+});
+
+const { recalculateBooking } = require('../utils/pricingHelper');
+
+/* =====================
+   MULTIPLE SERVICE ENHANCEMENTS
+===================== */
+
+/**
+ * POST: Add an extra service to an existing booking (Technician/Admin only)
+ */
+router.post('/:id/add-service', verifyToken, async (req, res) => {
+    try {
+        const { serviceId, packageId } = req.body;
+        const booking = await Booking.findById(req.params.id);
+
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+        
+        // Safety: Prevent adding services after payment is completed
+        if (booking.paymentStatus === 'paid') {
+            return res.status(400).json({ message: 'Cannot add services to a paid booking' });
+        }
+
+        // Access Check: Admin or Assigned Technician
+        const isAssigned = booking.assignedTechnician && booking.assignedTechnician.toString() === req.user.id;
+        if (req.user.role !== 'admin' && req.user.role !== 'employee' && !isAssigned) {
+            return res.status(403).json({ message: 'Unauthorized to modify this booking' });
+        }
+
+        // Fetch Service & Package
+        const service = await Service.findById(serviceId);
+        const servicePackage = await ServicePackage.findById(packageId);
+
+        if (!service || !servicePackage || servicePackage.serviceId.toString() !== serviceId) {
+            return res.status(404).json({ message: 'Invalid service or package selection' });
+        }
+
+        // Add to services array
+        booking.services.push({
+            serviceId,
+            packageId,
+            name: `${service.name} (${servicePackage.name})`,
+            basePrice: servicePackage.basePrice || service.basePrice,
+            technicianCharges: servicePackage.technicianCharges || 0,
+            platformFees: servicePackage.platformFees || 0,
+            isAdditional: true
+        });
+
+        // Recalculate Totals
+        await recalculateBooking(booking);
+        await booking.save();
+
+        res.json({ message: 'Service added successfully', booking });
+    } catch (err) {
+        console.error('Add service error:', err);
+        res.status(500).json({ message: 'Failed to add service' });
+    }
+});
+
+/**
+ * DELETE: Remove an additional service from a booking
+ */
+router.delete('/:id/remove-service/:serviceIndex', verifyToken, async (req, res) => {
+    try {
+        const { id, serviceIndex } = req.params;
+        const booking = await Booking.findById(id);
+
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+        if (booking.paymentStatus === 'paid') return res.status(400).json({ message: 'Cannot modify paid booking' });
+
+        const idx = parseInt(serviceIndex);
+        if (isNaN(idx) || idx < 0 || idx >= booking.services.length) {
+            return res.status(400).json({ message: 'Invalid service index' });
+        }
+
+        // Prevent removing the primary service (index 0) if required, 
+        // but here we allow it if there's at least one left.
+        if (booking.services.length <= 1) {
+            return res.status(400).json({ message: 'A booking must have at least one service' });
+        }
+
+        booking.services.splice(idx, 1);
+        
+        await recalculateBooking(booking);
+        await booking.save();
+
+        res.json({ message: 'Service removed successfully', booking });
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to remove service' });
+    }
+});
+
+/**
+ * GET: Generate UPI Payment URI for QR display
+ */
+router.get('/:id/payment-qr', verifyToken, async (req, res) => {
+    try {
+        const booking = await Booking.findById(req.params.id);
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+        const upiId = process.env.CENTRAL_UPI_ID || 'wattorbit@bank';
+        const upiName = process.env.CENTRAL_UPI_NAME || 'WattOrbit Energy';
+        const amount = booking.totalAmount.toFixed(2);
+        const transactionNote = encodeURIComponent(`Payment for Booking ${booking.bookingId}`);
+        
+        // Standard UPI Dynamic URI Scheme
+        const upiURI = `upi://pay?pa=${upiId}&pn=${upiName}&am=${amount}&tn=${transactionNote}&cu=INR`;
+
+        res.json({ 
+            upiURI,
+            amount: booking.totalAmount,
+            bookingId: booking.bookingId,
+            message: 'QR URI generated for central account'
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to generate payment QR' });
+    }
+});
+
+/**
+ * POST: Finalize and Confirm Payment (Manual UPI Confirmation by Technician)
+ */
+router.post('/:id/confirm-payment', verifyToken, async (req, res) => {
+    try {
+        const { paymentId, notes } = req.body;
+        const booking = await Booking.findById(req.params.id);
+
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+        
+        // Only assigned technician or admin can confirm
+        if (req.user.role !== 'admin' && booking.assignedTechnician?.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Unauthorized' });
+        }
+
+        booking.paymentStatus = 'paid';
+        booking.paymentId = paymentId;
+        booking.paymentReceived = true;
+        booking.status = 'Completed';
+        booking.completedAt = new Date();
+        
+        booking.statusHistory.push({
+            status: 'Completed',
+            timestamp: new Date(),
+            updatedBy: req.user.id,
+            notes: notes || `Payment confirmed via UPI. TrxID: ${paymentId}`
+        });
+
+        await booking.save();
+        res.json({ message: 'Payment confirmed and job completed', booking });
+
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to confirm payment' });
+    }
+});
+
+/**
+ * POST: Upload job progress photos (Technician only)
+ */
+router.post('/:id/upload-photo', verifyToken, upload.single('image'), async (req, res) => {
+    try {
+        const { stage } = req.body; // 'start', 'progress', 'completion'
+        const booking = await Booking.findById(req.params.id);
+
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+        
+        // Authorization: Assigned Technician or Admin/Employee
+        const isAssigned = booking.assignedTechnician?.toString() === req.user.id;
+        if (req.user.role !== 'admin' && req.user.role !== 'employee' && !isAssigned) {
+            return res.status(403).json({ message: 'Unauthorized to upload photos' });
+        }
+
+        if (!['start', 'progress', 'completion'].includes(stage)) {
+            return res.status(400).json({ message: 'Invalid stage. Must be start, progress, or completion' });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ message: 'No image file provided' });
+        }
+
+        // Limit check (max 8 photos total, or max 3 per stage as per user request)
+        const currentPhotos = booking.jobPhotos[stage] || [];
+        if (currentPhotos.length >= 3) {
+            return res.status(400).json({ message: `Maximum 3 photos allowed for ${stage} stage` });
+        }
+
+        // Upload to Cloudinary
+        const { url } = await uploadToCloudinary(req.file.path, `wattorbit/bookings/${booking.bookingId}/${stage}`);
+        
+        // Cleanup temp file
+        fs.unlinkSync(req.file.path);
+
+        // Update Booking
+        booking.jobPhotos[stage].push(url);
+        await booking.save();
+
+        res.json({ message: 'Photo uploaded successfully', url, booking });
+    } catch (err) {
+        console.error('Photo upload error:', err);
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        res.status(500).json({ message: 'Failed to upload photo' });
     }
 });
 

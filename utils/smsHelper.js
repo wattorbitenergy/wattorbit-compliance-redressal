@@ -151,9 +151,8 @@ async function sendTechnicianAssignedSms(userId, customerName, bookingId, techni
 
 /**
  * 3. Service Completed — to Customer (Sender: WATORB)
- * Template: Dear {#VAR#}, Your service request {#VAR#} has been successfully completed. 
- *           Please rate our technician in app and give feedback at support@wattorbit.in
- *           Thank you for choosing WattOrbit Energy Solution.
+ *   Template: Dear {#VAR#}, Your service request {#VAR#} has been successfully completed. 
+ *           Please rate our technician in app . Thank you for choosing WattOrbit.
  */
 async function sendServiceCompletedSms(userId, customerName, bookingId) {
     const templateId = process.env.FAST2SMS_COMPLETED_TEMPLATE_ID;
@@ -202,13 +201,16 @@ async function sendJobAssignedToTechnicianSms(technicianId, technicianName, book
 }
 
 /**
- * 6. Service Request OTP — to Customer (Sender: WTORBT)
+ * 6. Employee-Initiated Service Request OTP — to Customer (Sender: WTORBT)
  * Template: Dear Customer, Your WattOrbit service request verification OTP is {#VAR#}.
  *           Please do not share this OTP with anyone. Team WattOrbit
  */
 async function sendServiceRequestOTPSms(phone, otp) {
-    const templateId = process.env.FAST2SMS_SERVICE_OTP_TEMPLATE_ID || process.env.FAST2SMS_OTP_TEMPLATE_ID;
-    if (!templateId) return false;
+    const templateId = process.env.FAST2SMS_SERVICE_OTP_TEMPLATE_ID;
+    if (!templateId) {
+        console.warn('[SMS] Service OTP skipped: FAST2SMS_SERVICE_OTP_TEMPLATE_ID missing in .env');
+        return false;
+    }
     return sendSMS(phone, templateId, otp, 'WTORBT', true);
 }
 

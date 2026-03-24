@@ -112,6 +112,11 @@ const bookingSchema = new mongoose.Schema({
         default: 0,
         min: 0
     },
+    lineItemDiscount: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
     pointsUsed: {
         type: Number,
         default: 0,
@@ -194,7 +199,35 @@ const bookingSchema = new mongoose.Schema({
             type: String,
             trim: true
         }
-    }]
+    }],
+
+    // Multi-Service Support (Line Items)
+    services: [{
+        serviceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Service' },
+        packageId: { type: mongoose.Schema.Types.ObjectId, ref: 'ServicePackage' },
+        name: { type: String, required: true },
+        basePrice: { type: Number, required: true },
+        technicianCharges: { type: Number, default: 0 },
+        platformFees: { type: Number, default: 0 },
+        discount: { type: Number, default: 0 },
+        finalPrice: { type: Number, required: true },
+        isAdditional: { type: Boolean, default: false },
+        addedAt: { type: Date, default: Date.now }
+    }],
+
+    paymentStatus: {
+        type: String,
+        enum: ['unpaid', 'paid', 'partially_paid'],
+        default: 'unpaid'
+    },
+    paymentId: String, // Trx ID for UPI/Wallet
+    
+    // Technician Job Photos
+    jobPhotos: {
+        start: [String],
+        progress: [String],
+        completion: [String]
+    }
 }, { timestamps: true });
 
 // Indexes for efficient queries
@@ -211,6 +244,13 @@ bookingSchema.pre('save', async function () {
             timestamp: new Date(),
             notes: this.technicianNotes || this.customerNotes
         });
+    }
+
+    // Sync legacy serviceId/packageId for backward compatibility (if first service exists)
+    if (this.services && this.services.length > 0 && !this.serviceId) {
+        this.serviceId = this.services[0].serviceId;
+        this.packageId = this.services[0].packageId;
+        this.basePrice = this.services[0].basePrice;
     }
 });
 
