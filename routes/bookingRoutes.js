@@ -30,6 +30,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { uploadToCloudinary } = require('../utils/cloudinaryHelper');
+const { recordTechnicianEarning } = require('../utils/technicianFinanceHelper');
 
 // Configure Multer for temp storage
 const storage = multer.diskStorage({
@@ -907,6 +908,11 @@ router.patch('/:id/status', verifyToken, canManageBookings, async (req, res) => 
 
                 // Auto-generate Invoice
                 const invoice = await autoGenerateInvoice(booking._id);
+                
+                // Record Technician Earning (Partner Payment System)
+                if (booking.paymentStatus === 'paid' || booking.paymentMethod === 'COD') {
+                    await recordTechnicianEarning(booking).catch(e => console.error('[Finance] Earning error:', e));
+                }
 
                 // SMS: Service Completed — to Customer
                 const completedUser = await User.findById(booking.userId).select('name email username');
@@ -1106,6 +1112,11 @@ router.patch('/:id/complete', verifyToken, async (req, res) => {
             }
         })();
 
+        // Record Technician Earning (Partner Payment System)
+        if (booking.paymentStatus === 'paid' || booking.paymentMethod === 'COD') {
+            await recordTechnicianEarning(booking).catch(e => console.error('[Finance] Tech Earning error:', e));
+        }
+
         res.json({ message: 'Service completed successfully', booking });
     } catch (err) {
         console.error('Error completing service:', err);
@@ -1229,6 +1240,11 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
             if (status === 'Completed') {
                 // Trigger completion automations (notifications etc)
                 await triggerAutomation('booking.completed', booking);
+                
+                // Record Technician Earning (Partner Payment System)
+                if (booking.paymentStatus === 'paid' || booking.paymentMethod === 'COD') {
+                    await recordTechnicianEarning(booking).catch(e => console.error('[Finance] Dashboard Earning error:', e));
+                }
             }
         } else {
             await booking.save();
