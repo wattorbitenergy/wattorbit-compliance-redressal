@@ -1,46 +1,38 @@
 const TechnicianEarning = require('../models/TechnicianEarning');
-const TechnicianLedger = require('../models/TechnicianLedger');
+const FinancialLedger = require('../models/FinancialLedger');
 const User = require('../models/User');
 
 /**
  * Calculates and records technician earnings for a completed booking.
- * Should be called when a booking is marked as 'Completed' and 'paid'.
  */
 async function recordTechnicianEarning(booking) {
     try {
-        if (!booking.assignedTechnician) {
-            console.warn(`Booking ${booking.bookingId} has no assigned technician. Skipping earnings calculation.`);
-            return null;
-        }
+        if (!booking.assignedTechnician) return null;
 
-        // 1. Check if earning already exists to prevent duplicates
         const existing = await TechnicianEarning.findOne({ bookingId: booking._id });
         if (existing) return existing;
 
-        // 2. Financial Breakdown (Based on Booking Pricing)
-        const totalAmount = booking.totalAmount || 0;
-        const technicianShare = booking.technicianCharges || 0;
-        const platformFee = booking.platformFees || 0;
-        const taxAmount = booking.taxes || 0;
+        const technicianCharges = booking.technicianCharges || 0;
+        const technicianDiscountShare = booking.technicianDiscountShare || 0;
+        const technicianShare = Math.max(0, technicianCharges - technicianDiscountShare);
 
-        // 3. Create Earning Record
         const earning = await TechnicianEarning.create({
             technicianId: booking.assignedTechnician,
             bookingId: booking._id,
-            totalAmount,
+            totalAmount: booking.totalAmount || 0,
             technicianShare,
-            platformFee,
-            taxAmount,
+            platformFee: booking.platformFees || 0,
+            taxAmount: booking.taxes || 0,
             status: 'credited',
             notes: `Earnings for booking #${booking.bookingId}`
         });
 
-        // 4. Update Ledger
-        await updateTechnicianLedger(
+        // 📜 Record in Universal Financial Ledger
+        await updateUniversalLedger(
             booking.assignedTechnician,
-            'earning',
+            'EARNING',
             technicianShare,
-            earning._id,
+            booking.bookingId || booking._id.toString(),
             `Earning credited for booking #${booking.bookingId}`,
             { bookingId: booking._id }
         );
@@ -53,34 +45,32 @@ async function recordTechnicianEarning(booking) {
 }
 
 /**
- * Updates the technician's ledger and running balance.
+ * Updates the universal ledger and user balance.
  */
-async function updateTechnicianLedger(technicianId, type, amount, referenceId, description, metadata = {}) {
-    // Get latest ledger entry for running balance
-    const lastEntry = await TechnicianLedger.findOne({ technicianId }).sort({ createdAt: -1 });
-    const currentBalance = lastEntry ? lastEntry.runningBalance : 0;
-    
-    // For payouts, amount should be passed as positive, but we subtract it
-    const change = type === 'payout' ? -Math.abs(amount) : Math.abs(amount);
-    const newBalance = currentBalance + change;
+async function updateUniversalLedger(userId, type, amount, referenceId, description, metadata = {}) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
 
-    const entry = await TechnicianLedger.create({
-        technicianId,
-        transactionType: type,
+    // Technician balance is stored in 'walletBalance' or we can add 'balance'
+    // Let's use 'walletBalance' as the primary source of truth for all users' internal credits
+    const change = type === 'PAYOUT' ? -Math.abs(amount) : Math.abs(amount);
+    user.walletBalance = (user.walletBalance || 0) + change;
+    await user.save();
+
+    const entry = await FinancialLedger.create({
+        userId,
+        type,
         amount: change,
-        runningBalance: newBalance,
-        referenceId,
         description,
+        balanceAfter: user.walletBalance,
+        referenceId,
         metadata
     });
-
-    // We could also update a 'technicianBalance' field on the User model for quick read access
-    // if performance becomes an issue. For now, we rely on the ledger.
     
     return entry;
 }
 
 module.exports = {
     recordTechnicianEarning,
-    updateTechnicianLedger
+    updateUniversalLedger
 };

@@ -87,6 +87,16 @@ const userSchema = new mongoose.Schema({
     smsNotificationsEnabled: {
         type: Boolean,
         default: true
+    },
+    // Financial Details (Technician specific)
+    bankAccountNo: String,
+    ifscCode: String,
+    aadhaarNo: String,
+    panCard: String,
+    upiId: String,
+    financialDetailsProvided: {
+        type: Boolean,
+        default: false
     }
 }, { timestamps: true });
 
@@ -118,6 +128,11 @@ userSchema.set('toJSON', {
         delete ret.resetPasswordExpires;
         delete ret.loginOTP;
         delete ret.loginOTPExpires;
+        delete ret.bankAccountNo;
+        delete ret.ifscCode;
+        delete ret.aadhaarNo;
+        delete ret.panCard;
+        delete ret.upiId;
         delete ret.__v;
         return ret;
     }

@@ -64,7 +64,13 @@ const servicePackageSchema = new mongoose.Schema({
         validUntil: {
             type: Date
         }
-    }
+    },
+    dynamicCharges: [{
+        name: { type: String, required: true },
+        amount: { type: Number, required: true, min: 0 },
+        recipient: { type: String, enum: ['Platform', 'Technician'], default: 'Platform' },
+        isActive: { type: Boolean, default: true }
+    }]
 }, { timestamps: true });
 
 // Index for efficient queries

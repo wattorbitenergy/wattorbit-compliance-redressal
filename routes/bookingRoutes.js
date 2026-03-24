@@ -31,6 +31,7 @@ const path = require('path');
 const fs = require('fs');
 const { uploadToCloudinary } = require('../utils/cloudinaryHelper');
 const { recordTechnicianEarning } = require('../utils/technicianFinanceHelper');
+const FinancialLedger = require('../models/FinancialLedger');
 
 // Configure Multer for temp storage
 const storage = multer.diskStorage({
@@ -154,10 +155,29 @@ router.post('/', verifyToken, async (req, res) => {
         }
 
         // Calculate pricing
-        const technicianCharges = servicePackage.technicianCharges || 0;
-        const platformFees = servicePackage.platformFees || 0;
-        const taxRate = 18; // 18% GST on platform fees only
-        const taxes = Math.round((platformFees * taxRate) / 100);
+        let technicianCharges = servicePackage.technicianCharges || 0;
+        let platformFees = servicePackage.platformFees || 0;
+        
+        // Calculate Dynamic Charges
+        const appliedDynamicCharges = [];
+
+        if (servicePackage.dynamicCharges && servicePackage.dynamicCharges.length > 0) {
+            servicePackage.dynamicCharges.forEach(charge => {
+                if (charge.isActive) {
+                    appliedDynamicCharges.push({
+                        name: charge.name,
+                        amount: charge.amount,
+                        recipient: charge.recipient || 'Platform'
+                    });
+                    
+                    if (charge.recipient === 'Technician') {
+                        technicianCharges += charge.amount;
+                    } else {
+                        platformFees += charge.amount;
+                    }
+                }
+            });
+        }
 
         // Base price for discounts is the total of components
         const basePrice = technicianCharges + platformFees;
@@ -165,6 +185,7 @@ router.post('/', verifyToken, async (req, res) => {
         // Apply coupon if provided
         let discount = 0;
         let couponId = null;
+        let technicianAbsorbsPercent = null;
 
         if (couponCode) {
             const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
@@ -183,6 +204,7 @@ router.post('/', verifyToken, async (req, res) => {
 
             discount = coupon.calculateDiscount(basePrice);
             couponId = coupon._id;
+            technicianAbsorbsPercent = coupon.technicianAbsorbsPercent;
         }
 
         // Apply package discount if no coupon discount (or as fallback)
@@ -192,6 +214,26 @@ router.post('/', verifyToken, async (req, res) => {
                 discount = Math.round((basePrice * servicePackage.discount.percentage) / 100);
             }
         }
+
+        // --- Calculate Apportionment ---
+        let technicianDiscountShare = 0;
+        let platformDiscountShare = 0;
+
+        if (discount > 0) {
+            if (technicianAbsorbsPercent !== null && technicianAbsorbsPercent !== undefined) {
+                technicianDiscountShare = Math.round(discount * (technicianAbsorbsPercent / 100));
+            } else {
+                if (basePrice > 0) {
+                    technicianDiscountShare = Math.round(discount * (technicianCharges / basePrice));
+                }
+            }
+            platformDiscountShare = discount - technicianDiscountShare;
+        }
+
+        const netPlatformFees = platformFees - platformDiscountShare;
+
+        const taxRate = 18; // 18% GST on platform fees only
+        const taxes = Math.max(0, Math.round((netPlatformFees * taxRate) / 100));
 
         const totalAmount = Math.max(0, basePrice + taxes - discount - pointsToUse);
 
@@ -254,6 +296,9 @@ router.post('/', verifyToken, async (req, res) => {
             couponId,
             couponCode: couponCode ? couponCode.toUpperCase() : undefined,
             discount,
+            technicianDiscountShare,
+            platformDiscountShare,
+            appliedDynamicCharges,
             pointsUsed: pointsToUse,
             totalAmount,
             paymentMethod: paymentMethod || 'COD',
@@ -516,6 +561,51 @@ router.patch('/:id/cancel', verifyToken, async (req, res) => {
 
         await booking.save();
         cache.del('dashboard_stats:role=admin&org=global');
+
+        // 💰 REFUND LOGIC: Refund used wallet points and actual money paid.
+        let totalRefundToWallet = 0;
+        let refundNotes = [];
+
+        // 1. Refund Cash Points used during booking creation
+        if (booking.pointsUsed && booking.pointsUsed > 0) {
+            totalRefundToWallet += booking.pointsUsed;
+            refundNotes.push(`Refund of ${booking.pointsUsed} Cash Points.`);
+        }
+
+        // 2. Refund ACTUAL money paid (only if payment was successful)
+        // If paymentMethod is Wallet/Online and it was Paid (paymentReceived: true)
+        if (['Online', 'Wallet', 'Mixed'].includes(booking.paymentMethod) && booking.paymentReceived && booking.totalAmount > 0) {
+            totalRefundToWallet += booking.totalAmount;
+            refundNotes.push(`Refund of ₹${booking.totalAmount} for cancelled paid booking.`);
+        }
+
+        if (totalRefundToWallet > 0) {
+            const user = await User.findById(booking.userId);
+            if (user) {
+                user.walletBalance = (user.walletBalance || 0) + totalRefundToWallet;
+                await user.save();
+                
+                // 📜 Record in Universal Financial Ledger
+                await new FinancialLedger({
+                    userId: booking.userId,
+                    type: 'REFUND',
+                    amount: totalRefundToWallet,
+                    description: `Refund for cancelled booking ${booking.bookingId || booking._id.toString()}`,
+                    balanceAfter: user.walletBalance,
+                    referenceId: booking.bookingId || booking._id.toString(),
+                    metadata: { bookingId: booking._id, paymentMethod: booking.paymentMethod, pointsUsed: booking.pointsUsed }
+                }).save();
+
+                // Add to status history that refund was processed
+                booking.statusHistory.push({
+                    status: 'Refunded',
+                    timestamp: new Date(),
+                    updatedBy: 'SYSTEM',
+                    notes: refundNotes.join(' ')
+                });
+                await booking.save();
+            }
+        }
 
         // Trigger automation hook
         await triggerAutomation('booking.cancelled', booking);

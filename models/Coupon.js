@@ -13,6 +13,12 @@ const couponSchema = new mongoose.Schema({
         enum: ['percentage', 'flat'],
         required: true
     },
+    technicianAbsorbsPercent: {
+        type: Number,
+        min: 0,
+        max: 100,
+        default: null // null means proportional split
+    },
     discountValue: {
         type: Number,
         required: true,

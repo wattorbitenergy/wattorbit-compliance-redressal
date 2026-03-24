@@ -35,20 +35,49 @@ async function autoGenerateInvoice(bookingId) {
         const invoiceId = await generateInvoiceId();
 
         // Build line items split into components
+        // 1. Base Technician and Platform Fees without dynamic charges
+        // We know that `booking.technicianCharges` and `booking.platformFees` currently include the dynamic charges based on routing.
+        // To show them accurately, we subtract the dynamic charges that were added, and later list them separate.
+
+        let baseTechFee = booking.technicianCharges || 0;
+        let basePlatformFee = booking.platformFees || 0;
+
+        if (booking.appliedDynamicCharges && booking.appliedDynamicCharges.length > 0) {
+            booking.appliedDynamicCharges.forEach(charge => {
+                if (charge.recipient === 'Technician') {
+                    baseTechFee -= charge.amount;
+                } else {
+                    basePlatformFee -= charge.amount;
+                }
+            });
+        }
+
         const items = [
             {
                 description: `${booking.serviceId.name} - ${booking.packageId.name} (Technician Fees)`,
                 quantity: 1,
-                unitPrice: booking.technicianCharges,
-                total: booking.technicianCharges
+                unitPrice: baseTechFee,
+                total: baseTechFee
             },
             {
                 description: `${booking.serviceId.name} - ${booking.packageId.name} (Platform Fees)`,
                 quantity: 1,
-                unitPrice: booking.platformFees,
-                total: booking.platformFees
+                unitPrice: basePlatformFee,
+                total: basePlatformFee
             }
         ];
+
+        // 2. Add Dynamic Charges
+        if (booking.appliedDynamicCharges && booking.appliedDynamicCharges.length > 0) {
+            booking.appliedDynamicCharges.forEach(charge => {
+                items.push({
+                    description: `Surcharge: ${charge.name}`,
+                    quantity: 1,
+                    unitPrice: charge.amount,
+                    total: charge.amount
+                });
+            });
+        }
 
         // Format address
         const addr = booking.addressId;

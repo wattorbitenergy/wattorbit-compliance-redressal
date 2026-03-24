@@ -64,9 +64,13 @@ router.get('/public-features', async (req, res) => {
 /* =========================
    REGISTER
 ========================= */
-router.post('/register', async (req, res) => {
+router.post('/register', authLimiter, async (req, res) => {
   try {
     let { username, password, city, phone, email, role, name, organisationId, specialization, referralCodeInput } = req.body;
+
+    if (username !== undefined) username = String(username);
+    if (phone !== undefined) phone = String(phone);
+    if (email !== undefined) email = String(email);
 
     // Auto-generate username from phone if not provided
     if (!username && phone) {
@@ -415,8 +419,9 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
 /* =========================
    RESET PASSWORD
 ========================= */
-router.post('/reset-password', async (req, res) => {
-  const hashed = crypto.createHash('sha256').update(req.body.token).digest('hex');
+router.post('/reset-password', authLimiter, async (req, res) => {
+  const tokenStr = String(req.body.token || '');
+  const hashed = crypto.createHash('sha256').update(tokenStr).digest('hex');
   const user = await User.findOne({
     resetPasswordToken: hashed,
     resetPasswordExpires: { $gt: Date.now() }
@@ -800,12 +805,71 @@ router.patch('/sms-preference', verifyToken, async (req, res) => {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ message: 'User not found' });
     user.smsNotificationsEnabled = enabled;
-    await user.save();
-    cache.del('dashboard_stats:role=admin&org=global');
     res.json({ message: `SMS notifications ${enabled ? 'enabled' : 'disabled'}`, smsNotificationsEnabled: enabled });
   } catch (err) {
     console.error('SMS preference error:', err);
     res.status(500).json({ message: 'Failed to update SMS preference' });
+  }
+});
+
+/* =========================
+   UPDATE TECHNICIAN FINANCIALS
+   ========================= */
+router.patch('/update-technician-financials', verifyToken, async (req, res) => {
+  try {
+    const { bankAccountNo, ifscCode, aadhaarNo, panCard, upiId } = req.body;
+    
+    // Validate mandatory fields
+    if (!bankAccountNo || !ifscCode || !aadhaarNo || !upiId) {
+      return res.status(400).json({ message: 'Mandatory fields: Bank Account, IFSC, Aadhaar, and UPI ID' });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (user.role !== 'technician' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Only technicians can update financial details' });
+    }
+
+    user.bankAccountNo = bankAccountNo;
+    user.ifscCode = ifscCode;
+    user.aadhaarNo = aadhaarNo;
+    user.panCard = panCard;
+    user.upiId = upiId;
+    user.financialDetailsProvided = true;
+
+    await user.save();
+    cache.del('dashboard_stats:role=admin&org=global');
+
+    res.json({ message: 'Financial details updated successfully', financialDetailsProvided: true });
+  } catch (err) {
+    console.error('Update financials error:', err);
+    res.status(500).json({ message: 'Failed to update financial details' });
+  }
+});
+
+/* =========================
+   ADMIN: GET TECHNICIAN FINANCIALS
+   ========================= */
+router.get('/admin/technician-financials/:userId', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+
+    const user = await User.findById(req.params.userId).select('+bankAccountNo +ifscCode +aadhaarNo +panCard +upiId');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    res.json({
+      bankAccountNo: user.bankAccountNo,
+      ifscCode: user.ifscCode,
+      aadhaarNo: user.aadhaarNo,
+      panCard: user.panCard,
+      upiId: user.upiId,
+      financialDetailsProvided: user.financialDetailsProvided
+    });
+  } catch (err) {
+    console.error('Fetch financials error:', err);
+    res.status(500).json({ message: 'Failed to fetch financial details' });
   }
 });
 
