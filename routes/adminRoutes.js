@@ -8,6 +8,10 @@ const ServicePackage = require('../models/ServicePackage');
 const cache = require('../utils/cache');
 const mailer = require('./mailer');
 const jwt = require('jsonwebtoken');
+const auditLogger = require('../utils/auditLogger');
+
+// Apply audit logger to all state-modifying requests in this router
+router.use(auditLogger);
 
 // Verify token middleware
 const verifyToken = (req, res, next) => {

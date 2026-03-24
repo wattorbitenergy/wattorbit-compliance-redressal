@@ -275,6 +275,90 @@ router.post('/login', authLimiter, async (req, res) => {
     res.status(500).json({ message: 'Login failed' });
   }
 });
+/* =========================
+   ADMIN LOGIN (STEP 1: PASSWORD)
+   Forces 2FA for all Admin roles
+========================= */
+router.post('/admin-login', authLimiter, async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        if (!username || !password) return res.status(400).json({ message: 'Credentials required' });
+
+        const identifier = String(username).toLowerCase().trim();
+        const user = await User.findOne({
+            $or: [{ username: identifier }, { email: identifier }, { phone: String(username).trim() }]
+        }).select('+password');
+
+        if (!user || user.role !== 'admin') {
+            return res.status(401).json({ message: 'Invalid admin credentials' });
+        }
+
+        if (!(await user.comparePassword(password))) {
+            return res.status(401).json({ message: 'Invalid admin credentials' });
+        }
+
+        // Generate 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        user.loginOTP = otp;
+        user.loginOTPExpires = Date.now() + 600000; // 10 minutes
+        await user.save();
+
+        // Send OTP via SMS
+        if (user.phone) {
+            await (require('../utils/smsHelper').sendOTPSms)(user.phone, otp);
+        }
+
+        res.json({ 
+            message: 'First step successful. OTP sent to registered phone.', 
+            requires2FA: true,
+            tempRef: user._id 
+        });
+    } catch (err) {
+        console.error("Admin Login Error:", err);
+        res.status(500).json({ message: 'Admin login failed' });
+    }
+});
+
+/* =========================
+   ADMIN 2FA VERIFY (STEP 2: OTP)
+   Issues 15-minute token
+========================= */
+router.post('/admin-verify-2fa', authLimiter, async (req, res) => {
+    try {
+        const { tempRef, otp } = req.body;
+        if (!tempRef || !otp) return res.status(400).json({ message: 'Missing 2FA data' });
+
+        const user = await User.findById(tempRef);
+        if (!user || user.role !== 'admin') return res.status(401).json({ message: 'Invalid session' });
+
+        if (user.loginOTP !== otp || user.loginOTPExpires < Date.now()) {
+            return res.status(401).json({ message: 'Invalid or expired OTP' });
+        }
+
+        // Clear OTP
+        user.loginOTP = undefined;
+        user.loginOTPExpires = undefined;
+        await user.save();
+
+        // Issue 15-minute token
+        const token = jwt.sign(
+            {
+                id: user._id,
+                role: user.role,
+                name: user.name,
+                email: user.email,
+                phone: user.phone
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '15m' }
+        );
+
+        res.json({ token, user, message: 'Admin authenticated successfully. Session valid for 15 minutes.' });
+    } catch (err) {
+        res.status(500).json({ message: '2FA verification failed' });
+    }
+});
+
 
 /* =========================
    SEND OTP (Login)

@@ -5,6 +5,9 @@ const ServicePackage = require('../models/ServicePackage');
 const { generateServiceId } = require('../utils/idGenerator');
 const jwt = require('jsonwebtoken');
 const cache = require('../utils/cache');
+const auditLogger = require('../utils/auditLogger');
+
+router.use(auditLogger);
 
 // Verify token middleware
 const verifyToken = (req, res, next) => {

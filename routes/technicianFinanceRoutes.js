@@ -8,6 +8,9 @@ const Booking = require('../models/Booking');
 const User = require('../models/User');
 const mongoose = require('mongoose');
 const { updateUniversalLedger } = require('../utils/technicianFinanceHelper');
+const auditLogger = require('../utils/auditLogger');
+
+router.use(auditLogger);
 
 // Verify token middleware
 const verifyToken = (req, res, next) => {

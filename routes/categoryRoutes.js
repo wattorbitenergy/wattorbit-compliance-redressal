@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const Category = require('../models/Category');
 const jwt = require('jsonwebtoken');
+const auditLogger = require('../utils/auditLogger');
+
+router.use(auditLogger);
 
 // Verify token middleware
 const verifyToken = (req, res, next) => {
