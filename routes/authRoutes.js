@@ -308,13 +308,47 @@ router.post('/admin-login', authLimiter, async (req, res) => {
     user.loginOTPExpires = Date.now() + 600000; // 10 minutes
     await user.save();
 
-    // Send OTP via SMS
-    if (user.phone) {
-      await (require('../utils/smsHelper').sendOTPSms)(user.phone, otp);
+    // Send OTP via BOTH Email and SMS for admin security
+    const deliveryChannels = [];
+
+    // 📧 Email OTP
+    if (user.email) {
+      try {
+        await mailer.sendMail({
+          to: user.email,
+          subject: '🔐 WattOrbit Admin Login OTP',
+          html: `
+            <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 10px; max-width: 400px;">
+              <h2 style="color: #1e3a8a;">Admin Verification</h2>
+              <p>Your one-time login code is:</p>
+              <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; text-align: center; margin: 15px 0;">
+                <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #1e3a8a;">${otp}</span>
+              </div>
+              <p style="color: #666; font-size: 12px;">This code expires in 10 minutes. Do not share it with anyone.</p>
+              <p style="color: #999; font-size: 11px;">— WattOrbit Security</p>
+            </div>
+          `
+        });
+        deliveryChannels.push('email');
+      } catch (e) {
+        console.error('[Admin 2FA] Email OTP send error:', e.message);
+      }
     }
 
+    // 📱 SMS OTP
+    if (user.phone) {
+      try {
+        await (require('../utils/smsHelper').sendOTPSms)(user.phone, otp);
+        deliveryChannels.push('phone');
+      } catch (e) {
+        console.error('[Admin 2FA] SMS OTP send error:', e.message);
+      }
+    }
+
+    console.log(`[Admin 2FA] OTP sent to ${user.username} via: ${deliveryChannels.join(', ') || 'NONE'}`);
+
     res.json({
-      message: 'First step successful. OTP sent to registered phone.',
+      message: `First step successful. OTP sent to registered ${deliveryChannels.join(' & ')}.`,
       requires2FA: true,
       tempRef: user._id
     });

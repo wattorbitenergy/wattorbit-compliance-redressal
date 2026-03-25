@@ -342,5 +342,64 @@ router.get('/dashboard-stats', verifyToken, async (req, res) => {
         res.status(500).json({ message: 'Failed to fetch dashboard stats' });
     }
 });
+/* =================================================================
+   BANK DETAILS MANAGEMENT (ADMIN ONLY)
+   Stores centralised bank/UPI details used for QR generation
+   ================================================================= */
+router.get('/bank-details', verifyToken, async (req, res) => {
+    const allowedRoles = ['admin', 'employee'];
+    if (!allowedRoles.includes(req.user.role)) {
+        return res.status(403).json({ message: 'Administrative access required' });
+    }
+
+    try {
+        const config = await Config.findOne({ key: 'bank_details' });
+        res.json(config?.value || {
+            accountHolderName: '',
+            bankName: '',
+            accountNumber: '',
+            ifscCode: '',
+            branchName: '',
+            upiId: '',
+            gstNumber: ''
+        });
+    } catch (err) {
+        console.error('Fetch bank details error:', err);
+        res.status(500).json({ message: 'Failed to fetch bank details' });
+    }
+});
+
+router.put('/bank-details', verifyToken, async (req, res) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Admin access required' });
+    }
+
+    const { accountHolderName, bankName, accountNumber, ifscCode, branchName, upiId, gstNumber } = req.body;
+
+    try {
+        const config = await Config.findOneAndUpdate(
+            { key: 'bank_details' },
+            {
+                value: {
+                    accountHolderName: accountHolderName || '',
+                    bankName: bankName || '',
+                    accountNumber: accountNumber || '',
+                    ifscCode: ifscCode || '',
+                    branchName: branchName || '',
+                    upiId: upiId || '',
+                    gstNumber: gstNumber || '',
+                    updatedAt: new Date().toISOString()
+                }
+            },
+            { upsert: true, new: true }
+        );
+
+        console.log(`[Bank Details] Updated by admin ${req.user.username}`);
+        res.json({ message: 'Bank details updated successfully', data: config.value });
+    } catch (err) {
+        console.error('Update bank details error:', err);
+        res.status(500).json({ message: 'Failed to update bank details' });
+    }
+});
 
 module.exports = router;
