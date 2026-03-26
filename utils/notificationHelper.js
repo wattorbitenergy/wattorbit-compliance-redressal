@@ -1,5 +1,6 @@
 const admin = require('firebase-admin');
 const User = require('../models/User');
+const NotificationLog = require('../models/NotificationLog');
 
 // Initialize Firebase Admin if not already initialized
 try {
@@ -42,6 +43,16 @@ async function sendUserNotification(userId, title, body, data = {}) {
 
         const response = await admin.messaging().send(message);
         console.log(`Successfully sent notification to ${user.name || user.username}:`, response);
+
+        // ✅ LOG TO DATABASE (Persistent History)
+        await NotificationLog.create({
+            userId: user._id,
+            title,
+            body,
+            data,
+            imageUrl: data.imageUrl || undefined
+        });
+
         return true;
     } catch (err) {
         console.error('Error sending user notification:', err);
@@ -68,6 +79,24 @@ async function sendTopicNotification(topic, title, body, data = {}) {
 
         const response = await admin.messaging().send(message);
         console.log(`Successfully sent notification to topic '${topic}':`, response);
+
+        // ✅ LOG TO DATABASE (Persistent History for all users in topic)
+        // If topic is 'all', 'admin', 'technician' etc., we find relevant users and log
+        if (['all', 'admin', 'technician', 'engineer', 'organisation', 'employee'].includes(topic)) {
+            const query = topic === 'all' ? {} : { role: topic };
+            const users = await User.find(query).select('_id');
+            const logs = users.map(u => ({
+                userId: u._id,
+                title,
+                body,
+                data,
+                imageUrl: data.imageUrl || undefined
+            }));
+            if (logs.length > 0) {
+                await NotificationLog.insertMany(logs);
+            }
+        }
+
         return true;
     } catch (err) {
         console.error(`Error sending notification to topic '${topic}':`, err);

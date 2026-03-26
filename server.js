@@ -239,6 +239,7 @@ app.use('/api/cities', require('./routes/cityRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
+app.use('/api/notifications', require('./routes/notificationHistoryRoutes'));
 
 // Service Management Routes
 app.use('/api/services', require('./routes/serviceRoutes'));
