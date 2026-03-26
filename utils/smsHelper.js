@@ -214,6 +214,23 @@ async function sendServiceRequestOTPSms(phone, otp) {
     return sendSMS(phone, templateId, otp, 'WTORBT', true);
 }
 
+/**
+ * 7. Booking Cancelled — to Customer
+ */
+async function sendBookingCancelledSms(userId, customerName, bookingId) {
+    const templateId = process.env.FAST2SMS_CANCELLED_TEMPLATE_ID;
+    if (!templateId) return false;
+
+    const enabled = await userHasSmsEnabled(userId);
+    if (!enabled) return false;
+    const user = await User.findById(userId).select('phone');
+    if (!user?.phone) return false;
+
+    // Variables: CustomerName|BookingID
+    const vars = `${customerName}|${bookingId}`;
+    return sendSMS(user.phone, templateId, vars, 'WATORB');
+}
+
 module.exports = {
     sendSMS,
     sendOTPSms,
@@ -221,5 +238,6 @@ module.exports = {
     sendServiceCompletedSms,
     sendBookingCreatedSms,
     sendJobAssignedToTechnicianSms,
-    sendServiceRequestOTPSms
+    sendServiceRequestOTPSms,
+    sendBookingCancelledSms
 };

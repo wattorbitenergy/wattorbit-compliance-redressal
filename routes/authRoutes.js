@@ -129,7 +129,7 @@ router.post('/register', authLimiter, async (req, res) => {
       const defaultPromoCode = (config?.value || 'EARN50').toUpperCase();
 
       if (code === defaultPromoCode) {
-        user.walletBalance += 50;
+        user.walletBalance += 0;
       } else {
         const referrer = await User.findOne({ referralCode: code });
         if (referrer) {
@@ -146,9 +146,9 @@ router.post('/register', authLimiter, async (req, res) => {
             user.walletBalance += (rule.refereeReward || 0);
             referrer.walletBalance += (rule.referrerReward || 0);
           } else {
-            // Fallback to legacy defaults
-            user.walletBalance += 50;
-            referrer.walletBalance += 100;
+            // Fallback to legacy defaults (Disabled)
+            user.walletBalance += 0;
+            referrer.walletBalance += 0;
           }
           await referrer.save();
         }
@@ -327,7 +327,8 @@ router.post('/admin-login', authLimiter, async (req, res) => {
               <p style="color: #666; font-size: 12px;">This code expires in 10 minutes. Do not share it with anyone.</p>
               <p style="color: #999; font-size: 11px;">— WattOrbit Security</p>
             </div>
-          `
+          `,
+          from: "otp@wattorbit.in"
         });
         deliveryChannels.push('email');
       } catch (e) {
@@ -437,7 +438,8 @@ router.post('/send-otp', authLimiter, async (req, res) => {
           <h2>Login Verification</h2>
           <p>Your OTP for login is: <strong>${otp}</strong></p>
           <p>This code expires in 10 minutes.</p>
-        `
+        `,
+        from: "otp@wattorbit.in"
       });
     }
 

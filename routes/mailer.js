@@ -5,16 +5,19 @@ const mailjet = require("node-mailjet").apiConnect(
 
 // This object mimics Nodemailer transporter
 const transporter = {
-  async sendMail({ to, subject, html, attachments }) {
+  async sendMail({ to, subject, html, attachments, from }) {
     try {
+      const fromEmail = from?.email || from || "support@wattorbit.in";
+      const fromName = from?.name || "WattOrbit Support";
+
       const request = await mailjet
         .post("send", { version: "v3.1" })
         .request({
           Messages: [
             {
               From: {
-                Email: "support@wattorbit.in",
-                Name: "WattOrbit Support"
+                Email: fromEmail,
+                Name: fromName
               },
               To: [
                 {

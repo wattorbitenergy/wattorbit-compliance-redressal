@@ -67,6 +67,7 @@ const bookingSchema = new mongoose.Schema({
             'Pending',
             'Confirmed',
             'Assigned',
+            'Started',
             'In Progress',
             'Completed',
             'Cancelled',

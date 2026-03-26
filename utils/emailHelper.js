@@ -3,15 +3,23 @@ const Config = require('../models/Config');
 const { generateInvoicePDF } = require('./invoicePDFGenerator');
 
 const YOUTUBE_LINK = "https://youtube.com/@wattorbit?si=YGaOIvzSIlUElKY8";
+const INSTAGRAM_LINK = "https://www.instagram.com/wattorbit/";
+const FACEBOOK_LINK = "https://facebook.com/wattorbit/";
 
 const EMAIL_FOOTER = `
     <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #777; font-size: 12px;">
         <p>Best Regards,<br><strong>Team WattOrbit</strong></p>
-        <p style="margin-top: 15px;">
-            <a href="${YOUTUBE_LINK}" style="display: inline-block; background-color: #ff0000; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">
-                Subscribe to our YouTube Channel
+        <div style="margin-top: 20px;">
+            <a href="${YOUTUBE_LINK}" style="display: inline-block; background-color: #ff0000; color: #ffffff; padding: 10px 18px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 5px;">
+                YouTube
             </a>
-        </p>
+            <a href="${INSTAGRAM_LINK}" style="display: inline-block; background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%); color: #ffffff; padding: 10px 18px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 5px;">
+                Instagram
+            </a>
+            <a href="${FACEBOOK_LINK}" style="display: inline-block; background-color: #1877f2; color: #ffffff; padding: 10px 18px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 5px;">
+                Facebook
+            </a>
+        </div>
         <p style="margin-top: 20px;">WattOrbit Energy Solutions LLP | <a href="https://wattorbit.in" style="color: #007bff; text-decoration: none;">wattorbit.in</a></p>
     </div>
 `;
@@ -33,7 +41,6 @@ async function sendWelcomeEmail(user) {
                 <li>Track your service status in real-time</li>
                 <li>Access all your service history and invoices</li>
             </ul>
-            <p>We've added a <strong>₹100 Welcome Bonus</strong> to your wallet to get you started!</p>
             <p>Login now to explore: <a href="https://wattorbit.in/login" style="color: #007bff;">wattorbit.in/login</a></p>
             ${EMAIL_FOOTER}
         </div>
@@ -43,7 +50,8 @@ async function sendWelcomeEmail(user) {
         await mailer.sendMail({
             to: user.email,
             subject: 'Welcome to WattOrbit! 🚀',
-            html
+            html,
+            from: "Welcome@wattorbit.in"
         });
         console.log(`[Email] Welcome email sent to ${user.email}`);
     } catch (err) {
@@ -87,7 +95,8 @@ async function sendBookingCreatedEmail(user, booking, serviceName) {
         await mailer.sendMail({
             to: user.email,
             subject: `Service Booking Confirmed: ${booking.bookingId}`,
-            html
+            html,
+            from: "booking@wattorbit.in"
         });
         console.log(`[Email] Booking confirmation sent to ${user.email}`);
     } catch (err) {
@@ -130,7 +139,8 @@ async function sendTechnicianAssignedEmail(user, technician, booking) {
         await mailer.sendMail({
             to: user.email,
             subject: `Technician Assigned for Booking: ${booking.bookingId}`,
-            html
+            html,
+            from: "booking@wattorbit.in"
         });
         console.log(`[Email] Tech assignment email sent to ${user.email}`);
     } catch (err) {
@@ -189,6 +199,7 @@ async function sendJobCompletedEmail(user, booking, invoice) {
             ];
         }
 
+        mailOptions.from = "booking@wattorbit.in";
         await mailer.sendMail(mailOptions);
         console.log(`[Email] Completion email sent to ${user.email} (Attached: ${!!invoice})`);
     } catch (err) {
@@ -221,11 +232,57 @@ async function sendServiceRequestOTPEmail(user, otp) {
         await mailer.sendMail({
             to: user.email,
             subject: 'Verify your WattOrbit Service Request ⚡',
-            html
+            html,
+            from: "otp@wattorbit.in"
         });
         console.log(`[Email] Service OTP sent to ${user.email}`);
     } catch (err) {
         console.error(`[Email] Failed to send service OTP to ${user.email}:`, err.message);
+    }
+}
+
+/**
+ * 6. Booking Cancelled Email
+ */
+async function sendBookingCancelledEmail(user, booking) {
+    if (!user.email) return;
+
+    // Global toggle check
+    try {
+        const globalEmailConfig = await Config.findOne({ key: 'enable_email' });
+        if (globalEmailConfig && globalEmailConfig.value === false) {
+            console.log('[Email] Booking Cancelled Skipped: Global email notifications are disabled.');
+            return false;
+        }
+    } catch (err) {
+        console.error('[Email] Error checking global toggle:', err.message);
+    }
+
+    const html = `
+        <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+            <h2 style="color: #dc3545; text-align: center;">Booking Cancelled</h2>
+            <p>Dear <strong>${user.name || user.username}</strong>,</p>
+            <p>As per your request (or administrative action), your service booking <strong>${booking.bookingId}</strong> has been cancelled.</p>
+            <div style="background: #fff5f5; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 5px solid #dc3545;">
+                <p><strong>Booking ID:</strong> ${booking.bookingId}</p>
+                <p><strong>Reason:</strong> ${booking.cancellationReason || 'Not specified'}</p>
+            </div>
+            <p>If any refund was due, it has been automatically processed to your wallet.</p>
+            <p>We're sorry to see this go. If this was a mistake, you can book again anytime on the app.</p>
+            ${EMAIL_FOOTER}
+        </div>
+    `;
+
+    try {
+        await mailer.sendMail({
+            to: user.email,
+            subject: `Booking Cancelled: ${booking.bookingId}`,
+            html,
+            from: "booking@wattorbit.in"
+        });
+        console.log(`[Email] Cancellation email sent to ${user.email}`);
+    } catch (err) {
+        console.error(`[Email] Failed to send cancellation email to ${user.email}:`, err.message);
     }
 }
 
@@ -234,5 +291,6 @@ module.exports = {
     sendBookingCreatedEmail,
     sendTechnicianAssignedEmail,
     sendJobCompletedEmail,
-    sendServiceRequestOTPEmail
+    sendServiceRequestOTPEmail,
+    sendBookingCancelledEmail
 };

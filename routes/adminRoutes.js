@@ -126,7 +126,8 @@ router.post('/send-weekly-summary', verifyToken, async (req, res) => {
             await mailer.sendMail({
                 to: email,
                 subject: `Weekly Summary Report (${start.toLocaleDateString()} - ${end.toLocaleDateString()})`,
-                html: summaryHtml
+                html: summaryHtml,
+                from: "booking@wattorbit.in"
             });
 
             // Summary sent to user

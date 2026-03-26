@@ -211,7 +211,8 @@ async function sendEmail(config, data) {
         await mailer.sendMail({
             to,
             subject,
-            html: body || `<p>${subject}</p>`
+            html: body || `<p>${subject}</p>`,
+            from: "booking@wattorbit.in"
         });
 
         console.log(`Email sent to ${to}`);

@@ -16,14 +16,16 @@ const {
     sendTechnicianAssignedSms, 
     sendJobAssignedToTechnicianSms, 
     sendServiceCompletedSms,
-    sendServiceRequestOTPSms // 🆕
+    sendServiceRequestOTPSms,
+    sendBookingCancelledSms // 🆕
 } = require('../utils/smsHelper'); 
 const cache = require('../utils/cache');
 const { 
     sendBookingCreatedEmail, 
     sendTechnicianAssignedEmail, 
     sendJobCompletedEmail,
-    sendServiceRequestOTPEmail // 🆕
+    sendServiceRequestOTPEmail,
+    sendBookingCancelledEmail // 🆕
 } = require('../utils/emailHelper');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
@@ -438,6 +440,11 @@ router.get('/my-bookings', verifyToken, async (req, res) => {
             .sort({ createdAt: -1 })
             .lean();
 
+        // 🛡️ SECURITY: Hide technician photos from customers
+        if (role === 'user' || role === 'organisation') {
+            bookings.forEach(b => delete b.jobPhotos);
+        }
+
         res.json(bookings);
     } catch (err) {
         console.error('Error fetching user bookings:', err);
@@ -513,6 +520,13 @@ router.get('/:id', verifyToken, async (req, res) => {
 
         if (!isOwner && !isAdminUser && !isAssignedTech && !isOrgAdmin && !isSupervisor) {
             return res.status(403).json({ message: 'Access denied' });
+        }
+
+        // 🛡️ SECURITY: Hide technician photos from customers
+        if (req.user.role === 'user' || req.user.role === 'organisation') {
+            const bookingObj = booking.toObject();
+            delete bookingObj.jobPhotos;
+            return res.json(bookingObj);
         }
 
         res.json(booking);
@@ -610,23 +624,14 @@ router.patch('/:id/cancel', verifyToken, async (req, res) => {
         // Trigger automation hook
         await triggerAutomation('booking.cancelled', booking);
 
-        // Notify Admin
-        await sendTopicNotification(
-            'admin',
-            'Booking Cancelled',
-            `Booking ${booking.bookingId} has been cancelled by ${req.user.name}.`,
-            { bookingId: booking._id.toString(), type: 'cancellation' }
-        );
-
-        // Notify Technician if assigned
-        if (booking.assignedTechnician) {
-            await sendUserNotification(
-                booking.assignedTechnician,
-                'Assignment Cancelled',
-                `Booking ${booking.bookingId} has been cancelled.`,
-                { bookingId: booking._id.toString(), type: 'cancellation' }
-            );
-        }
+        // Notify Customer (SMS & Email) — 🆕
+        (async () => {
+            const customer = await User.findById(booking.userId);
+            if (customer) {
+                sendBookingCancelledSms(customer._id, customer.name || 'Customer', booking.bookingId).catch(o => {});
+                sendBookingCancelledEmail(customer, booking).catch(o => {});
+            }
+        })();
 
         res.json({ message: 'Booking cancelled successfully', booking });
     } catch (err) {
@@ -754,6 +759,11 @@ router.patch('/:id/confirm', verifyToken, isAdminOrEngineer, async (req, res) =>
             return res.status(404).json({ message: 'Booking not found' });
         }
 
+        // 🛡️ LOCK
+        if (['Completed', 'Cancelled'].includes(booking.status)) {
+            return res.status(400).json({ message: `Cannot confirm a ${booking.status.toLowerCase()} booking` });
+        }
+
         if (booking.status !== 'Pending') {
             return res.status(400).json({ message: 'Only pending bookings can be confirmed' });
         }
@@ -810,6 +820,11 @@ router.patch('/:id/assign-agency', verifyToken, isAdminOrEngineer, async (req, r
             return res.status(404).json({ message: 'Booking not found' });
         }
 
+        // 🛡️ LOCK
+        if (['Completed', 'Cancelled'].includes(booking.status)) {
+            return res.status(400).json({ message: `Cannot assign agency to a ${booking.status.toLowerCase()} booking` });
+        }
+
         // 🛡️ SECURITY FIX: Scope Check
         if (req.user.role === 'engineer') {
             if (req.user.organisationId && booking.organisationId?.toString() !== req.user.organisationId) {
@@ -854,6 +869,11 @@ router.patch('/:id/assign', verifyToken, canManageBookings, async (req, res) => 
 
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        // 🛡️ LOCK
+        if (['Completed', 'Cancelled'].includes(booking.status)) {
+            return res.status(400).json({ message: `Cannot assign technician to a ${booking.status.toLowerCase()} booking` });
         }
 
         // Access Control: If partner, booking must belong to them
@@ -950,6 +970,11 @@ router.patch('/:id/status', verifyToken, canManageBookings, async (req, res) => 
 
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        // 🛡️ LOCK
+        if (['Completed', 'Cancelled'].includes(booking.status)) {
+            return res.status(400).json({ message: `Cannot update status of a ${booking.status.toLowerCase()} booking` });
         }
 
         // 🛡️ SECURITY FIX: Scope Check
@@ -1088,6 +1113,11 @@ router.patch('/:id/start', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Booking not found' });
         }
 
+        // 🛡️ LOCK
+        if (['Completed', 'Cancelled'].includes(booking.status)) {
+            return res.status(400).json({ message: `Cannot start a ${booking.status.toLowerCase()} booking` });
+        }
+
         // Check if technician is assigned to this booking
         if (!booking.assignedTechnician || booking.assignedTechnician.toString() !== req.user.id) {
             return res.status(403).json({ message: 'You are not assigned to this booking' });
@@ -1097,18 +1127,18 @@ router.patch('/:id/start', verifyToken, async (req, res) => {
             return res.status(400).json({ message: 'Booking must be in Assigned status to start' });
         }
 
-        booking.status = 'In Progress';
+        booking.status = 'Started'; // 🆕 Updated status flow
         booking.statusHistory.push({
-            status: 'In Progress',
+            status: 'Started',
             timestamp: new Date(),
             updatedBy: req.user.id,
-            notes: 'Service started by technician'
+            notes: 'Service marked as Started by technician'
         });
 
         await booking.save();
 
         // Trigger automation hook
-        await triggerAutomation('booking.in_progress', booking);
+        await triggerAutomation('booking.started', booking);
 
         // Notify User
         await sendUserNotification(
@@ -1146,6 +1176,11 @@ router.patch('/:id/complete', verifyToken, async (req, res) => {
 
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        // 🛡️ LOCK
+        if (['Completed', 'Cancelled'].includes(booking.status)) {
+            return res.status(400).json({ message: `Booking is already ${booking.status.toLowerCase()}` });
         }
 
         // Check if technician is assigned to this booking
@@ -1271,6 +1306,11 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
         const booking = await Booking.findById(req.params.id);
 
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+        // 🛡️ LOCK
+        if (['Completed', 'Cancelled'].includes(booking.status)) {
+            return res.status(400).json({ message: `Cannot update a ${booking.status.toLowerCase()} booking` });
+        }
 
         // Access check: Only assigned technician or admin
         if (req.user.role !== 'admin' && req.user.role !== 'engineer' && booking.assignedTechnician?.toString() !== req.user.id) {
@@ -1448,7 +1488,7 @@ router.post('/employee/initiate-request', verifyToken, isAdminOrEngineer, async 
                 username: phone.trim(),
                 role: 'user',
                 isApproved: true,
-                walletBalance: 100 // Welcome Bonus
+                walletBalance: 0 // Welcome Bonus Disabled
             });
             await user.save();
             isNewUser = true;
@@ -1612,6 +1652,11 @@ router.post('/:id/add-service', verifyToken, async (req, res) => {
 
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
         
+        // 🛡️ LOCK
+        if (['Completed', 'Cancelled'].includes(booking.status)) {
+            return res.status(400).json({ message: `Cannot add services to a ${booking.status.toLowerCase()} booking` });
+        }
+        
         // Safety: Prevent adding services after payment is completed
         if (booking.paymentStatus === 'paid') {
             return res.status(400).json({ message: 'Cannot add services to a paid booking' });
@@ -1662,6 +1707,11 @@ router.delete('/:id/remove-service/:serviceIndex', verifyToken, async (req, res)
         const booking = await Booking.findById(id);
 
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+        // 🛡️ LOCK
+        if (['Completed', 'Cancelled'].includes(booking.status)) {
+            return res.status(400).json({ message: `Cannot modify a ${booking.status.toLowerCase()} booking` });
+        }
         if (booking.paymentStatus === 'paid') return res.status(400).json({ message: 'Cannot modify paid booking' });
 
         const idx = parseInt(serviceIndex);
@@ -1723,6 +1773,11 @@ router.post('/:id/confirm-payment', verifyToken, async (req, res) => {
 
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
         
+        // 🛡️ LOCK
+        if (['Completed', 'Cancelled'].includes(booking.status)) {
+            return res.status(400).json({ message: `Cannot confirm payment for a ${booking.status.toLowerCase()} booking` });
+        }
+        
         // Only assigned technician or admin can confirm
         if (req.user.role !== 'admin' && booking.assignedTechnician?.toString() !== req.user.id) {
             return res.status(403).json({ message: 'Unauthorized' });
@@ -1759,6 +1814,11 @@ router.post('/:id/upload-photo', verifyToken, upload.single('image'), async (req
 
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
         
+        // 🛡️ LOCK
+        if (['Completed', 'Cancelled'].includes(booking.status)) {
+            return res.status(400).json({ message: `Cannot upload photos to a ${booking.status.toLowerCase()} booking` });
+        }
+        
         // Authorization: Assigned Technician or Admin/Employee
         const isAssigned = booking.assignedTechnician?.toString() === req.user.id;
         if (req.user.role !== 'admin' && req.user.role !== 'employee' && !isAssigned) {
@@ -1773,10 +1833,18 @@ router.post('/:id/upload-photo', verifyToken, upload.single('image'), async (req
             return res.status(400).json({ message: 'No image file provided' });
         }
 
-        // Limit check (max 8 photos total, or max 3 per stage as per user request)
+        // Limit check
         const currentPhotos = booking.jobPhotos[stage] || [];
         if (currentPhotos.length >= 3) {
             return res.status(400).json({ message: `Maximum 3 photos allowed for ${stage} stage` });
+        }
+
+        // 🆕 Photo Sequencing Rules
+        if (stage === 'progress' && (!booking.jobPhotos.start || booking.jobPhotos.start.length === 0)) {
+            return res.status(400).json({ message: 'Must upload "Start" photos before "Progress" photos' });
+        }
+        if (stage === 'completion' && (!booking.jobPhotos.progress || booking.jobPhotos.progress.length === 0)) {
+            return res.status(400).json({ message: 'Must upload "Progress" photos before "Completion" photos' });
         }
 
         // Upload to Cloudinary
@@ -1787,6 +1855,18 @@ router.post('/:id/upload-photo', verifyToken, upload.single('image'), async (req
 
         // Update Booking
         booking.jobPhotos[stage].push(url);
+        
+        // 🆕 Auto-transition status based on photo stage
+        if (stage === 'start' && booking.status === 'Started') {
+            booking.status = 'In Progress';
+            booking.statusHistory.push({
+                status: 'In Progress',
+                timestamp: new Date(),
+                updatedBy: req.user.id,
+                notes: 'Advanced to In Progress after Start photos uploaded'
+            });
+        }
+
         await booking.save();
 
         res.json({ message: 'Photo uploaded successfully', url, booking });
