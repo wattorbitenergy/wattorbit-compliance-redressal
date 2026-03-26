@@ -108,6 +108,7 @@ router.post('/verify-payment', verifyToken, async (req, res) => {
             }
 
             booking.paymentReceived = true;
+            booking.paymentStatus = 'paid'; // Ensure paymentStatus is synced
             booking.razorpayPaymentId = razorpay_payment_id;
             booking.razorpaySignature = razorpay_signature;
             booking.status = 'Confirmed'; // Auto confirm if payment is received

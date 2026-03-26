@@ -1372,7 +1372,7 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
                 await triggerAutomation('booking.completed', booking);
                 
                 // Record Technician Earning (Partner Payment System)
-                if (booking.paymentStatus === 'paid' || booking.paymentMethod === 'COD') {
+                if (booking.paymentStatus === 'paid' || booking.paymentMethod === 'COD' || booking.paymentReceived === true) {
                     await recordTechnicianEarning(booking).catch(e => console.error('[Finance] Dashboard Earning error:', e));
                 }
             }
