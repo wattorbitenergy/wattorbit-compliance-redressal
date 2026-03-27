@@ -243,6 +243,10 @@ const bookingSchema = new mongoose.Schema({
         start: [String],
         progress: [String],
         completion: [String]
+    },
+    isDemo: {
+        type: Boolean,
+        default: false
     }
 }, { timestamps: true });
 

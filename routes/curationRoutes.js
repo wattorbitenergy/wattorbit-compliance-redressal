@@ -30,6 +30,8 @@ const isAuthorized = (req, res, next) => {
 router.get('/', async (req, res) => {
     try {
         const curations = await Curation.find({ isActive: true })
+            .populate('targetServiceId', 'name')
+            .populate('targetPackageId', 'name')
             .sort({ order: 1, createdAt: -1 });
         res.json(curations);
     } catch (err) {

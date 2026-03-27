@@ -24,6 +24,7 @@ async function recordTechnicianEarning(booking) {
             platformFee: booking.platformFees || 0,
             taxAmount: booking.taxes || 0,
             status: 'credited',
+            isDemo: booking.isDemo || false,
             notes: `Earnings for booking #${booking.bookingId}`
         });
 
@@ -34,7 +35,8 @@ async function recordTechnicianEarning(booking) {
             technicianShare,
             booking.bookingId || booking._id.toString(),
             `Earning credited for booking #${booking.bookingId}`,
-            { bookingId: booking._id }
+            { bookingId: booking._id },
+            booking.isDemo || false
         );
 
         return earning;
@@ -47,7 +49,7 @@ async function recordTechnicianEarning(booking) {
 /**
  * Updates the universal ledger and user balance.
  */
-async function updateUniversalLedger(userId, type, amount, referenceId, description, metadata = {}) {
+async function updateUniversalLedger(userId, type, amount, referenceId, description, metadata = {}, isDemo = false) {
     const user = await User.findById(userId);
     if (!user) throw new Error('User not found');
 
@@ -64,6 +66,7 @@ async function updateUniversalLedger(userId, type, amount, referenceId, descript
         description,
         balanceAfter: user.walletBalance,
         referenceId,
+        isDemo,
         metadata
     });
     

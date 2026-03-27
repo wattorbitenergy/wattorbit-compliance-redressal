@@ -30,6 +30,10 @@ const financialLedgerSchema = new mongoose.Schema({
         required: false,
         comment: "Booking ID, Payout ID, or Transaction ID"
     },
+    isDemo: {
+        type: Boolean,
+        default: false
+    },
     metadata: {
         type: mongoose.Schema.Types.Mixed
     }

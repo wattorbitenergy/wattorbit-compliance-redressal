@@ -37,6 +37,10 @@ const technicianEarningSchema = new mongoose.Schema({
         enum: ['pending', 'credited', 'cancelled'],
         default: 'pending'
     },
+    isDemo: {
+        type: Boolean,
+        default: false
+    },
     notes: String
 }, { timestamps: true });
 

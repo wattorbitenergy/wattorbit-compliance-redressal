@@ -7,6 +7,9 @@ const Address = require('../models/Address');
 const User = require('../models/User');
 const Coupon = require('../models/Coupon');
 const Config = require('../models/Config');
+const TechnicianEarning = require('../models/TechnicianEarning');
+const FinancialLedger = require('../models/FinancialLedger');
+const Invoice = require('../models/Invoice');
 const { generateBookingId } = require('../utils/idGenerator');
 const { triggerAutomation } = require('../utils/automationEngine');
 const { sendUserNotification, sendTopicNotification } = require('../utils/notificationHelper');
@@ -33,7 +36,6 @@ const path = require('path');
 const fs = require('fs');
 const { uploadToCloudinary } = require('../utils/cloudinaryHelper');
 const { recordTechnicianEarning } = require('../utils/technicianFinanceHelper');
-const FinancialLedger = require('../models/FinancialLedger');
 
 // Configure Multer for temp storage
 const storage = multer.diskStorage({
@@ -1605,9 +1607,10 @@ router.post('/employee/confirm-request', verifyToken, isAdminOrEngineer, async (
         // Clear OTP and update status to Pending
         booking.serviceOTP = undefined;
         booking.serviceOTPExpires = undefined;
-        booking.status = 'Pending';
+        const nextStatus = booking.isDemo ? 'Assigned' : 'Pending';
+        booking.status = nextStatus;
         booking.statusHistory.push({
-            status: 'Pending',
+            status: nextStatus,
             timestamp: new Date(),
             updatedBy: req.user.id,
             notes: 'User verified via OTP. Booking confirmed.'
@@ -1633,6 +1636,166 @@ router.post('/employee/confirm-request', verifyToken, isAdminOrEngineer, async (
     } catch (err) {
         console.error('Confirm request error:', err);
         res.status(500).json({ message: 'Failed to confirm booking' });
+    }
+});
+
+/**
+ * POST: Create a Demo Booking (bypass OTP, pre-assign tech)
+ */
+router.post('/employee/demo-booking', verifyToken, isAdminOrEngineer, async (req, res) => {
+    try {
+        const {
+            phone, email, name,
+            serviceId, packageId,
+            technicianId,
+            addressDetails,
+            scheduledDate, scheduledTimeSlot,
+            customerNotes,
+            skipOtp
+        } = req.body;
+
+        if (!phone || !serviceId || !packageId || !technicianId) {
+            return res.status(400).json({ message: 'Missing required demo fields' });
+        }
+
+        // 1. Find or Create User
+        let user = await User.findOne({ phone: phone.trim() });
+        if (!user) {
+            user = new User({
+                phone: phone.trim(),
+                email: email ? email.toLowerCase().trim() : undefined,
+                name: name || 'Demo Customer',
+                username: `demo_${phone.trim()}`,
+                role: 'user',
+                isApproved: true
+            });
+            await user.save();
+        }
+
+        // 2. Handle Address
+        const newAddress = new Address({
+            userId: user._id,
+            ...addressDetails,
+            contactName: user.name,
+            contactPhone: user.phone
+        });
+        await newAddress.save();
+
+        // 3. Service & Package
+        const service = await Service.findById(serviceId);
+        const servicePackage = await ServicePackage.findById(packageId);
+        const technician = await User.findById(technicianId);
+
+        if (!service || !servicePackage || !technician) {
+            return res.status(404).json({ message: 'Invalid service, package, or technician' });
+        }
+
+        // 4. Pricing
+        const technicianCharges = servicePackage.technicianCharges || 0;
+        const platformFees = servicePackage.platformFees || 0;
+        const taxes = Math.round((platformFees * 18) / 100);
+        const basePrice = technicianCharges + platformFees;
+        const totalAmount = basePrice + taxes;
+
+        // 5. Create Booking
+        const bookingId = await generateBookingId();
+        const status = skipOtp ? 'Assigned' : 'Awaiting Confirmation';
+        const otp = skipOtp ? undefined : Math.floor(100000 + Math.random() * 900000).toString();
+
+        const booking = new Booking({
+            bookingId,
+            userId: user._id,
+            serviceId,
+            packageId,
+            addressId: newAddress._id,
+            scheduledDate: new Date(scheduledDate || Date.now()),
+            scheduledTimeSlot: scheduledTimeSlot || '10:00 AM - 12:00 PM',
+            customerNotes: `[DEMO] ${customerNotes || ''}`,
+            basePrice,
+            technicianCharges,
+            platformFees,
+            taxes,
+            totalAmount,
+            paymentMethod: 'COD',
+            status,
+            serviceOTP: otp,
+            serviceOTPExpires: otp ? Date.now() + 600000 : undefined,
+            assignedTechnician: technicianId,
+            assignedAt: skipOtp ? new Date() : undefined,
+            isDemo: true,
+            statusHistory: [{
+                status,
+                timestamp: new Date(),
+                updatedBy: req.user.id,
+                notes: `Demo initiated by employee ${req.user.name || req.user.id}`
+            }]
+        });
+
+        await booking.save();
+
+        // 6. Notifications (Genuine)
+        if (!skipOtp) {
+            sendServiceRequestOTPSms(user.phone, otp).catch(o => {});
+        } else {
+            // Send Booking Created & Tech Assigned Notifications
+            sendBookingCreatedSms(user._id, user.name, booking.bookingId, service.name).catch(o => {});
+            sendBookingCreatedEmail(user, booking, service.name).catch(o => {});
+            
+            // Tech Assignments
+            sendUserNotification(technicianId, 'New Demo Assignment', `Assigned to demo booking ${booking.bookingId}`, { bookingId: booking._id.toString() }).catch(o => {});
+            sendJobAssignedToTechnicianSms(technicianId, technician.name, booking.bookingId).catch(o => {});
+            
+            sendUserNotification(user._id, 'Technician Assigned', `Tech ${technician.name} assigned to your demo ${booking.bookingId}`, { bookingId: booking._id.toString() }).catch(o => {});
+            sendTechnicianAssignedSms(user._id, user.name, booking.bookingId, technician.name).catch(o => {});
+            sendTechnicianAssignedEmail(user, technician, booking).catch(o => {});
+        }
+
+        res.status(201).json({ message: 'Demo booking created', booking });
+
+    } catch (err) {
+        console.error('Demo booking error:', err);
+        res.status(500).json({ message: 'Failed to create demo booking' });
+    }
+});
+
+/**
+ * POST: Reset all Demo data (Admin/Employee only)
+ */
+router.post('/admin/reset-demos', verifyToken, isAdminOrEngineer, async (req, res) => {
+    try {
+        // 1. Find all demo ledger entries to revert balances
+        const demoLedgers = await FinancialLedger.find({ isDemo: true });
+        
+        for (const entry of demoLedgers) {
+            const user = await User.findById(entry.userId);
+            if (user) {
+                // Revert balance: subtract what was added, add what was subtracted
+                user.walletBalance -= entry.amount; 
+                await user.save();
+            }
+        }
+
+        // 2. Delete all demo records
+        const demoBookings = await Booking.find({ isDemo: true });
+        const demoBookingIds = demoBookings.map(b => b._id);
+
+        await Promise.all([
+            Booking.deleteMany({ isDemo: true }),
+            TechnicianEarning.deleteMany({ isDemo: true }),
+            FinancialLedger.deleteMany({ isDemo: true }),
+            Invoice.deleteMany({ bookingId: { $in: demoBookingIds } })
+        ]);
+
+        cache.del('dashboard_stats:role=admin&org=global');
+
+        res.json({ 
+            message: 'Demo data reset successfully',
+            clearedCount: demoBookingIds.length 
+        });
+
+    } catch (err) {
+        console.error('Reset demo error:', err);
+        res.status(500).json({ message: 'Failed to reset demo data' });
     }
 });
 
