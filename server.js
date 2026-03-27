@@ -257,6 +257,7 @@ app.use('/api/curations', require('./routes/curationRoutes'));
 app.use('/api/categories', require('./routes/categoryRoutes'));
 app.use('/api/referral-rules', require('./routes/referralRuleRoutes'));
 app.use('/api/work-permit', require('./routes/workPermitRoutes'));
+app.use('/api/trivia', require('./routes/triviaRoutes'));
 
 // Production Security: Only enable test routes in non-prod
 if (process.env.NODE_ENV !== 'production') {

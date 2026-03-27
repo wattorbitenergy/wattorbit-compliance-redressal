@@ -55,6 +55,13 @@ async function sendUserNotification(userId, title, body, data = {}) {
 
         return true;
     } catch (err) {
+        // Gracefully handle 'NotRegistered' or invalid tokens to prevent log spam and retry attempts
+        if (err.code === 'messaging/registration-token-not-registered' || err.code === 'messaging/invalid-registration-token') {
+            console.warn(`[FCM] Token for user ${userId} is invalid or expired. Removing from database.`);
+            await User.findByIdAndUpdate(userId, { $unset: { fcmToken: "" } });
+            return false;
+        }
+
         console.error('Error sending user notification:', err);
         return false;
     }
