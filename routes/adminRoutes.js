@@ -144,12 +144,30 @@ router.post('/send-weekly-summary', verifyToken, async (req, res) => {
 /* =================================================================
    GET/SET CONFIG (ADMIN ONLY)
    ================================================================= */
-router.get('/config/:key', verifyToken, async (req, res) => {
+router.get('/config/:key', async (req, res) => {
+    const publicKeys = [
+        'social_wa', 'social_fb', 'social_insta', 'social_yt', 'social_x', 'social_li', 'social_email',
+        'enable_social_links', 'enable_mobile_work_permit', 'enable_curations', 'enable_onboarding'
+    ];
+
+    // If key is not in whitelist, require verification
+    if (!publicKeys.includes(req.params.key)) {
+        return verifyToken(req, res, async () => {
+            try {
+                const config = await Config.findOne({ key: req.params.key });
+                res.json(config || { key: req.params.key, value: false });
+            } catch (err) {
+                res.status(500).json({ message: 'Failed to fetch config' });
+            }
+        });
+    }
+
+    // Public access for whitelisted keys
     try {
         const config = await Config.findOne({ key: req.params.key });
         res.json(config || { key: req.params.key, value: false });
     } catch (err) {
-        res.status(500).json({ message: 'Failed to fetch config' });
+        res.status(500).json({ message: 'Failed to fetch public config' });
     }
 });
 
