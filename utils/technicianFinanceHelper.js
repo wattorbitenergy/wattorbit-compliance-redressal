@@ -8,6 +8,7 @@ const User = require('../models/User');
 async function recordTechnicianEarning(booking) {
     try {
         if (!booking.assignedTechnician) return null;
+        if (booking.status === 'Cancelled') return null;
 
         const existing = await TechnicianEarning.findOne({ bookingId: booking._id });
         if (existing) return existing;

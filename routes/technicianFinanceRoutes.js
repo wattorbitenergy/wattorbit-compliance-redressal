@@ -40,7 +40,12 @@ const isAdmin = (req, res, next) => {
  */
 router.get('/balance', verifyToken, async (req, res) => {
     try {
-        const user = await User.findById(req.user.id);
+        let targetId = req.user.id;
+        if (req.query.techId && (req.user.role === 'admin' || req.user.role === 'engineer')) {
+            targetId = req.query.techId;
+        }
+
+        const user = await User.findById(targetId);
         if (!user) return res.status(404).json({ message: 'User not found' });
 
         const stats = {
@@ -49,11 +54,11 @@ router.get('/balance', verifyToken, async (req, res) => {
 
         if (user.role === 'technician') {
             const totalEarned = await TechnicianEarning.aggregate([
-                { $match: { technicianId: new mongoose.Types.ObjectId(req.user.id), status: 'credited' } },
+                { $match: { technicianId: new mongoose.Types.ObjectId(targetId), status: 'credited' } },
                 { $group: { _id: null, total: { $sum: '$technicianShare' } } }
             ]);
             const totalPaid = await TechnicianPayout.aggregate([
-                { $match: { technicianId: new mongoose.Types.ObjectId(req.user.id), status: 'completed' } },
+                { $match: { technicianId: new mongoose.Types.ObjectId(targetId), status: 'completed' } },
                 { $group: { _id: null, total: { $sum: '$amount' } } }
             ]);
             stats.totalEarned = totalEarned[0]?.total || 0;

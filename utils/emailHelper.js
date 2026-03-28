@@ -2,27 +2,71 @@ const mailer = require('../routes/mailer');
 const Config = require('../models/Config');
 const { generateInvoicePDF } = require('./invoicePDFGenerator');
 
-const YOUTUBE_LINK = "https://youtube.com/@wattorbit?si=YGaOIvzSIlUElKY8";
-const INSTAGRAM_LINK = "https://www.instagram.com/wattorbit/";
-const FACEBOOK_LINK = "https://facebook.com/wattorbit/";
+/**
+ * Helper to fetch social links for email footer
+ */
+async function getSocialLinks() {
+    try {
+        const keys = ['social_fb', 'social_insta', 'social_yt', 'social_wa', 'social_x', 'social_li', 'social_email'];
+        const configs = await Config.find({ key: { $in: keys } });
+        const map = {};
+        configs.forEach(c => map[c.key] = c.value);
+        
+        return {
+            fb: map.social_fb || "https://www.facebook.com/profile.php?id=61578413404699",
+            insta: map.social_insta || "https://www.instagram.com/wattorbit/",
+            yt: map.social_yt || "https://youtube.com/@wattorbit?si=YGaOIvzSIlUElKY8",
+            wa: map.social_wa || "",
+            x: map.social_x || "",
+            li: map.social_li || "",
+            email: map.social_email || "support@wattorbit.in"
+        };
+    } catch (err) {
+        return {
+            fb: "https://www.facebook.com/profile.php?id=61578413404699",
+            insta: "https://www.instagram.com/wattorbit/",
+            yt: "https://youtube.com/@wattorbit?si=YGaOIvzSIlUElKY8",
+            email: "support@wattorbit.in"
+        };
+    }
+}
 
-const EMAIL_FOOTER = `
-    <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #777; font-size: 12px;">
-        <p>Best Regards,<br><strong>Team WattOrbit</strong></p>
-        <div style="margin-top: 20px;">
-            <a href="${YOUTUBE_LINK}" style="display: inline-block; background-color: #ff0000; color: #ffffff; padding: 10px 18px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 5px;">
-                YouTube
-            </a>
-            <a href="${INSTAGRAM_LINK}" style="display: inline-block; background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%); color: #ffffff; padding: 10px 18px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 5px;">
-                Instagram
-            </a>
-            <a href="${FACEBOOK_LINK}" style="display: inline-block; background-color: #1877f2; color: #ffffff; padding: 10px 18px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 5px;">
-                Facebook
-            </a>
+async function getEmailFooter() {
+    const links = await getSocialLinks();
+    
+    let socialButtons = '';
+    
+    const platforms = [
+        { key: 'wa', label: 'WhatsApp', color: '#25D366', link: links.wa },
+        { key: 'fb', label: 'Facebook', color: '#1877F2', link: links.fb },
+        { key: 'x', label: 'X', color: '#000000', link: links.x },
+        { key: 'li', label: 'LinkedIn', color: '#0A66C2', link: links.li },
+        { key: 'yt', label: 'YouTube', color: '#FF0000', link: links.yt },
+        { key: 'insta', label: 'Instagram', color: '#E4405F', link: links.insta },
+        { key: 'email', label: 'Email', color: '#14A1BD', link: links.email.startsWith('mailto:') ? links.email : `mailto:${links.email}` },
+    ];
+
+    platforms.forEach(p => {
+        if (p.link) {
+            socialButtons += `
+                <a href="${p.link}" style="display: inline-block; background-color: ${p.color}; color: #ffffff; padding: 8px 12px; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 4px; font-size: 11px;">
+                    ${p.label}
+                </a>
+            `;
+        }
+    });
+
+    return `
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #777; font-size: 12px;">
+            <p>Best Regards,<br><strong>Team WattOrbit</strong></p>
+            <div style="margin-top: 20px;">
+                ${socialButtons}
+            </div>
+            <p style="margin-top: 20px;">WattOrbit Energy Solutions LLP | <a href="https://wattorbit.in" style="color: #007bff; text-decoration: none;">wattorbit.in</a></p>
         </div>
-        <p style="margin-top: 20px;">WattOrbit Energy Solutions LLP | <a href="https://wattorbit.in" style="color: #007bff; text-decoration: none;">wattorbit.in</a></p>
-    </div>
-`;
+    `;
+}
+
 
 /**
  * Send Welcome Email to newly registered users
@@ -42,7 +86,7 @@ async function sendWelcomeEmail(user) {
                 <li>Access all your service history and invoices</li>
             </ul>
             <p>Login now to explore: <a href="https://wattorbit.in/login" style="color: #007bff;">wattorbit.in/login</a></p>
-            ${EMAIL_FOOTER}
+            ${await getEmailFooter()}
         </div>
     `;
 
@@ -87,7 +131,7 @@ async function sendBookingCreatedEmail(user, booking, serviceName) {
                 <p><strong>Status:</strong> Pending Confirmation</p>
             </div>
             <p>Our team will assign a technician to your request shortly. You will be notified as soon as someone is on the way.</p>
-            ${EMAIL_FOOTER}
+            ${await getEmailFooter()}
         </div>
     `;
 
@@ -131,7 +175,7 @@ async function sendTechnicianAssignedEmail(user, technician, booking) {
                 <p><strong>Contact:</strong> ${technician.phone || 'Available in app'}</p>
             </div>
             <p>The technician will arrive at your location shortly. You can track their status on the WattOrbit app.</p>
-            ${EMAIL_FOOTER}
+            ${await getEmailFooter()}
         </div>
     `;
 
@@ -176,7 +220,7 @@ async function sendJobCompletedEmail(user, booking, invoice) {
                 <p>Your feedback helps us maintain our high service standards.</p>
             </div>
             <p>If you have any concerns, feel free to reach out to us at <a href="mailto:support@wattorbit.in" style="color: #007bff;">support@wattorbit.in</a></p>
-            ${EMAIL_FOOTER}
+            ${await getEmailFooter()}
         </div>
     `;
 
@@ -224,7 +268,7 @@ async function sendServiceRequestOTPEmail(user, otp) {
                 </span>
             </div>
             <p style="color: #777; font-size: 13px;">This OTP is valid for 10 minutes. If you did not request this service, please ignore this email.</p>
-            ${EMAIL_FOOTER}
+            ${await getEmailFooter()}
         </div>
     `;
 
@@ -269,7 +313,7 @@ async function sendBookingCancelledEmail(user, booking) {
             </div>
             <p>If any refund was due, it has been automatically processed to your wallet.</p>
             <p>We're sorry to see this go. If this was a mistake, you can book again anytime on the app.</p>
-            ${EMAIL_FOOTER}
+            ${await getEmailFooter()}
         </div>
     `;
 

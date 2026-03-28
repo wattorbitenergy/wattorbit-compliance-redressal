@@ -1406,7 +1406,7 @@ router.get('/technician/stats', verifyToken, async (req, res) => {
         }
 
         // Fetch technician details for context (especially for engineers)
-        const technician = await User.findById(techId).select('name availabilityStatus');
+        const technician = await User.findById(techId).select('name availabilityStatus walletBalance');
         if (!technician) return res.status(404).json({ message: 'Technician not found' });
 
         // Fetch all jobs for basic counts
@@ -1415,6 +1415,7 @@ router.get('/technician/stats', verifyToken, async (req, res) => {
         const stats = {
             technicianName: technician.name,
             availabilityStatus: technician.availabilityStatus,
+            walletBalance: technician.walletBalance || 0,
             totalEarnings: 0,
             assignedJobs: 0,
             completedJobs: 0,
@@ -1426,21 +1427,26 @@ router.get('/technician/stats', verifyToken, async (req, res) => {
         const last7Days = new Date(today);
         last7Days.setDate(today.getDate() - 7);
 
+        // Basic counts from bookings
         allJobs.forEach(job => {
             if (job.status === 'Assigned') stats.assignedJobs++;
-            if (job.status === 'Completed') {
-                stats.completedJobs++;
-                const earnings = job.technicianCharges || 0;
-                stats.totalEarnings += earnings;
-
-                // Simple weekly grouping (0 = Sunday, but we want Mon-Sun for the UI graph later)
-                if (job.completedAt >= last7Days) {
-                    const day = job.completedAt.getDay(); // 0 is Sunday, 1 is Monday...
-                    const index = day === 0 ? 6 : day - 1; // Map to 0-6 starting Monday
-                    stats.weeklyEarnings[index] += earnings;
-                }
-            }
+            if (job.status === 'Completed') stats.completedJobs++;
             if (job.status === 'Cancelled') stats.cancelledJobs++;
+        });
+
+        // Exact earnings from TechnicianEarning for accuracy and consistency
+        const earningsRaw = await TechnicianEarning.find({ technicianId: techId, status: 'credited' });
+        
+        earningsRaw.forEach(earning => {
+            const amount = earning.technicianShare || 0;
+            stats.totalEarnings += amount;
+
+            // Simple weekly grouping for UI graph (0 = Sunday... we want Mon-Sun 0-6)
+            if (earning.createdAt >= last7Days) {
+                const day = earning.createdAt.getDay(); // 0 is Sunday, 1 is Monday...
+                const index = day === 0 ? 6 : day - 1; // Map to 0-6 starting Monday
+                stats.weeklyEarnings[index] += amount;
+            }
         });
 
         res.json(stats);
