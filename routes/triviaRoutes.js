@@ -3,14 +3,38 @@ const router = express.Router();
 const Trivia = require('../models/Trivia');
 const TriviaAttempt = require('../models/TriviaAttempt');
 const User = require('../models/User');
-const { protect, isAdmin } = require('../middleware/authMiddleware');
+const jwt = require('jsonwebtoken');
+
+// Verify token middleware
+const verifyToken = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ message: 'Authorization header missing or invalid' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    try {
+        req.user = jwt.verify(token, process.env.JWT_SECRET);
+        next();
+    } catch (err) {
+        return res.status(401).json({ message: 'Invalid or expired token' });
+    }
+};
+
+// Admin check middleware
+const isAdmin = (req, res, next) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Admin access required' });
+    }
+    next();
+};
 
 // ==========================================
 // ADMIN ROUTES
 // ==========================================
 
 // GET all trivia questions (Admin)
-router.get('/admin', protect, isAdmin, async (req, res) => {
+router.get('/admin', verifyToken, isAdmin, async (req, res) => {
   try {
     const questions = await Trivia.find().sort({ createdAt: -1 });
     res.json(questions);
@@ -21,7 +45,7 @@ router.get('/admin', protect, isAdmin, async (req, res) => {
 });
 
 // POST new trivia question (Admin)
-router.post('/admin', protect, isAdmin, async (req, res) => {
+router.post('/admin', verifyToken, isAdmin, async (req, res) => {
   try {
     const { questionText, options, correctOptionIndex, rewardPoints } = req.body;
     
@@ -47,7 +71,7 @@ router.post('/admin', protect, isAdmin, async (req, res) => {
 
 // PATCH toggle active status (Admin)
 // To ensure only ONE is active at a time, we'll deactivate all others if setting to true
-router.patch('/admin/:id/toggle', protect, isAdmin, async (req, res) => {
+router.patch('/admin/:id/toggle', verifyToken, isAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { isActive } = req.body;
@@ -75,7 +99,7 @@ router.patch('/admin/:id/toggle', protect, isAdmin, async (req, res) => {
 });
 
 // DELETE trivia question (Admin)
-router.delete('/admin/:id', protect, isAdmin, async (req, res) => {
+router.delete('/admin/:id', verifyToken, isAdmin, async (req, res) => {
   try {
     await Trivia.findByIdAndDelete(req.params.id);
     // Optionally delete associated attempts here
@@ -93,7 +117,7 @@ router.delete('/admin/:id', protect, isAdmin, async (req, res) => {
 // ==========================================
 
 // GET daily active trivia for the user
-router.get('/daily', protect, async (req, res) => {
+router.get('/daily', verifyToken, async (req, res) => {
   try {
     const activeTrivia = await Trivia.findOne({ isActive: true });
     
@@ -127,7 +151,7 @@ router.get('/daily', protect, async (req, res) => {
 });
 
 // POST submit trivia answer
-router.post('/submit', protect, async (req, res) => {
+router.post('/submit', verifyToken, async (req, res) => {
   try {
     const { triviaId, selectedOptionIndex } = req.body;
 
