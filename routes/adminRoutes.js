@@ -366,9 +366,9 @@ router.get('/dashboard-stats', verifyToken, async (req, res) => {
    Stores centralised bank/UPI details used for QR generation
    ================================================================= */
 router.get('/bank-details', verifyToken, async (req, res) => {
-    const allowedRoles = ['admin', 'employee'];
+    const allowedRoles = ['admin', 'employee', 'user'];
     if (!allowedRoles.includes(req.user.role)) {
-        return res.status(403).json({ message: 'Administrative access required' });
+        return res.status(403).json({ message: 'Access denied' });
     }
 
     try {
