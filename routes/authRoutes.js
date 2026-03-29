@@ -810,6 +810,18 @@ router.get('/profile-balance/:userId', verifyToken, async (req, res) => {
   }
 });
 
+// Alias for /profile used by mobile app
+router.get('/profile/:userId', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId)
+      .select('name username email phone city role walletBalance availabilityStatus isApproved isPlusMember createdAt');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: 'Profile fetch failed' });
+  }
+});
+
 /* =========================
    UPDATE AVAILABILITY STATUS
    ========================= */
