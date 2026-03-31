@@ -1913,8 +1913,8 @@ router.get('/:id/payment-qr', verifyToken, async (req, res) => {
         const booking = await Booking.findById(req.params.id);
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
-        const upiId = process.env.CENTRAL_UPI_ID || 'wattorbit@bank';
-        const upiName = process.env.CENTRAL_UPI_NAME || 'WattOrbit Energy';
+        const upiId = process.env.CENTRAL_UPI_ID || '755829220145@boi';
+        const upiName = process.env.CENTRAL_UPI_NAME || 'WATTORBIT ENERGY SOLUTIONS LLP';
         const amount = booking.totalAmount.toFixed(2);
         const transactionNote = encodeURIComponent(`Payment for Booking ${booking.bookingId}`);
         
