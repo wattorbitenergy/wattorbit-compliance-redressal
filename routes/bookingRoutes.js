@@ -1913,14 +1913,14 @@ router.get('/:id/payment-qr', verifyToken, async (req, res) => {
         const booking = await Booking.findById(req.params.id);
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
-        const upiId = (process.env.CENTRAL_UPI_ID || '755829220145@boi');
-        const upiName = encodeURIComponent(process.env.CENTRAL_UPI_NAME || 'WATTORBIT ENERGY SOLUTIONS LLP');
+        const upiId = (process.env.CENTRAL_UPI_ID || 'boim-755829220145@boi').trim();
+        const upiName = encodeURIComponent((process.env.CENTRAL_UPI_NAME || 'WATTORBIT ENERGY SOLUTIONS LLP').trim());
         const amount = booking.totalAmount.toFixed(2);
         const transactionNote = encodeURIComponent(`Payment for Booking ${booking.bookingId}`);
         const tr = encodeURIComponent(booking.bookingId);
         
         // Standard UPI Dynamic URI Scheme
-        const upiURI = `upi://pay?pa=${upiId}&pn=${upiName}&am=${amount}&tn=${transactionNote}&tr=${tr}&mc=0000&mode=02&cu=INR`;
+        const upiURI = `upi://pay?pa=${upiId}&pn=${upiName}&am=${amount}&tn=${transactionNote}&tr=${tr}&mc=0000&mode=02&purpose=00&orgid=000000&cu=INR`;
 
         res.json({ 
             upiURI,
