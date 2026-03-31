@@ -268,7 +268,8 @@ router.post('/login', authLimiter, async (req, res) => {
         email: user.email,
         phone: user.phone,
         organisationId: user.organisationId,
-        name: user.name
+        name: user.name,
+        username: user.username
       },
       JWT_SECRET,
       { expiresIn }
@@ -387,7 +388,8 @@ router.post('/admin-verify-2fa', authLimiter, async (req, res) => {
         role: user.role,
         name: user.name,
         email: user.email,
-        phone: user.phone
+        phone: user.phone,
+        username: user.username
       },
       process.env.JWT_SECRET,
       { expiresIn: '15m' }
@@ -498,7 +500,8 @@ router.post('/otp-login', authLimiter, async (req, res) => {
         email: user.email,
         phone: user.phone,
         organisationId: user.organisationId,
-        name: user.name
+        name: user.name,
+        username: user.username
       },
       JWT_SECRET,
       { expiresIn }
