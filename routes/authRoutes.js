@@ -8,7 +8,7 @@ const User = require('../models/User');
 const Config = require('../models/Config');
 const mailer = require('./mailer');   // 🔥 Mailjet API (SMTP-free)
 const { sendOTPSms } = require('../utils/smsHelper'); // 📱 Fast2SMS
-const { sendWelcomeEmail } = require('../utils/emailHelper'); // ✉️ Email Templates
+const { sendWelcomeEmail, sendAdminAlertEmail } = require('../utils/emailHelper'); // ✉️ Email Templates
 const cache = require('../utils/cache');
 
 /* =========================
@@ -172,6 +172,24 @@ router.post('/register', authLimiter, async (req, res) => {
     if (autoApprove) {
       sendWelcomeEmail(user).catch(e => console.error('[Email] Welcome email error:', e));
     }
+
+    // 📧 Admin Alert: New Registration
+    sendAdminAlertEmail(
+      `🆕 New ${safeRole.charAt(0).toUpperCase() + safeRole.slice(1)} Registered — ${user.name || user.username}`,
+      `<div style="font-family:Arial,sans-serif;max-width:500px;padding:20px;border:1px solid #ddd;border-radius:8px;">
+        <h3 style="color:#1e3a8a;">New ${safeRole.charAt(0).toUpperCase() + safeRole.slice(1)} Registration</h3>
+        <table style="width:100%;border-collapse:collapse;">
+          <tr><td style="padding:6px;font-weight:bold;">Name</td><td style="padding:6px;">${user.name || user.username}</td></tr>
+          <tr style="background:#f8f9fa;"><td style="padding:6px;font-weight:bold;">Phone</td><td style="padding:6px;">${user.phone}</td></tr>
+          <tr><td style="padding:6px;font-weight:bold;">Email</td><td style="padding:6px;">${user.email}</td></tr>
+          <tr style="background:#f8f9fa;"><td style="padding:6px;font-weight:bold;">Role</td><td style="padding:6px;">${safeRole}</td></tr>
+          <tr><td style="padding:6px;font-weight:bold;">City</td><td style="padding:6px;">${user.city || 'N/A'}</td></tr>
+          <tr style="background:#f8f9fa;"><td style="padding:6px;font-weight:bold;">Status</td><td style="padding:6px;">${autoApprove ? 'Auto-Approved' : 'Pending Approval'}</td></tr>
+          <tr><td style="padding:6px;font-weight:bold;">Registered At</td><td style="padding:6px;">${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</td></tr>
+        </table>
+        <p style="margin-top:16px;"><a href="https://wattorbit.in/admin/users" style="background:#1e3a8a;color:#fff;padding:8px 16px;text-decoration:none;border-radius:6px;">View in Admin Panel</a></p>
+      </div>`
+    ).catch(e => console.error('[Email] Admin registration alert error:', e));
 
     res.status(201).json({ message: autoApprove ? 'Registered successfully' : 'Awaiting approval' });
   } catch {

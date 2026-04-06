@@ -330,11 +330,38 @@ async function sendBookingCancelledEmail(user, booking) {
     }
 }
 
+/**
+ * Send a short alert email to the WattOrbit admin
+ * Admin email is sourced from Config key 'admin_email', then ADMIN_EMAIL env var, then support@wattorbit.in
+ * @param {string} subject - Email subject
+ * @param {string} html - HTML body
+ */
+async function sendAdminAlertEmail(subject, html) {
+    try {
+        let adminEmail = process.env.ADMIN_EMAIL || 'support@wattorbit.in';
+        try {
+            const cfg = await Config.findOne({ key: 'admin_email' });
+            if (cfg && cfg.value) adminEmail = cfg.value;
+        } catch (_) { /* ignore config fetch errors */ }
+
+        await mailer.sendMail({
+            to: adminEmail,
+            subject,
+            html,
+            from: 'alerts@wattorbit.in'
+        });
+        console.log(`[Email] Admin alert sent → ${adminEmail} | ${subject}`);
+    } catch (err) {
+        console.error('[Email] Failed to send admin alert:', err.message);
+    }
+}
+
 module.exports = {
     sendWelcomeEmail,
     sendBookingCreatedEmail,
     sendTechnicianAssignedEmail,
     sendJobCompletedEmail,
     sendServiceRequestOTPEmail,
-    sendBookingCancelledEmail
+    sendBookingCancelledEmail,
+    sendAdminAlertEmail
 };

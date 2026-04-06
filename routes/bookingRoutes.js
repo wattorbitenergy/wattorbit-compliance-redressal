@@ -28,7 +28,8 @@ const {
     sendTechnicianAssignedEmail, 
     sendJobCompletedEmail,
     sendServiceRequestOTPEmail,
-    sendBookingCancelledEmail // 🆕
+    sendBookingCancelledEmail,
+    sendAdminAlertEmail // 🆕 Admin alerts
 } = require('../utils/emailHelper');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
@@ -350,6 +351,23 @@ router.post('/', verifyToken, async (req, res) => {
                 { bookingId: booking._id.toString(), type: 'new_booking' }
             );
 
+            // 📧 Admin Alert Email: New Booking
+            sendAdminAlertEmail(
+                `📋 New Booking ${booking.bookingId} — ${service.name}`,
+                `<div style="font-family:Arial,sans-serif;max-width:500px;padding:20px;border:1px solid #ddd;border-radius:8px;">
+                    <h3 style="color:#1e3a8a;">New Booking Received</h3>
+                    <table style="width:100%;border-collapse:collapse;">
+                        <tr><td style="padding:6px;font-weight:bold;">Booking ID</td><td style="padding:6px;">${booking.bookingId}</td></tr>
+                        <tr style="background:#f8f9fa;"><td style="padding:6px;font-weight:bold;">Service</td><td style="padding:6px;">${service.name}</td></tr>
+                        <tr><td style="padding:6px;font-weight:bold;">Customer</td><td style="padding:6px;">${user.name || user.username} (${user.phone})</td></tr>
+                        <tr style="background:#f8f9fa;"><td style="padding:6px;font-weight:bold;">Amount</td><td style="padding:6px;">₹${booking.totalAmount}</td></tr>
+                        <tr><td style="padding:6px;font-weight:bold;">Payment</td><td style="padding:6px;">${booking.paymentMethod}</td></tr>
+                        <tr style="background:#f8f9fa;"><td style="padding:6px;font-weight:bold;">Scheduled</td><td style="padding:6px;">${booking.scheduledDate?.toDateString()} — ${booking.scheduledTimeSlot}</td></tr>
+                    </table>
+                    <p style="margin-top:16px;"><a href="https://wattorbit.in/admin/bookings" style="background:#1e3a8a;color:#fff;padding:8px 16px;text-decoration:none;border-radius:6px;">View in Admin Panel</a></p>
+                </div>`
+            ).catch(e => console.error('[Email] Admin booking alert error:', e));
+
             // SMS: Booking Created — to Customer
             sendBookingCreatedSms(req.user.id, user.name || 'Customer', booking.bookingId, service.name).catch(e => console.error('[SMS] booking created error:', e));
 
@@ -422,7 +440,10 @@ router.get('/my-bookings', verifyToken, async (req, res) => {
 
         let query = {};
 
-        if (role === 'organisation') {
+        if (role === 'admin' || role === 'employee') {
+            // Admin and Employee see ALL bookings (full access, no scope restriction)
+            // No userId filter — they manage the platform
+        } else if (role === 'organisation') {
             // Organisation users see all bookings belonging to their organisation
             query.organisationId = id;
         } else {
@@ -439,10 +460,11 @@ router.get('/my-bookings', verifyToken, async (req, res) => {
             .populate('packageId', 'name price')
             .populate('addressId')
             .populate('assignedTechnician', 'name phone')
+            .populate('userId', 'name phone email')
             .sort({ createdAt: -1 })
             .lean();
 
-        // 🛡️ SECURITY: Hide technician photos from customers
+        // 🛡️ SECURITY: Hide technician job photos ONLY from end-customers and organisations
         if (role === 'user' || role === 'organisation') {
             bookings.forEach(b => delete b.jobPhotos);
         }
@@ -1225,22 +1247,22 @@ router.patch('/:id/complete', verifyToken, async (req, res) => {
             { bookingId: booking._id.toString(), type: 'completion' }
         );
 
-        // Auto-generate Invoice directly to ensure it exists for download
-        await autoGenerateInvoice(booking._id);
+        // Auto-generate Invoice (will be Unpaid if COD not yet collected; stays open for payment marking)
+        const invoice = await autoGenerateInvoice(booking._id);
 
-        // 🔥 SMS & Email: Service Completed (via technician action)
+        // 🔥 SMS & Email: Always fire on completion regardless of paymentReceived
         (async () => {
             const completedUser = await User.findById(booking.userId);
             if (completedUser) {
                 // SMS
                 sendServiceCompletedSms(booking.userId, completedUser.name || 'Customer', booking.bookingId).catch(o => {});
-                // Email
-                sendJobCompletedEmail(completedUser, booking).catch(e => console.error('[Email] tech complete email error:', e));
+                // Email (with invoice if available)
+                sendJobCompletedEmail(completedUser, booking, invoice).catch(e => console.error('[Email] tech complete email error:', e));
             }
         })();
 
-        // Record Technician Earning (Partner Payment System)
-        if (booking.paymentStatus === 'paid' || booking.paymentMethod === 'COD') {
+        // Record Technician Earning only when payment is confirmed (not for pending COD)
+        if (booking.paymentStatus === 'paid' || booking.paymentReceived === true) {
             await recordTechnicianEarning(booking).catch(e => console.error('[Finance] Tech Earning error:', e));
         }
 
@@ -1301,7 +1323,7 @@ router.get('/:id/whatsapp/technician', verifyToken, async (req, res) => {
     }
 });
 
-// PATCH: Generic update for technicians (Web Dashboard compatibility)
+// PATCH: Generic update for technicians/admin/engineer (Web Dashboard compatibility)
 router.patch('/:id/tech-update', verifyToken, async (req, res) => {
     try {
         const { status, remark, paymentReceived, customerBehavior, userRating } = req.body;
@@ -1309,17 +1331,24 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
 
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
-        // 🛡️ LOCK
-        if (['Completed', 'Cancelled'].includes(booking.status)) {
-            return res.status(400).json({ message: `Cannot update a ${booking.status.toLowerCase()} booking` });
+        // 🛡️ LOCK — Hard block on Cancelled.
+        // Completed bookings can still receive payment updates (paymentReceived) from admin/engineer/technician.
+        if (booking.status === 'Cancelled') {
+            return res.status(400).json({ message: 'Cannot update a cancelled booking' });
         }
 
-        // Access check: Only assigned technician or admin
+        // For already-Completed bookings, only allow paymentReceived/customerBehavior/userRating updates. Block status changes.
+        const isAlreadyCompleted = booking.status === 'Completed';
+        if (isAlreadyCompleted && status && status !== 'Completed') {
+            return res.status(400).json({ message: 'Cannot change status of a completed booking. Only payment marking is allowed.' });
+        }
+
+        // Access check: Only assigned technician, admin, or engineer
         if (req.user.role !== 'admin' && req.user.role !== 'engineer' && booking.assignedTechnician?.toString() !== req.user.id) {
             return res.status(403).json({ message: 'Access denied' });
         }
 
-        if (status) booking.status = status;
+        if (status && !isAlreadyCompleted) booking.status = status;
         if (remark) booking.technicianNotes = remark;
         if (paymentReceived !== undefined) booking.paymentReceived = paymentReceived;
         if (customerBehavior) booking.customerBehavior = customerBehavior;
@@ -1332,12 +1361,10 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
             const user = await User.findById(booking.userId);
             if (user) {
                 if (oldRating === 0) {
-                    // New rating
                     const newTotal = user.totalRatings + 1;
                     user.averageRating = ((user.averageRating * user.totalRatings) + userRating) / newTotal;
                     user.totalRatings = newTotal;
                 } else {
-                    // Update existing rating
                     user.averageRating = ((user.averageRating * user.totalRatings) - oldRating + userRating) / user.totalRatings;
                 }
                 await user.save();
@@ -1345,17 +1372,17 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
         }
 
         booking.statusHistory.push({
-            status: status || booking.status,
+            status: booking.status,
             timestamp: new Date(),
             updatedBy: req.user.id,
-            notes: remark || 'Status updated via dashboard'
+            notes: remark || (paymentReceived === true ? 'Payment marked as received' : 'Status updated via dashboard')
         });
 
         if (status === 'Completed' || paymentReceived === true) {
-            if (status === 'Completed') {
+            if (status === 'Completed' && !isAlreadyCompleted) {
                 booking.completedAt = new Date();
 
-                // Notify User
+                // Notify User (push)
                 await sendUserNotification(
                     booking.userId,
                     'Service Completed',
@@ -1366,17 +1393,25 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
 
             await booking.save();
 
-            // Auto-generate Invoice directly to ensure it exists for download
-            await autoGenerateInvoice(booking._id);
+            // Auto-generate or update invoice on completion or payment receipt
+            const invoice = await autoGenerateInvoice(booking._id);
 
-            if (status === 'Completed') {
-                // Trigger completion automations (notifications etc)
+            if (status === 'Completed' && !isAlreadyCompleted) {
                 await triggerAutomation('booking.completed', booking);
-                
-                // Record Technician Earning (Partner Payment System)
-                if (booking.paymentStatus === 'paid' || booking.paymentMethod === 'COD' || booking.paymentReceived === true) {
-                    await recordTechnicianEarning(booking).catch(e => console.error('[Finance] Dashboard Earning error:', e));
-                }
+
+                // SMS & Email to customer
+                (async () => {
+                    const completedUser = await User.findById(booking.userId);
+                    if (completedUser) {
+                        sendServiceCompletedSms(booking.userId, completedUser.name || 'Customer', booking.bookingId).catch(o => {});
+                        sendJobCompletedEmail(completedUser, booking, invoice).catch(e => console.error('[Email] Dashboard complete email error:', e));
+                    }
+                })();
+            }
+
+            // Record Technician Earning when payment is confirmed
+            if (booking.paymentReceived === true || booking.paymentStatus === 'paid') {
+                await recordTechnicianEarning(booking).catch(e => console.error('[Finance] Dashboard Earning error:', e));
             }
         } else {
             await booking.save();
@@ -1934,7 +1969,8 @@ router.get('/:id/payment-qr', verifyToken, async (req, res) => {
 });
 
 /**
- * POST: Finalize and Confirm Payment (Manual UPI Confirmation by Technician)
+ * POST: Finalize and Confirm Payment (Manual UPI / COD confirmation by Technician, Admin, or Engineer)
+ * Works on both active (In Progress) and already-Completed bookings where payment is still pending.
  */
 router.post('/:id/confirm-payment', verifyToken, async (req, res) => {
     try {
@@ -1943,33 +1979,80 @@ router.post('/:id/confirm-payment', verifyToken, async (req, res) => {
 
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
         
-        // 🛡️ LOCK
-        if (['Completed', 'Cancelled'].includes(booking.status)) {
-            return res.status(400).json({ message: `Cannot confirm payment for a ${booking.status.toLowerCase()} booking` });
+        // 🛡️ LOCK — Hard block only on Cancelled
+        if (booking.status === 'Cancelled') {
+            return res.status(400).json({ message: 'Cannot confirm payment for a cancelled booking' });
+        }
+
+        // Also block if payment is already confirmed
+        if (booking.paymentReceived === true) {
+            return res.status(400).json({ message: 'Payment has already been confirmed for this booking' });
         }
         
-        // Only assigned technician or admin can confirm
-        if (req.user.role !== 'admin' && booking.assignedTechnician?.toString() !== req.user.id) {
+        // Only assigned technician, admin, or engineer can confirm
+        if (req.user.role !== 'admin' && req.user.role !== 'engineer' && booking.assignedTechnician?.toString() !== req.user.id) {
             return res.status(403).json({ message: 'Unauthorized' });
         }
+
+        const wasAlreadyCompleted = booking.status === 'Completed';
 
         booking.paymentStatus = 'paid';
         booking.paymentId = paymentId;
         booking.paymentReceived = true;
-        booking.status = 'Completed';
-        booking.completedAt = new Date();
+        
+        // Only transition to Completed if not already there
+        if (!wasAlreadyCompleted) {
+            booking.status = 'Completed';
+            booking.completedAt = new Date();
+        }
         
         booking.statusHistory.push({
-            status: 'Completed',
+            status: booking.status,
             timestamp: new Date(),
             updatedBy: req.user.id,
-            notes: notes || `Payment confirmed via UPI. TrxID: ${paymentId}`
+            notes: notes || `Payment confirmed. TrxID: ${paymentId || 'COD'}`
         });
 
         await booking.save();
-        res.json({ message: 'Payment confirmed and job completed', booking });
+
+        // Auto-generate or update invoice — will now have paymentStatus: 'Paid'
+        // If invoice exists, delete and regenerate so it reflects paid status
+        const existingInvoice = await Invoice.findOneAndDelete({ bookingId: booking._id });
+        const invoice = await autoGenerateInvoice(booking._id);
+
+        // Push notifications
+        sendUserNotification(
+            booking.userId,
+            wasAlreadyCompleted ? 'Payment Received' : 'Service Completed',
+            wasAlreadyCompleted
+                ? `Payment for booking ${booking.bookingId} has been confirmed. Thank you!`
+                : `Your service for booking ${booking.bookingId} is complete. Payment received!`,
+            { bookingId: booking._id.toString(), type: 'payment_confirmed' }
+        ).catch(e => console.error('[Push] payment confirm user error:', e));
+
+        sendTopicNotification(
+            'admin',
+            'Payment Confirmed',
+            `Payment confirmed for booking ${booking.bookingId}.`,
+            { bookingId: booking._id.toString(), type: 'payment_confirmed' }
+        ).catch(e => console.error('[Push] payment confirm admin error:', e));
+
+        // SMS & Email to customer
+        (async () => {
+            const completedUser = await User.findById(booking.userId);
+            if (completedUser) {
+                sendServiceCompletedSms(booking.userId, completedUser.name || 'Customer', booking.bookingId).catch(o => {});
+                sendJobCompletedEmail(completedUser, booking, invoice).catch(e => console.error('[Email] confirm-payment email error:', e));
+            }
+        })();
+
+        // Record Technician Earning now that payment is confirmed
+        await recordTechnicianEarning(booking).catch(e => console.error('[Finance] confirm-payment earning error:', e));
+
+        res.json({ message: 'Payment confirmed successfully', booking, invoice: invoice ? { invoiceId: invoice.invoiceId } : null });
 
     } catch (err) {
+        console.error('[confirm-payment] error:', err);
         res.status(500).json({ message: 'Failed to confirm payment' });
     }
 });
@@ -1984,14 +2067,16 @@ router.post('/:id/upload-photo', verifyToken, upload.single('image'), async (req
 
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
         
-        // 🛡️ LOCK
-        if (['Completed', 'Cancelled'].includes(booking.status)) {
-            return res.status(400).json({ message: `Cannot upload photos to a ${booking.status.toLowerCase()} booking` });
+        // 🛡️ LOCK — Hard block only on Cancelled.
+        // Completed bookings CAN still receive photos (technician may upload after marking done, admin adds evidence)
+        if (booking.status === 'Cancelled') {
+            return res.status(400).json({ message: 'Cannot upload photos to a cancelled booking' });
         }
         
-        // Authorization: Assigned Technician or Admin/Employee
+        // Authorization: Assigned Technician, Admin, Employee, or Engineer
         const isAssigned = booking.assignedTechnician?.toString() === req.user.id;
-        if (req.user.role !== 'admin' && req.user.role !== 'employee' && !isAssigned) {
+        const isPrivileged = ['admin', 'employee', 'engineer'].includes(req.user.role);
+        if (!isPrivileged && !isAssigned) {
             return res.status(403).json({ message: 'Unauthorized to upload photos' });
         }
 
@@ -2009,12 +2094,15 @@ router.post('/:id/upload-photo', verifyToken, upload.single('image'), async (req
             return res.status(400).json({ message: `Maximum 3 photos allowed for ${stage} stage` });
         }
 
-        // 🆕 Photo Sequencing Rules
-        if (stage === 'progress' && (!booking.jobPhotos.start || booking.jobPhotos.start.length === 0)) {
-            return res.status(400).json({ message: 'Must upload "Start" photos before "Progress" photos' });
-        }
-        if (stage === 'completion' && (!booking.jobPhotos.progress || booking.jobPhotos.progress.length === 0)) {
-            return res.status(400).json({ message: 'Must upload "Progress" photos before "Completion" photos' });
+        // 🔆 Photo Sequencing Rules — enforced for active jobs; waived for privileged users on completed bookings
+        const isCompleted = booking.status === 'Completed';
+        if (!isCompleted || !isPrivileged) {
+            if (stage === 'progress' && (!booking.jobPhotos.start || booking.jobPhotos.start.length === 0)) {
+                return res.status(400).json({ message: 'Must upload "Start" photos before "Progress" photos' });
+            }
+            if (stage === 'completion' && (!booking.jobPhotos.progress || booking.jobPhotos.progress.length === 0)) {
+                return res.status(400).json({ message: 'Must upload "Progress" photos before "Completion" photos' });
+            }
         }
 
         // Upload to Cloudinary
@@ -2026,7 +2114,7 @@ router.post('/:id/upload-photo', verifyToken, upload.single('image'), async (req
         // Update Booking
         booking.jobPhotos[stage].push(url);
         
-        // 🆕 Auto-transition status based on photo stage
+        // 🔄 Auto-transition status based on photo stage (only while booking is still active)
         if (stage === 'start' && booking.status === 'Started') {
             booking.status = 'In Progress';
             booking.statusHistory.push({
