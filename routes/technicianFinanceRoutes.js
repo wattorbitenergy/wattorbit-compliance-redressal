@@ -114,6 +114,8 @@ router.get('/booking-breakdown/:bookingId', verifyToken, isAdmin, async (req, re
             platformFee: booking.platformFees,
             taxes: booking.taxes,
             discounts: (booking.discount || 0) + (booking.lineItemDiscount || 0) + (booking.pointsUsed || 0),
+            platformDiscountShare: booking.platformDiscountShare || 0,
+            technicianDiscountShare: booking.technicianDiscountShare || 0,
             technician: booking.assignedTechnician,
             earningStatus: earning ? earning.status : 'Not Calculated',
             earningRecord: earning

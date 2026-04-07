@@ -5,6 +5,7 @@ const Booking = require('../models/Booking');
 const Payment = require('../models/Payment');
 const Address = require('../models/Address');
 const User = require('../models/User');
+const Config = require('../models/Config');
 const { generateInvoiceId } = require('../utils/idGenerator');
 const jwt = require('jsonwebtoken');
 
@@ -64,10 +65,10 @@ router.post('/generate', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Booking not found' });
         }
 
-        // Check access: user themselves, admin, or their organisation
+        // Check access: user themselves, admin, employee, engineer, or their organisation
         if (
             booking.userId._id.toString() !== req.user.id &&
-            req.user.role !== 'admin' &&
+            !['admin', 'employee', 'engineer'].includes(req.user.role) &&
             !(req.user.role === 'organisation' && booking.organisationId?.toString() === req.user.id)
         ) {
             return res.status(403).json({ message: 'Access denied' });
@@ -98,12 +99,15 @@ router.post('/generate', verifyToken, async (req, res) => {
         const addr = booking.addressId;
         const customerAddress = `${addr.flatNo ? addr.flatNo + ', ' : ''}${addr.building ? addr.building + ', ' : ''}${addr.street}, ${addr.landmark ? addr.landmark + ', ' : ''}${addr.city}, ${addr.state} - ${addr.pincode}`;
 
+        // Fetch Business Details (GST, etc.)
+        const bankConfig = await Config.findOne({ key: 'bank_details' });
+        const biz = bankConfig?.value || {};
+
         const invoice = new Invoice({
             invoiceId,
             bookingId,
             userId: booking.userId._id,
             invoiceDate: new Date(),
-            dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
             items,
             subtotal: booking.basePrice,
             taxRate: 18,
@@ -112,6 +116,9 @@ router.post('/generate', verifyToken, async (req, res) => {
             totalAmount: booking.totalAmount,
             paymentStatus: payment && payment.status === 'Paid' ? 'Paid' : 'Unpaid',
             paidAmount: payment && payment.status === 'Paid' ? payment.amount : 0,
+            businessName: biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP',
+            businessGST: biz.gstNumber || '',
+            businessAddress: biz.branchName || 'Shop No.3, INDAURABAG, BKT LUCKNOW - 226201',
             customerName: booking.userId.name,
             customerPhone: booking.userId.phone,
             customerEmail: booking.userId.email,
@@ -141,10 +148,10 @@ router.get('/:id', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Invoice not found' });
         }
 
-        // Check access: user themselves, admin, or their organisation
+        // Check access: user themselves, admin, employee, engineer, or their organisation
         if (
             invoice.userId._id.toString() !== req.user.id &&
-            req.user.role !== 'admin' &&
+            !['admin', 'employee', 'engineer'].includes(req.user.role) &&
             !(req.user.role === 'organisation' && invoice.bookingId?.organisationId?.toString() === req.user.id)
         ) {
             return res.status(403).json({ message: 'Access denied' });
@@ -168,10 +175,10 @@ router.get('/booking/:bookingId', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Invoice not found for this booking' });
         }
 
-        // Check access: user themselves, admin, or their organisation
+        // Check access: user themselves, admin, employee, engineer, or their organisation
         if (
             invoice.userId._id.toString() !== req.user.id &&
-            req.user.role !== 'admin' &&
+            !['admin', 'employee', 'engineer'].includes(req.user.role) &&
             !(req.user.role === 'organisation' && invoice.bookingId?.organisationId?.toString() === req.user.id)
         ) {
             return res.status(403).json({ message: 'Access denied' });
@@ -211,10 +218,10 @@ router.get('/:id/download', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Invoice not found' });
         }
 
-        // Check access: user themselves, admin, or their organisation
+        // Check access: user themselves, admin, employee, engineer, or their organisation
         if (
             invoice.userId._id.toString() !== req.user.id &&
-            req.user.role !== 'admin' &&
+            !['admin', 'employee', 'engineer'].includes(req.user.role) &&
             !(req.user.role === 'organisation' && invoice.bookingId?.organisationId?.toString() === req.user.id)
         ) {
             return res.status(403).json({ message: 'Access denied' });

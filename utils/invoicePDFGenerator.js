@@ -11,7 +11,14 @@ const path = require('path');
 const generateInvoicePDF = (invoice, options = {}) => {
     return new Promise((resolve, reject) => {
         try {
-            const doc = new PDFDocument({ margin: 50 });
+            const doc = new PDFDocument({ 
+                margin: 50,
+                size: 'A4',
+                info: {
+                    Title: `Invoice - ${invoice.invoiceId}`,
+                    Author: 'WattOrbit Energy Solutions'
+                }
+            });
 
             if (options.buffer) {
                 const buffers = [];
@@ -23,106 +30,140 @@ const generateInvoicePDF = (invoice, options = {}) => {
                 resolve(doc);
             }
 
+            const primaryColor = '#1e3a8a'; // Navy Blue
+            const secondaryColor = '#4b5563'; // Slate Gray
+
             // Logo
             const logoPath = path.join(__dirname, '../assets/logo.jpg');
             if (fs.existsSync(logoPath)) {
                 doc.image(logoPath, 50, 45, { width: 50 });
             }
 
-            // Header
-            doc.fontSize(20).text('INVOICE', { align: 'right' });
-            doc.moveDown();
+            // Header - Business Identity
+            doc.fontSize(24).font('Helvetica-Bold').fillColor(primaryColor).text('INVOICE', { align: 'right' });
+            doc.moveDown(0.2);
 
-            doc.fontSize(10).font('Helvetica-Bold').text('WATTORBIT ENERGY SOLUTIONS LLP', { align: 'right' });
-            doc.font('Helvetica').text('Shop No.3, INDAURABAG', { align: 'right' });
-            doc.text('BAKSHI KA TALAB LUCKNOW - 226202', { align: 'right' });
+            doc.fontSize(10).font('Helvetica-Bold').fillColor('#000000').text(invoice.businessName || 'WATTORBIT ENERGY SOLUTIONS LLP', { align: 'right' });
+            doc.fontSize(9).font('Helvetica').fillColor(secondaryColor);
+            doc.text('Shop No.3, INDAURABAG', { align: 'right' });
+            doc.text('BAKSHI KA TALAB LUCKNOW - 226201', { align: 'right' }); // Updated Pincode
             doc.text('support@wattorbit.in', { align: 'right' });
-            doc.moveDown();
+            
+            if (invoice.businessGST) {
+                doc.font('Helvetica-Bold').fillColor(primaryColor).text(`GST: ${invoice.businessGST}`, { align: 'right' });
+            }
+            
+            doc.moveDown(2);
 
-            // Invoice Details
-            doc.font('Helvetica');
-            doc.text(`Invoice ID: ${invoice.invoiceId}`, 50, 150);
-            doc.text(`Date: ${new Date(invoice.invoiceDate).toLocaleDateString()}`, 50, 165);
-            doc.text(`Due Date: ${new Date(invoice.dueDate).toLocaleDateString()}`, 50, 180);
+            // Divider Line
+            doc.lineWidth(1).strokeColor('#e5e7eb').moveTo(50, 140).lineTo(545, 140).stroke();
 
-            doc.text(`Bill To:`, 300, 150);
-            doc.font('Helvetica-Bold').text(invoice.customerName, 300, 165);
-            doc.font('Helvetica').text(invoice.customerPhone, 300, 180);
-            doc.text(invoice.customerEmail, 300, 195);
-            doc.moveDown();
+            // Invoice Details Column
+            doc.fillColor('#000000');
+            doc.fontSize(10).font('Helvetica-Bold').text('INVOICE DETAILS', 50, 155);
+            doc.fontSize(9).font('Helvetica').fillColor(secondaryColor);
+            doc.text(`Invoice ID:`, 50, 175);
+            doc.text(`Date:`, 50, 190);
+            doc.text(`Ref No.:`, 50, 205); // Ref No for Booking ID
 
-            // Address
-            doc.text(invoice.customerAddress, 300, 210, { width: 250 });
+            doc.fillColor('#000000').font('Helvetica-Bold');
+            doc.text(invoice.invoiceId, 110, 175);
+            doc.text(new Date(invoice.invoiceDate).toLocaleDateString(), 110, 190);
+            doc.text(invoice.bookingId?.bookingId || 'N/A', 110, 205);
 
-            doc.moveDown();
-            doc.moveDown();
+            // Bill To Column
+            doc.fontSize(10).font('Helvetica-Bold').text('BILL TO', 300, 155);
+            doc.fontSize(9).font('Helvetica').fillColor(secondaryColor);
+            doc.fillColor('#000000').font('Helvetica-Bold').text(invoice.customerName, 300, 175);
+            doc.font('Helvetica').fillColor(secondaryColor).text(invoice.customerPhone, 300, 190);
+            doc.text(invoice.customerEmail, 300, 205);
+            doc.text(invoice.customerAddress, 300, 220, { width: 245 });
 
-            // Table Header
-            const tableTop = 300;
-            doc.font('Helvetica-Bold');
-            doc.text('Description', 50, tableTop);
+            doc.moveDown(3);
+
+            // Table Header Styling
+            const tableTop = 320;
+            doc.rect(50, tableTop - 5, 495, 25).fill(primaryColor);
+            doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(10);
+            doc.text('Description', 60, tableTop);
             doc.text('Quantity', 280, tableTop, { width: 90, align: 'right' });
             doc.text('Unit Price', 370, tableTop, { width: 90, align: 'right' });
-            doc.text('Total', 460, tableTop, { width: 90, align: 'right' });
-            doc.moveTo(50, tableTop + 15).lineTo(550, tableTop + 15).stroke();
+            doc.text('Total', 460, tableTop, { width: 80, align: 'right' });
 
-            // Items
-            doc.font('Helvetica');
-            let y = tableTop + 25;
+            // Items List
+            doc.fillColor('#000000').font('Helvetica').fontSize(9);
+            let y = tableTop + 30;
 
-            invoice.items.forEach(item => {
-                doc.text(item.description, 50, y);
+            invoice.items.forEach((item, index) => {
+                // Zebra stripes
+                if (index % 2 === 1) {
+                    doc.rect(50, y - 5, 495, 20).fill('#f9fafb');
+                    doc.fillColor('#000000');
+                } else {
+                    doc.fillColor('#000000');
+                }
+
+                doc.text(item.description, 60, y);
                 doc.text(item.quantity, 280, y, { width: 90, align: 'right' });
                 doc.text(`₹${item.unitPrice}`, 370, y, { width: 90, align: 'right' });
-                doc.text(`₹${item.total}`, 460, y, { width: 90, align: 'right' });
+                doc.text(`₹${item.total}`, 460, y, { width: 80, align: 'right' });
                 y += 20;
             });
 
-            doc.moveTo(50, y).lineTo(550, y).stroke();
-            y += 10;
+            // Divider Line after items
+            doc.lineWidth(0.5).strokeColor('#e5e7eb').moveTo(50, y).lineTo(545, y).stroke();
+            y += 15;
 
-            // Totals
-            const subtotalY = y + 10;
-            doc.text('Subtotal:', 370, subtotalY, { width: 90, align: 'right' });
-            doc.text(`₹${invoice.subtotal}`, 460, subtotalY, { width: 90, align: 'right' });
+            // Calculations Section
+            const calculationX = 370;
+            const valueX = 460;
+            const rowHeight = 18;
 
-            const taxY = subtotalY + 20;
-            doc.text(`GST (18% on PF):`, 370, taxY, { width: 90, align: 'right' });
-            doc.text(`₹${invoice.taxAmount.toFixed(2)}`, 460, taxY, { width: 90, align: 'right' });
+            doc.fillColor(secondaryColor).font('Helvetica');
+            doc.text('Subtotal:', calculationX, y, { width: 90, align: 'right' });
+            doc.fillColor('#000000').text(`₹${invoice.subtotal}`, valueX, y, { width: 80, align: 'right' });
+            y += rowHeight;
+
+            doc.fillColor(secondaryColor).text(`GST (18% on PF):`, calculationX, y, { width: 90, align: 'right' });
+            doc.fillColor('#000000').text(`₹${invoice.taxAmount.toFixed(2)}`, valueX, y, { width: 80, align: 'right' });
+            y += rowHeight;
 
             if (invoice.discount > 0) {
-                const discountY = taxY + 20;
-                doc.text('Discount:', 370, discountY, { width: 90, align: 'right' });
-                doc.text(`-₹${invoice.discount}`, 460, discountY, { width: 90, align: 'right' });
-                y = discountY;
-            } else {
-                y = taxY;
+                doc.fillColor(secondaryColor).text('Discount:', calculationX, y, { width: 90, align: 'right' });
+                doc.fillColor('#ef4444').text(`-₹${invoice.discount}`, valueX, y, { width: 80, align: 'right' });
+                y += rowHeight;
             }
 
-            const totalY = y + 25;
-            doc.font('Helvetica-Bold').fontSize(14);
-            doc.text('Total:', 370, totalY, { width: 90, align: 'right' });
-            doc.text(`₹${invoice.totalAmount.toFixed(2)}`, 460, totalY, { width: 90, align: 'right' });
+            y += 5;
+            // Total Box
+            doc.rect(CalculationX = 360, y - 5, 185, 30).fill(primaryColor);
+            doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(12);
+            doc.text('Total:', calculationX, y + 5, { width: 90, align: 'right' });
+            doc.text(`₹${invoice.totalAmount.toFixed(2)}`, valueX, y + 5, { width: 80, align: 'right' });
+            
+            y += 40;
 
-            // Footer
-            doc.fontSize(10).font('Helvetica');
-            doc.text('Payment Status:', 50, totalY);
-            if (invoice.paymentStatus === 'Paid') {
-                doc.fillColor('green').text('PAID', 130, totalY);
-            } else {
-                doc.fillColor('red').text('UNPAID', 130, totalY);
-            }
+            // Payment Status Section
+            doc.fillColor('#000000').font('Helvetica-Bold').fontSize(10);
+            doc.text('Payment Status:', 50, y);
+            
+            const method = invoice.bookingId?.paymentMethod || 'CASH';
+            const statusText = invoice.paymentStatus === 'Paid' ? `PAID (${method.toUpperCase()})` : 'UNPAID';
+            const statusColor = invoice.paymentStatus === 'Paid' ? '#10b981' : '#ef4444'; // Emerald vs Red
+            
+            doc.fillColor(statusColor).text(statusText, 135, y);
 
-            // Terms and Conditions
-            doc.fillColor('black');
-            doc.moveDown(4);
-            doc.font('Helvetica-Bold').text('Terms & Conditions:', 50);
-            doc.font('Helvetica').fontSize(9);
-            doc.text('1. This is an electronically generated invoice and does not require a physical signature.');
-            doc.text('2. All disputes are subject to Lucknow jurisdiction.');
+            // Terms and Conditions Section
+            doc.fillColor('#000000').fontSize(10).font('Helvetica-Bold').text('Terms & Conditions:', 50, y + 40);
+            doc.fontSize(8).font('Helvetica').fillColor(secondaryColor);
+            doc.text('1. This is an electronically generated invoice and does not require a physical signature.', 50, y + 55);
+            doc.text('2. All disputes are subject to Lucknow jurisdiction.', 50, y + 67);
 
-            doc.moveDown(2);
-            doc.fontSize(10).text('Thank you for choosing WattOrbit!', { align: 'center' });
+            // Promotional Footer
+            doc.fontSize(9).font('Helvetica-Bold').fillColor(primaryColor);
+            doc.text('Thank you for choosing WattOrbit!', 50, 780, { align: 'center' });
+            doc.fontSize(8).font('Helvetica').fillColor(secondaryColor);
+            doc.text('⚡ Powering your space with sustainable energy solutions. Visit us at www.wattorbit.in', 50, 792, { align: 'center' });
 
             doc.end();
         } catch (err) {

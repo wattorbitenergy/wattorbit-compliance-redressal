@@ -1795,7 +1795,7 @@ router.post('/employee/demo-booking', verifyToken, isAdminOrEngineer, async (req
 
     } catch (err) {
         console.error('Demo booking error:', err);
-        res.status(500).json({ message: 'Failed to create demo booking' });
+        res.status(500).json({ message: err.message || 'Failed to create demo booking' });
     }
 });
 
