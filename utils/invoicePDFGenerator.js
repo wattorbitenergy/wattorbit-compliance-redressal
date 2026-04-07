@@ -11,12 +11,12 @@ const path = require('path');
 const generateInvoicePDF = (invoice, options = {}) => {
     return new Promise((resolve, reject) => {
         try {
-            const doc = new PDFDocument({ 
+            const doc = new PDFDocument({
                 margin: 50,
                 size: 'A4',
                 info: {
-                    Title: `Invoice - ${invoice.invoiceId}`,
-                    Author: 'WattOrbit Energy Solutions'
+                    Title: `Tax Invoice - ${invoice.invoiceId}`,
+                    Author: 'WattOrbit Energy Solutions LLP'
                 }
             });
 
@@ -48,12 +48,12 @@ const generateInvoicePDF = (invoice, options = {}) => {
             doc.text('Shop No.3, INDAURABAG', { align: 'right' });
             doc.text('BAKSHI KA TALAB LUCKNOW - 226201', { align: 'right' }); // Updated Pincode
             doc.text('support@wattorbit.in', { align: 'right' });
-            
+
             if (invoice.businessGST) {
                 doc.font('Helvetica-Bold').fillColor(primaryColor).text(`GST: ${invoice.businessGST}`, { align: 'right' });
             }
-            
-            doc.moveDown(2);
+
+            doc.moveDown(1.2);
 
             // Divider Line
             doc.lineWidth(1).strokeColor('#e5e7eb').moveTo(50, 140).lineTo(545, 140).stroke();
@@ -68,7 +68,15 @@ const generateInvoicePDF = (invoice, options = {}) => {
 
             doc.fillColor('#000000').font('Helvetica-Bold');
             doc.text(invoice.invoiceId, 110, 175);
-            doc.text(new Date(invoice.invoiceDate).toLocaleDateString(), 110, 190);
+            
+            // Format date as dd/mm/yyyy
+            const dateObj = new Date(invoice.invoiceDate);
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const year = dateObj.getFullYear();
+            const formattedDate = `${day}/${month}/${year}`;
+            
+            doc.text(formattedDate, 110, 190);
             doc.text(invoice.bookingId?.bookingId || 'N/A', 110, 205);
 
             // Bill To Column
@@ -79,7 +87,7 @@ const generateInvoicePDF = (invoice, options = {}) => {
             doc.text(invoice.customerEmail, 300, 205);
             doc.text(invoice.customerAddress, 300, 220, { width: 245 });
 
-            doc.moveDown(3);
+            doc.moveDown(2);
 
             // Table Header Styling
             const tableTop = 320;
@@ -140,30 +148,30 @@ const generateInvoicePDF = (invoice, options = {}) => {
             doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(12);
             doc.text('Total:', calculationX, y + 5, { width: 90, align: 'right' });
             doc.text(`₹${invoice.totalAmount.toFixed(2)}`, valueX, y + 5, { width: 80, align: 'right' });
-            
+
             y += 40;
 
             // Payment Status Section
             doc.fillColor('#000000').font('Helvetica-Bold').fontSize(10);
             doc.text('Payment Status:', 50, y);
-            
+
             const method = invoice.bookingId?.paymentMethod || 'CASH';
             const statusText = invoice.paymentStatus === 'Paid' ? `PAID (${method.toUpperCase()})` : 'UNPAID';
             const statusColor = invoice.paymentStatus === 'Paid' ? '#10b981' : '#ef4444'; // Emerald vs Red
-            
+
             doc.fillColor(statusColor).text(statusText, 135, y);
 
-            // Terms and Conditions Section
-            doc.fillColor('#000000').fontSize(10).font('Helvetica-Bold').text('Terms & Conditions:', 50, y + 40);
+            // Terms and Conditions Section (Compact)
+            doc.fillColor('#000000').fontSize(9).font('Helvetica-Bold').text('Terms & Conditions:', 50, y + 25);
             doc.fontSize(8).font('Helvetica').fillColor(secondaryColor);
-            doc.text('1. This is an electronically generated invoice and does not require a physical signature.', 50, y + 55);
-            doc.text('2. All disputes are subject to Lucknow jurisdiction.', 50, y + 67);
+            doc.text('1. This is an electronically generated invoice and does not require a physical signature.', 50, y + 37);
+            doc.text('2. All disputes are subject to Lucknow jurisdiction.', 50, y + 47);
 
             // Promotional Footer
             doc.fontSize(9).font('Helvetica-Bold').fillColor(primaryColor);
-            doc.text('Thank you for choosing WattOrbit!', 50, 780, { align: 'center' });
+            doc.text('Thank you for choosing WattOrbit!', 50, 785, { align: 'center' });
             doc.fontSize(8).font('Helvetica').fillColor(secondaryColor);
-            doc.text('⚡ Powering your space with sustainable energy solutions. Visit us at www.wattorbit.in', 50, 792, { align: 'center' });
+            doc.text('⚡ Powering your space with sustainable energy solutions. Visit us at www.wattorbit.in', 50, 795, { align: 'center' });
 
             doc.end();
         } catch (err) {
