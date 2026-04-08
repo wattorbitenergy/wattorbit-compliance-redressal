@@ -30,7 +30,7 @@ if (!process.env.MONGO_URI) {
 
 // 🛡️ Rate Limiting (anti-spam / anti-bruteforce)
 app.use(rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 min
+  windowMs: 15 * 60 * 1000, 
   max: 200,
   standardHeaders: true,
   legacyHeaders: false
@@ -49,14 +49,12 @@ app.use(compression());
 app.use(express.json({ limit: '10kb' }));
 
 /* =====================
-   SMART SANITIZER (SAFE)
+   SMART SANITIZER (EXPRESS 5 SAFE)
 ===================== */
 const smartSanitize = (obj) => {
   if (!obj || typeof obj !== 'object') return;
-
   Object.keys(obj).forEach(key => {
     const val = obj[key];
-
     if (typeof val === 'string') {
       let clean = val.replace(/\$|\.{2,}/g, '');
       clean = clean.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
@@ -68,7 +66,6 @@ const smartSanitize = (obj) => {
   });
 };
 
-// ✅ EXPRESS 5 SAFE (NO req.query mutation)
 app.use((req, res, next) => {
   if (req.body) smartSanitize(req.body);
   if (req.params) smartSanitize(req.params);
@@ -76,12 +73,16 @@ app.use((req, res, next) => {
 });
 
 // 🛡️ Mongo NoSQL Injection Protection
-
+app.use(mongoSanitize({ replaceWith: '_' }));
 
 /* =====================
-   TRUST PROXY
+   TRUST PROXY & PROD CHECK
 ===================== */
 app.set('trust proxy', 1);
+
+if (!process.env.MONGO_URI && process.env.NODE_ENV === 'production') {
+  console.error("⚠️ WARNING: MONGO_URI is missing in production environment!");
+}
 
 /* =====================
    CORS CONFIG
