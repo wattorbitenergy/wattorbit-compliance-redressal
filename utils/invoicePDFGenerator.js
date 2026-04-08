@@ -12,7 +12,7 @@ const generateInvoicePDF = (invoice, options = {}) => {
     return new Promise((resolve, reject) => {
         try {
             const doc = new PDFDocument({
-                margin: 50,
+                margin: 35,
                 size: 'A4',
                 info: {
                     Title: `Tax Invoice - ${invoice.invoiceId}`,
@@ -36,7 +36,7 @@ const generateInvoicePDF = (invoice, options = {}) => {
             // Logo
             const logoPath = path.join(__dirname, '../assets/logo.jpg');
             if (fs.existsSync(logoPath)) {
-                doc.image(logoPath, 50, 45, { width: 50 });
+                doc.image(logoPath, 50, 35, { width: 50 });
             }
 
             // Header - Business Identity
@@ -56,41 +56,41 @@ const generateInvoicePDF = (invoice, options = {}) => {
             doc.moveDown(1.2);
 
             // Divider Line
-            doc.lineWidth(1).strokeColor('#e5e7eb').moveTo(50, 140).lineTo(545, 140).stroke();
+            doc.lineWidth(1).strokeColor('#e5e7eb').moveTo(50, 115).lineTo(545, 115).stroke();
 
             // Invoice Details Column
             doc.fillColor('#000000');
-            doc.fontSize(10).font('Helvetica-Bold').text('INVOICE DETAILS', 50, 155);
+            doc.fontSize(10).font('Helvetica-Bold').text('INVOICE DETAILS', 50, 125);
             doc.fontSize(9).font('Helvetica').fillColor(secondaryColor);
-            doc.text(`Invoice ID:`, 50, 175);
-            doc.text(`Date:`, 50, 190);
-            doc.text(`Ref No.:`, 50, 205); // Ref No for Booking ID
+            doc.text(`Invoice ID:`, 50, 145);
+            doc.text(`Date:`, 50, 157);
+            doc.text(`Ref No.:`, 50, 169); // Ref No for Booking ID
 
             doc.fillColor('#000000').font('Helvetica-Bold');
-            doc.text(invoice.invoiceId, 110, 175);
-            
+            doc.text(invoice.invoiceId, 110, 145);
+
             // Format date as dd/mm/yyyy
             const dateObj = new Date(invoice.invoiceDate);
             const day = String(dateObj.getDate()).padStart(2, '0');
             const month = String(dateObj.getMonth() + 1).padStart(2, '0');
             const year = dateObj.getFullYear();
             const formattedDate = `${day}/${month}/${year}`;
-            
-            doc.text(formattedDate, 110, 190);
-            doc.text(invoice.bookingId?.bookingId || 'N/A', 110, 205);
+
+            doc.text(formattedDate, 110, 157);
+            doc.text(invoice.bookingId?.bookingId || 'N/A', 110, 169);
 
             // Bill To Column
-            doc.fontSize(10).font('Helvetica-Bold').text('BILL TO', 300, 155);
+            doc.fontSize(10).font('Helvetica-Bold').text('BILL TO', 300, 125);
             doc.fontSize(9).font('Helvetica').fillColor(secondaryColor);
-            doc.fillColor('#000000').font('Helvetica-Bold').text(invoice.customerName, 300, 175);
-            doc.font('Helvetica').fillColor(secondaryColor).text(invoice.customerPhone, 300, 190);
-            doc.text(invoice.customerEmail, 300, 205);
-            doc.text(invoice.customerAddress, 300, 220, { width: 245 });
+            doc.fillColor('#000000').font('Helvetica-Bold').text(invoice.customerName, 300, 145);
+            doc.font('Helvetica').fillColor(secondaryColor).text(invoice.customerPhone, 300, 157);
+            doc.text(invoice.customerEmail, 300, 169);
+            doc.text(invoice.customerAddress, 300, 181, { width: 245 });
 
-            doc.moveDown(2);
+            doc.moveDown(1.5);
 
             // Table Header Styling
-            const tableTop = 320;
+            const tableTop = 230;
             doc.rect(50, tableTop - 5, 495, 25).fill(primaryColor);
             doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(10);
             doc.text('Description', 60, tableTop);
@@ -100,12 +100,12 @@ const generateInvoicePDF = (invoice, options = {}) => {
 
             // Items List
             doc.fillColor('#000000').font('Helvetica').fontSize(9);
-            let y = tableTop + 30;
+            let y = tableTop + 25;
 
             invoice.items.forEach((item, index) => {
                 // Zebra stripes
                 if (index % 2 === 1) {
-                    doc.rect(50, y - 5, 495, 20).fill('#f9fafb');
+                    doc.rect(50, y - 4, 495, 16).fill('#f9fafb');
                     doc.fillColor('#000000');
                 } else {
                     doc.fillColor('#000000');
@@ -115,17 +115,17 @@ const generateInvoicePDF = (invoice, options = {}) => {
                 doc.text(item.quantity, 280, y, { width: 90, align: 'right' });
                 doc.text(`₹${item.unitPrice}`, 370, y, { width: 90, align: 'right' });
                 doc.text(`₹${item.total}`, 460, y, { width: 80, align: 'right' });
-                y += 20;
+                y += 16;
             });
 
             // Divider Line after items
             doc.lineWidth(0.5).strokeColor('#e5e7eb').moveTo(50, y).lineTo(545, y).stroke();
-            y += 15;
+            y += 10;
 
             // Calculations Section
             const calculationX = 370;
             const valueX = 460;
-            const rowHeight = 18;
+            const rowHeight = 15;
 
             doc.fillColor(secondaryColor).font('Helvetica');
             doc.text('Subtotal:', calculationX, y, { width: 90, align: 'right' });
@@ -142,14 +142,14 @@ const generateInvoicePDF = (invoice, options = {}) => {
                 y += rowHeight;
             }
 
-            y += 5;
+            y += 3;
             // Total Box
-            doc.rect(CalculationX = 360, y - 5, 185, 30).fill(primaryColor);
-            doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(12);
-            doc.text('Total:', calculationX, y + 5, { width: 90, align: 'right' });
-            doc.text(`₹${invoice.totalAmount.toFixed(2)}`, valueX, y + 5, { width: 80, align: 'right' });
+            doc.rect(360, y - 4, 185, 26).fill(primaryColor);
+            doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(11);
+            doc.text('Total:', calculationX, y + 4, { width: 90, align: 'right' });
+            doc.text(`₹${invoice.totalAmount.toFixed(2)}`, valueX, y + 4, { width: 80, align: 'right' });
 
-            y += 40;
+            y += 35;
 
             // Payment Status Section
             doc.fillColor('#000000').font('Helvetica-Bold').fontSize(10);
@@ -169,9 +169,9 @@ const generateInvoicePDF = (invoice, options = {}) => {
 
             // Promotional Footer
             doc.fontSize(9).font('Helvetica-Bold').fillColor(primaryColor);
-            doc.text('Thank you for choosing WattOrbit!', 50, 785, { align: 'center' });
+            doc.text('Thank you for choosing WattOrbit!', 50, 805, { align: 'center' });
             doc.fontSize(8).font('Helvetica').fillColor(secondaryColor);
-            doc.text('⚡ Powering your space with sustainable energy solutions. Visit us at www.wattorbit.in', 50, 795, { align: 'center' });
+            doc.text('⚡ Powering your space with sustainable energy solutions. Visit us at www.wattorbit.in', 50, 815, { align: 'center' });
 
             doc.end();
         } catch (err) {
