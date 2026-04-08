@@ -54,18 +54,39 @@ app.set('trust proxy', 1);
 app.use(cors({ origin: true, credentials: true })); // 🛡️ EMERGENCY: Allow all for troubleshooting
 
 /* =====================
-   BODY PARSER & SANITIZATION (PROFESSIONAL PLUGINS)
+   BODY PARSER & SANITIZATION (EXPRESS 5 SAFE)
 ===================== */
 app.use(express.json({ limit: '10kb' }));
 
-// 🛡️ SECURITY: Professional NoSQL Injection Protection
+// 🛡️ SECURITY: Professional NoSQL Injection Protection (Express 5 Compatible)
 const mongoSanitize = require('express-mongo-sanitize');
-const xss = require('xss-clean');
-const hpp = require('hpp');
+app.use(mongoSanitize({
+  replaceWith: '_',
+  allowDots: true
+}));
 
-app.use(mongoSanitize()); // Prevent NoSQL operator injection ($gt, etc.)
-app.use(xss());           // Prevent Cross-Site Scripting (XSS)
-app.use(hpp());           // Prevent HTTP Parameter Pollution
+// 🛡️ SECURITY: Manual XSS Shield (Read-only safe)
+app.use((req, res, next) => {
+  const sanitizeValue = (val) => {
+    if (typeof val !== 'string') return val;
+    return val.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  };
+
+  const sanitizeObj = (obj) => {
+    if (!obj || typeof obj !== 'object') return;
+    Object.keys(obj).forEach(key => {
+      if (typeof obj[key] === 'string') {
+        obj[key] = sanitizeValue(obj[key]);
+      } else if (typeof obj[key] === 'object') {
+        sanitizeObj(obj[key]);
+      }
+    });
+  };
+
+  if (req.body) sanitizeObj(req.body);
+  // Note: We avoid touching req.query/req.params directly to prevent Express 5 crashes
+  next();
+});
 
 /* =====================
    STATIC ASSETS
