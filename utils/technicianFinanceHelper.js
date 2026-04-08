@@ -7,22 +7,40 @@ const User = require('../models/User');
  * Calculates and records technician earnings for a completed booking.
  */
 async function recordTechnicianEarning(booking) {
-    const session = await mongoose.startSession().catch(() => null);
-    if (session) session.startTransaction();
+    let session = null;
+    try {
+        // 💎 ATOMIC SECURITY: Transactions ensure balance and logs never desync.
+        // Fallback for standalone Mongo instances (errors if session not supported)
+        session = await mongoose.startSession();
+        session.startTransaction();
+    } catch (e) {
+        session = null; // System continues in non-transactional mode if DB doesn't support it
+        console.warn('⚠️ MongoDB Transaction not supported in this environment. Falling back to standard mode.');
+    }
 
     try {
         if (!booking.assignedTechnician) {
-            if (session) await session.abortTransaction();
+            if (session) {
+                await session.abortTransaction();
+                session.endSession();
+            }
             return null;
         }
         if (booking.status === 'Cancelled') {
-            if (session) await session.abortTransaction();
+            if (session) {
+                await session.abortTransaction();
+                session.endSession();
+            }
             return null;
         }
 
-        const existing = await TechnicianEarning.findOne({ bookingId: booking._id }).session(session);
+        const existingFilter = { bookingId: booking._id };
+        const existing = await TechnicianEarning.findOne(existingFilter).session(session);
         if (existing) {
-            if (session) await session.abortTransaction();
+            if (session) {
+                await session.abortTransaction();
+                session.endSession();
+            }
             return existing;
         }
 
