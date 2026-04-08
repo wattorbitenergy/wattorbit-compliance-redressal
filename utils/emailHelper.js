@@ -62,7 +62,7 @@ async function getEmailFooter() {
             <div style="margin-top: 20px;">
                 ${socialButtons}
             </div>
-            <p style="margin-top: 20px;">WattOrbit Energy Solutions LLP | <a href="https://wattorbit.in" style="color: #007bff; text-decoration: none;">wattorbit.in</a></p>
+            <p style="margin-top: 20px;">WATTORBIT ENERGY SOLUTIONS LLP | <a href="https://wattorbit.in" style="color: #007bff; text-decoration: none;">wattorbit.in</a></p>
         </div>
     `;
 }

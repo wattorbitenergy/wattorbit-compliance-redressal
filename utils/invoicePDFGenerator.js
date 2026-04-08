@@ -16,7 +16,7 @@ const generateInvoicePDF = (invoice, options = {}) => {
                 size: 'A4',
                 info: {
                     Title: `Tax Invoice - ${invoice.invoiceId}`,
-                    Author: 'WattOrbit Energy Solutions LLP'
+                    Author: 'WATTORBIT ENERGY SOLUTIONS LLP'
                 }
             });
 
@@ -49,8 +49,9 @@ const generateInvoicePDF = (invoice, options = {}) => {
             doc.text('BAKSHI KA TALAB LUCKNOW - 226201', { align: 'right' }); // Updated Pincode
             doc.text('support@wattorbit.in', { align: 'right' });
 
-            if (invoice.businessGST) {
-                doc.font('Helvetica-Bold').fillColor(primaryColor).text(`GST: ${invoice.businessGST}`, { align: 'right' });
+            const bizGST = invoice.businessGST || '09AAFFW4253N1ZL';
+            if (bizGST) {
+                doc.font('Helvetica-Bold').fillColor(primaryColor).text(`GST: ${bizGST}`, { align: 'right' });
             }
 
             doc.moveDown(1.2);

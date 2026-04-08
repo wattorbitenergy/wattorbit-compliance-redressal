@@ -92,11 +92,11 @@ const invoiceSchema = new mongoose.Schema({
     // Business details
     businessName: {
         type: String,
-        default: 'WattOrbit Energy Solutions'
+        default: 'WATTORBIT ENERGY SOLUTIONS LLP'
     },
     businessGST: {
         type: String,
-        default: ''
+        default: '09AAFFW4253N1ZL'
     },
     businessAddress: {
         type: String,
