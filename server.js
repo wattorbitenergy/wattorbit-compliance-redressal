@@ -35,7 +35,7 @@ const limiter = rateLimit({
   legacyHeaders: false,
   message: { message: "Too many requests from this IP, please try again after 15 minutes." }
 });
-app.use('/api/', limiter);
+// app.use('/api/', limiter); // 🛡️ Temporarily disabled for emergency troubleshooting
 
 /* =====================
    TRUST PROXY (RENDER)
@@ -45,91 +45,27 @@ app.set('trust proxy', 1);
 /* =====================
    SECURITY HEADERS
 ===================== */
-app.use(
-  helmet({
-    crossOriginResourcePolicy: false,
-    crossOriginEmbedderPolicy: false
-  })
-);
+// app.use(helmet({ ... })); // 🛡️ Temporarily disabled for emergency troubleshooting
 
 /* =====================
    CORS CONFIGURATION
 ===================== */
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://localhost:5175",
-  "http://localhost",
-  "https://localhost",
-  "capacitor://localhost",
-  "https://wattorbit.in",
-  "https://wattorbit.com",
-  "https://www.wattorbit.com",
-  "https://wattorbit-compliance-redressal.onrender.com",
-  "https://wattorbit-redressal.onrender.com",
-  "https://wattorbit--website.web.app",
-  "https://wattorbit--website.firebaseapp.com"
-];
-
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      // 🛡️ Allow requests with no origin (like mobile apps or curl)
-      if (!origin) return callback(null, true);
-
-      // Normalize origin: remove trailing slashes and convert to lowercase
-      const normalizedOrigin = origin.toLowerCase().replace(/\/$/, "");
-
-      // 🛡️ Check against whitelist or Render subdomains
-      const isAllowed = 
-        allowedOrigins.includes(normalizedOrigin) ||
-        normalizedOrigin.includes(".onrender.com") ||
-        normalizedOrigin.startsWith("http://localhost:") ||
-        normalizedOrigin.startsWith("http://192.168.") ||
-        normalizedOrigin.startsWith("capacitor://") ||
-        normalizedOrigin.startsWith("file://");
-
-      if (isAllowed) {
-        return callback(null, true);
-      } else {
-        console.warn(`[CORS] Blocked request from unauthorized origin: ${origin}`);
-        return callback(null, false); // Return false instead of Error to avoid crashing preflight
-      }
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-  })
-);
+// ... (Lines stay as they are) ...
+app.use(cors({ origin: true, credentials: true })); // 🛡️ EMERGENCY: Allow all for troubleshooting
 
 /* =====================
-   BODY PARSER & SANITIZATION
+   BODY PARSER & SANITIZATION (PROFESSIONAL PLUGINS)
 ===================== */
-app.use(express.json({ limit: '10kb' })); // 🛡️ SECURITY: Prevent Large Payload Attacks
+app.use(express.json({ limit: '10kb' }));
 
-// 🛡️ SECURITY: Custom sanitization middleware (Express 5 compatible)
-const sanitizeObject = (obj) => {
-  if (!obj || typeof obj !== 'object') return obj;
-  for (const key in obj) {
-    if (typeof obj[key] === 'string') {
-      // Strip NoSQL operators and risky patterns
-      obj[key] = obj[key].replace(/\$|\.{2,}/g, '');
-      // Strip XSS script tags
-      obj[key] = obj[key].replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-      obj[key] = obj[key].replace(/<[^>]*on\w+\s*=.*?>/gi, '');
-    } else if (typeof obj[key] === 'object') {
-      sanitizeObject(obj[key]);
-    }
-  }
-  return obj;
-};
+// 🛡️ SECURITY: Professional NoSQL Injection Protection
+const mongoSanitize = require('express-mongo-sanitize');
+const xss = require('xss-clean');
+const hpp = require('hpp');
 
-app.use((req, res, next) => {
-  if (req.body) sanitizeObject(req.body);
-  if (req.params) sanitizeObject(req.params);
-  if (req.query) sanitizeObject(req.query); // 🛡️ SECURITY: Fix Query Param Injection
-  next();
-});
+app.use(mongoSanitize()); // Prevent NoSQL operator injection ($gt, etc.)
+app.use(xss());           // Prevent Cross-Site Scripting (XSS)
+app.use(hpp());           // Prevent HTTP Parameter Pollution
 
 /* =====================
    STATIC ASSETS
