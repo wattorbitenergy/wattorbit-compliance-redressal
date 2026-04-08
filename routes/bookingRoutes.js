@@ -36,7 +36,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { uploadToCloudinary } = require('../utils/cloudinaryHelper');
-const { recordTechnicianEarning } = require('../utils/technicianFinanceHelper');
+const { recordTechnicianEarning, updateUniversalLedger } = require('../utils/technicianFinanceHelper');
 
 // Configure Multer for temp storage
 const storage = multer.diskStorage({
@@ -330,12 +330,20 @@ router.post('/', verifyToken, async (req, res) => {
 
         // Deduct points from wallet and update default payment method
         if (pointsToUse > 0) {
-            user.walletBalance -= pointsToUse;
+            await updateUniversalLedger(
+                user._id,
+                'TRANSFER',
+                -pointsToUse,
+                booking.bookingId || booking._id.toString(),
+                `Used WattOrbit Case Points for booking #${booking.bookingId}`,
+                { bookingId: booking._id, type: 'points_redemption' }
+            ).catch(err => console.error('[Ledger] Point redemption log error:', err));
         }
+        
         if (paymentMethod && ['COD', 'Online', 'Wallet'].includes(paymentMethod)) {
             user.defaultPaymentMethod = paymentMethod;
+            await user.save();
         }
-        await user.save();
 
         // Trigger automation hook
         await triggerAutomation('booking.created', booking);
@@ -1350,7 +1358,15 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
 
         if (status && !isAlreadyCompleted) booking.status = status;
         if (remark) booking.technicianNotes = remark;
-        if (paymentReceived !== undefined) booking.paymentReceived = paymentReceived;
+        if (paymentReceived !== undefined) {
+            booking.paymentReceived = paymentReceived;
+            // Sync paymentStatus for consistency
+            if (paymentReceived === true) {
+                booking.paymentStatus = 'paid';
+            } else if (paymentReceived === false && booking.paymentStatus === 'paid') {
+                booking.paymentStatus = 'unpaid';
+            }
+        }
         if (customerBehavior) booking.customerBehavior = customerBehavior;
 
         // Update User Rating if provided
@@ -1394,6 +1410,10 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
             await booking.save();
 
             // Auto-generate or update invoice on completion or payment receipt
+            if (paymentReceived === true) {
+                // To ensure transparency and reflect 'Paid' status, we delete the old invoice and let helper regenerate it
+                await Invoice.findOneAndDelete({ bookingId: booking._id });
+            }
             const invoice = await autoGenerateInvoice(booking._id);
 
             if (status === 'Completed' && !isAlreadyCompleted) {
@@ -1412,6 +1432,27 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
             // Record Technician Earning when payment is confirmed
             if (booking.paymentReceived === true || booking.paymentStatus === 'paid') {
                 await recordTechnicianEarning(booking).catch(e => console.error('[Finance] Dashboard Earning error:', e));
+
+                // 📜 Record Payment in Customer's Financial Ledger
+                await updateUniversalLedger(
+                    booking.userId,
+                    'PAYMENT',
+                    -booking.totalAmount, // Negative because it's an outflow for the customer
+                    booking.bookingId || booking._id.toString(),
+                    `Payment received for booking #${booking.bookingId} (${booking.paymentMethod || 'COD'})`,
+                    { 
+                        bookingId: booking._id,
+                        method: booking.paymentMethod || 'COD',
+                        breakdown: {
+                            totalAmount: booking.totalAmount,
+                            basePrice: booking.basePrice,
+                            taxes: booking.taxes,
+                            discount: booking.discount,
+                            pointsUsed: booking.pointsUsed || 0
+                        }
+                    },
+                    booking.isDemo || false
+                ).catch(err => console.error('[Ledger] Customer COD payment log error:', err));
             }
         } else {
             await booking.save();
@@ -1452,6 +1493,8 @@ router.get('/technician/stats', verifyToken, async (req, res) => {
             availabilityStatus: technician.availabilityStatus,
             walletBalance: technician.walletBalance || 0,
             totalEarnings: 0,
+            totalCashCollected: 0,
+            totalOnlineEarnings: 0,
             assignedJobs: 0,
             completedJobs: 0,
             cancelledJobs: 0,
@@ -1462,19 +1505,31 @@ router.get('/technician/stats', verifyToken, async (req, res) => {
         const last7Days = new Date(today);
         last7Days.setDate(today.getDate() - 7);
 
-        // Basic counts from bookings
+        // Basic counts and Cash collection from bookings
         allJobs.forEach(job => {
             if (job.status === 'Assigned') stats.assignedJobs++;
-            if (job.status === 'Completed') stats.completedJobs++;
+            if (job.status === 'Completed') {
+                stats.completedJobs++;
+                // If COD, technician has the full cash
+                if (job.paymentMethod === 'COD' || !job.paymentMethod) {
+                    stats.totalCashCollected += (job.totalAmount || 0);
+                }
+            }
             if (job.status === 'Cancelled') stats.cancelledJobs++;
         });
 
         // Exact earnings from TechnicianEarning for accuracy and consistency
-        const earningsRaw = await TechnicianEarning.find({ technicianId: techId, status: 'credited' });
+        const earningsRaw = await TechnicianEarning.find({ technicianId: techId, status: 'credited' }).populate('bookingId');
         
         earningsRaw.forEach(earning => {
             const amount = earning.technicianShare || 0;
             stats.totalEarnings += amount;
+
+            // Differentiate online earnings
+            const booking = earning.bookingId;
+            if (booking && booking.paymentMethod !== 'COD' && booking.paymentMethod) {
+                stats.totalOnlineEarnings += amount;
+            }
 
             // Simple weekly grouping for UI graph (0 = Sunday... we want Mon-Sun 0-6)
             if (earning.createdAt >= last7Days) {

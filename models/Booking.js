@@ -250,6 +250,16 @@ const bookingSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
+// 🛡️ SECURITY: Prevent OTP leakage in API responses
+bookingSchema.set('toJSON', {
+    transform: (doc, ret) => {
+        delete ret.serviceOTP;
+        delete ret.serviceOTPExpires;
+        delete ret.__v;
+        return ret;
+    }
+});
+
 // Indexes for efficient queries
 bookingSchema.index({ userId: 1, status: 1 });
 bookingSchema.index({ assignedTechnician: 1, status: 1 });

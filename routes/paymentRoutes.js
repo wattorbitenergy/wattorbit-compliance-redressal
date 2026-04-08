@@ -11,6 +11,7 @@ const { generateBookingId } = require('../utils/idGenerator');
 const { sendUserNotification, sendTopicNotification } = require('../utils/notificationHelper');
 const { sendBookingCreatedSms } = require('../utils/smsHelper');
 const { sendBookingCreatedEmail } = require('../utils/emailHelper');
+const { updateUniversalLedger } = require('../utils/technicianFinanceHelper');
 
 // Verify token middleware
 const verifyToken = (req, res, next) => {
@@ -126,6 +127,28 @@ router.post('/verify-payment', verifyToken, async (req, res) => {
             });
 
             await booking.save();
+
+            // 📜 Record Payment in Customer's Financial Ledger
+            await updateUniversalLedger(
+                booking.userId,
+                'PAYMENT',
+                -booking.totalAmount, // Negative because it's an outflow for the customer
+                booking.bookingId || booking._id.toString(),
+                `Payment for booking #${booking.bookingId} (Online)`,
+                { 
+                    bookingId: booking._id,
+                    razorpayPaymentId: razorpay_payment_id,
+                    method: 'Online',
+                    breakdown: {
+                        totalAmount: booking.totalAmount,
+                        basePrice: booking.basePrice,
+                        taxes: booking.taxes,
+                        discount: booking.discount,
+                        pointsUsed: booking.pointsUsed || 0
+                    }
+                },
+                booking.isDemo || false
+            ).catch(err => console.error('[Ledger] Customer online payment log error:', err));
 
             // --- Fire all deferred notifications now that payment is confirmed ---
 

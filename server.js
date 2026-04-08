@@ -102,15 +102,14 @@ app.use(
 /* =====================
    BODY PARSER & SANITIZATION
 ===================== */
-app.use(express.json());
+app.use(express.json({ limit: '10kb' })); // 🛡️ SECURITY: Prevent Large Payload Attacks
 
 // 🛡️ SECURITY: Custom sanitization middleware (Express 5 compatible)
-// Note: req.query is read-only in Express 5, so we only sanitize req.body and req.params
 const sanitizeObject = (obj) => {
   if (!obj || typeof obj !== 'object') return obj;
   for (const key in obj) {
     if (typeof obj[key] === 'string') {
-      // Strip NoSQL operators
+      // Strip NoSQL operators and risky patterns
       obj[key] = obj[key].replace(/\$|\.{2,}/g, '');
       // Strip XSS script tags
       obj[key] = obj[key].replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
@@ -121,9 +120,11 @@ const sanitizeObject = (obj) => {
   }
   return obj;
 };
+
 app.use((req, res, next) => {
   if (req.body) sanitizeObject(req.body);
   if (req.params) sanitizeObject(req.params);
+  if (req.query) sanitizeObject(req.query); // 🛡️ SECURITY: Fix Query Param Injection
   next();
 });
 
@@ -150,16 +151,16 @@ if (require('fs').existsSync(imagesDir)) {
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
 /* =====================
-   REQUEST LOGGER
+   REQUEST LOGGER (ANONYMIZZED)
 ===================== */
 app.use((req, res, next) => {
   const start = Date.now();
-  const ip =
-    req.headers['x-forwarded-for']?.split(',')[0] ||
-    req.socket.remoteAddress;
+  
+  // 🛡️ PRIVACY: Anonymize User IP (e.g. 192.168.1.1 -> 192.168.X.X)
+  const rawIp = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || 'unknown';
+  const ip = rawIp.replace(/(\d+)\.(\d+)\.(\d+)\.(\d+)/, '$1.$2.XXX.XXX').replace(/([a-f\d:]+):[a-f\d:]+:[a-f\d:]+$/, '$1:XXXX:XXXX');
 
   res.on('finish', () => {
-    // Log ALL requests for debugging
     console.log(
       `[${new Date().toISOString()}] ${ip} ${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - start}ms`
     );

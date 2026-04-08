@@ -447,4 +447,56 @@ router.get('/admin/finance/gst-liability', verifyToken, isAdmin, async (req, res
     }
 });
 
+/**
+ * GET: Admin Master Ledger (System-wide Trial of Money)
+ */
+router.get('/admin/master-ledger', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const { limit = 100, skip = 0, type } = req.query;
+        const query = type ? { type } : {};
+
+        const ledger = await FinancialLedger.find(query)
+            .populate('userId', 'name phone role')
+            .sort({ createdAt: -1 })
+            .limit(parseInt(limit))
+            .skip(parseInt(skip));
+
+        const totalEntries = await FinancialLedger.countDocuments(query);
+
+        res.json({
+            ledger,
+            pagination: {
+                total: totalEntries,
+                limit: parseInt(limit),
+                skip: parseInt(skip)
+            }
+        });
+    } catch (err) {
+        console.error('Master ledger fetch error:', err);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+/**
+ * GET: Get specific transaction details (Metadata Receipt)
+ */
+router.get('/transaction/:id', verifyToken, async (req, res) => {
+    try {
+        const entry = await FinancialLedger.findById(req.params.id)
+            .populate('userId', 'name phone role');
+        
+        if (!entry) return res.status(404).json({ message: 'Transaction not found' });
+
+        // Security: Admins see all, others only their own
+        if (req.user.role !== 'admin' && req.user.role !== 'employee' && entry.userId._id.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        res.json(entry);
+    } catch (err) {
+        console.error('Transaction fetch error:', err);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
 module.exports = router;

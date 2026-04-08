@@ -10,6 +10,7 @@ const mailer = require('./mailer');   // 🔥 Mailjet API (SMTP-free)
 const { sendOTPSms } = require('../utils/smsHelper'); // 📱 Fast2SMS
 const { sendWelcomeEmail, sendAdminAlertEmail } = require('../utils/emailHelper'); // ✉️ Email Templates
 const cache = require('../utils/cache');
+const { updateUniversalLedger } = require('../utils/technicianFinanceHelper');
 
 /* =========================
    ENV CHECK
@@ -219,10 +220,7 @@ router.post('/check-user', async (req, res) => {
     if (user) {
       return res.json({
         exists: true,
-        phone: user.phone,
-        email: user.email,
-        name: user.name,
-        role: user.role,
+        role: user.role, // Kept for frontend routing
         hasPassword: !!user.password
       });
     }
@@ -767,6 +765,17 @@ router.patch('/admin/adjust-points', verifyToken, async (req, res) => {
 
     user.walletBalance = Math.max(0, (user.walletBalance || 0) + adjustAmount);
     await user.save();
+
+    // 📜 Record in Universal Ledger for audit trail
+    await updateUniversalLedger(
+        user._id,
+        'ADJUSTMENT',
+        adjustAmount,
+        `ADMIN_ADJUST_${Date.now()}`,
+        `Manual point adjustment by Admin (${req.user.username})`,
+        { adjustedBy: req.user.id, reason: 'Manual adjustment' }
+    ).catch(err => console.error('[Ledger] Manual point adjustment log error:', err));
+
     cache.del('dashboard_stats:role=admin&org=global');
 
     res.json({ message: 'Points adjusted', walletBalance: user.walletBalance });

@@ -9,7 +9,7 @@ const financialLedgerSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['EARNING', 'REFUND', 'PAYOUT', 'ADJUSTMENT', 'TRANSFER'],
+        enum: ['EARNING', 'REFUND', 'PAYOUT', 'ADJUSTMENT', 'TRANSFER', 'COMMISSION_DEDUCTION', 'PAYMENT'],
         required: true
     },
     amount: {
