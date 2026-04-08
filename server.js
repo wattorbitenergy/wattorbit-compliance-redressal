@@ -74,28 +74,31 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
+      // 🛡️ Allow requests with no origin (like mobile apps or curl)
       if (!origin) return callback(null, true);
 
-      // Normalize origin: remove trailing slash
-      const normalizedOrigin = origin.endsWith('/') ? origin.slice(0, -1) : origin;
+      // Normalize origin: remove trailing slashes and convert to lowercase
+      const normalizedOrigin = origin.toLowerCase().replace(/\/$/, "");
 
-      if (
-        normalizedOrigin.startsWith("capacitor://") ||
-        normalizedOrigin.startsWith("file://") ||
+      // 🛡️ Check against whitelist or Render subdomains
+      const isAllowed = 
+        allowedOrigins.includes(normalizedOrigin) ||
+        normalizedOrigin.includes(".onrender.com") ||
+        normalizedOrigin.startsWith("http://localhost:") ||
         normalizedOrigin.startsWith("http://192.168.") ||
-        normalizedOrigin.startsWith("http://10.") ||
-        normalizedOrigin.includes(".onrender.com") || // Allow all Render subdomains
-        allowedOrigins.includes(normalizedOrigin)
-      ) {
-        return callback(null, true);
-      }
+        normalizedOrigin.startsWith("capacitor://") ||
+        normalizedOrigin.startsWith("file://");
 
-      console.error(`❌ Blocked CORS origin: ${origin} (Normalized: ${normalizedOrigin})`);
-      return callback(new Error("Not allowed by CORS"));
+      if (isAllowed) {
+        return callback(null, true);
+      } else {
+        console.warn(`[CORS] Blocked request from unauthorized origin: ${origin}`);
+        return callback(null, false); // Return false instead of Error to avoid crashing preflight
+      }
     },
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   })
 );
 
