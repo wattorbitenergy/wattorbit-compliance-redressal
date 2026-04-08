@@ -10,7 +10,6 @@ const compression = require('compression');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
-const mongoSanitize = require('express-mongo-sanitize');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
@@ -69,11 +68,9 @@ const smartSanitize = (obj) => {
 app.use((req, res, next) => {
   if (req.body) smartSanitize(req.body);
   if (req.params) smartSanitize(req.params);
+  if (req.query) smartSanitize(req.query); // 🛡️ Safe in Express 5: Key/Value mod without object re-assignment
   next();
 });
-
-// 🛡️ Mongo NoSQL Injection Protection
-app.use(mongoSanitize({ replaceWith: '_' }));
 
 /* =====================
    TRUST PROXY & PROD CHECK
@@ -247,10 +244,11 @@ if (process.env.NODE_ENV !== 'production') {
 ===================== */
 app.use((err, req, res, next) => {
   console.error('❌ GLOBAL ERROR:', err.message);
+  console.error(err.stack); // 🔍 Show stack trace for emergency debugging
 
   res.status(err.status || 500).json({
     message: err.message || 'Internal server error',
-    error: process.env.NODE_ENV === 'production' ? {} : err
+    error: err.stack // 🔍 Send stack back to console during this test phase
   });
 });
 
