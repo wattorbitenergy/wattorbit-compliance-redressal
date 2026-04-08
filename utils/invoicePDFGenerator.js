@@ -54,21 +54,21 @@ const generateInvoicePDF = (invoice, options = {}) => {
                 doc.font('Helvetica-Bold').fillColor(primaryColor).text(`GST: ${bizGST}`, { align: 'right' });
             }
 
-            doc.moveDown(1.2);
-
-            // Divider Line
-            doc.lineWidth(1).strokeColor('#e5e7eb').moveTo(50, 115).lineTo(545, 115).stroke();
+            doc.moveDown(1.5);
+            const dividerY = 135;
+            doc.lineWidth(1).strokeColor('#e5e7eb').moveTo(50, dividerY).lineTo(545, dividerY).stroke();
 
             // Invoice Details Column
+            const sectionY = 150;
             doc.fillColor('#000000');
-            doc.fontSize(10).font('Helvetica-Bold').text('INVOICE DETAILS', 50, 125);
+            doc.fontSize(10).font('Helvetica-Bold').text('INVOICE DETAILS', 50, sectionY);
             doc.fontSize(9).font('Helvetica').fillColor(secondaryColor);
-            doc.text(`Invoice ID:`, 50, 145);
-            doc.text(`Date:`, 50, 157);
-            doc.text(`Ref No.:`, 50, 169); // Ref No for Booking ID
+            doc.text(`Invoice ID:`, 50, sectionY + 20);
+            doc.text(`Date:`, 50, sectionY + 32);
+            doc.text(`Ref No.:`, 50, sectionY + 44); // Ref No for Booking ID
 
             doc.fillColor('#000000').font('Helvetica-Bold');
-            doc.text(invoice.invoiceId, 110, 145);
+            doc.text(invoice.invoiceId, 110, sectionY + 20);
 
             // Format date as dd/mm/yyyy
             const dateObj = new Date(invoice.invoiceDate);
@@ -77,23 +77,23 @@ const generateInvoicePDF = (invoice, options = {}) => {
             const year = dateObj.getFullYear();
             const formattedDate = `${day}/${month}/${year}`;
 
-            doc.text(formattedDate, 110, 157);
-            doc.text(invoice.bookingId?.bookingId || 'N/A', 110, 169);
+            doc.text(formattedDate, 110, sectionY + 32);
+            doc.text(invoice.bookingId?.bookingId || 'N/A', 110, sectionY + 44);
 
             // Bill To Column
-            doc.fontSize(10).font('Helvetica-Bold').text('BILL TO', 300, 125);
+            doc.fontSize(10).font('Helvetica-Bold').text('BILL TO', 300, sectionY);
             doc.fontSize(9).font('Helvetica').fillColor(secondaryColor);
-            doc.fillColor('#000000').font('Helvetica-Bold').text(invoice.customerName, 300, 145);
-            doc.font('Helvetica').fillColor(secondaryColor).text(invoice.customerPhone, 300, 157);
-            doc.text(invoice.customerEmail, 300, 169);
-            doc.text(invoice.customerAddress, 300, 181, { width: 245 });
+            doc.fillColor('#000000').font('Helvetica-Bold').text(invoice.customerName, 300, sectionY + 20);
+            doc.font('Helvetica').fillColor(secondaryColor).text(invoice.customerPhone, 300, sectionY + 32);
+            doc.text(invoice.customerEmail, 300, sectionY + 44);
+            doc.text(invoice.customerAddress, 300, sectionY + 56, { width: 245 });
 
             doc.moveDown(1.5);
 
             // Table Header Styling
-            const tableTop = 220; // 🔆 Moved up from 230
+            const tableTop = 260; 
             doc.rect(50, tableTop - 5, 495, 22).fill(primaryColor);
-            doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9); // 🔆 Smaller font
+            doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9); 
             doc.text('Description', 60, tableTop);
             doc.text('Quantity', 280, tableTop, { width: 90, align: 'right' });
             doc.text('Unit Price', 370, tableTop, { width: 90, align: 'right' });
@@ -116,7 +116,7 @@ const generateInvoicePDF = (invoice, options = {}) => {
                 doc.text(item.quantity, 280, y, { width: 90, align: 'right' });
                 doc.text(`₹${item.unitPrice}`, 370, y, { width: 90, align: 'right' });
                 doc.text(`₹${item.total}`, 460, y, { width: 80, align: 'right' });
-                y += 14; // 🔆 Reduced from 16
+                y += 20; 
             });
  
             // Divider Line after items
@@ -126,7 +126,7 @@ const generateInvoicePDF = (invoice, options = {}) => {
             // Calculations Section
             const calculationX = 370;
             const valueX = 460;
-            const rowHeight = 13; // 🔆 Reduced from 15
+            const rowHeight = 18; 
  
             doc.fillColor(secondaryColor).font('Helvetica');
             doc.text('Subtotal:', calculationX, y, { width: 90, align: 'right' });
