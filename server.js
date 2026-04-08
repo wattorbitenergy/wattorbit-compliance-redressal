@@ -25,17 +25,17 @@ app.use(express.json({ limit: '10kb' }));
 // This function cleans values IN-PLACE to avoid "Read-only getter" crashes
 const smartSanitize = (obj) => {
   if (!obj || typeof obj !== 'object') return;
-  
+
   Object.keys(obj).forEach(key => {
     const val = obj[key];
-    
+
     if (typeof val === 'string') {
       // 1. Clean NoSQL ($) and (..)
       let clean = val.replace(/\$|\.{2,}/g, '');
       // 2. Clean XSS (<script>, on*)
       clean = clean.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
       clean = clean.replace(/<[^>]*on\w+\s*=.*?>/gi, '');
-      
+
       obj[key] = clean; // In-place modification is safe
     } else if (typeof val === 'object' && val !== null) {
       smartSanitize(val); // Recursive cleaning
@@ -63,43 +63,57 @@ app.set('trust proxy', 1);
 /* =====================
    CORS CONFIGURATION
 ===================== */
-// ... (Lines stay as they are) ...
-app.use(cors({ origin: true, credentials: true })); // 🛡️ EMERGENCY: Allow all for troubleshooting
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:5175",
+  "http://localhost",
+  "https://wattorbit.in",
+  "https://wattorbit.com",
+  "https://www.wattorbit.com",
+  "https://wattorbit-compliance-redressal.onrender.com",
+  "https://wattorbit--website.web.app",
+  "https://wattorbit--website.firebaseapp.com"
+];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+      const normalizedOrigin = origin.toLowerCase().replace(/\/$/, "");
+      const isAllowed = 
+        allowedOrigins.includes(normalizedOrigin) ||
+        normalizedOrigin.includes(".onrender.com") ||
+        normalizedOrigin.startsWith("http://localhost:") ||
+        normalizedOrigin.startsWith("http://192.168.");
+
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        console.warn(`[CORS] Rejected: ${origin}`);
+        callback(null, false);
+      }
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+  })
+);
 
 /* =====================
-   BODY PARSER & SANITIZATION (EXPRESS 5 SAFE)
+   SECURITY HEADERS
 ===================== */
-app.use(express.json({ limit: '10kb' }));
-
-// 🛡️ SECURITY: Professional NoSQL Injection Protection (Express 5 Compatible)
-const mongoSanitize = require('express-mongo-sanitize');
-app.use(mongoSanitize({
-  replaceWith: '_',
-  allowDots: true
+const helmet = require('helmet');
+app.use(helmet({
+  crossOriginResourcePolicy: false,
+  crossOriginEmbedderPolicy: false
 }));
 
-// 🛡️ SECURITY: Manual XSS Shield (Read-only safe)
-app.use((req, res, next) => {
-  const sanitizeValue = (val) => {
-    if (typeof val !== 'string') return val;
-    return val.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-  };
-
-  const sanitizeObj = (obj) => {
-    if (!obj || typeof obj !== 'object') return;
-    Object.keys(obj).forEach(key => {
-      if (typeof obj[key] === 'string') {
-        obj[key] = sanitizeValue(obj[key]);
-      } else if (typeof obj[key] === 'object') {
-        sanitizeObj(obj[key]);
-      }
-    });
-  };
-
-  if (req.body) sanitizeObj(req.body);
-  // Note: We avoid touching req.query/req.params directly to prevent Express 5 crashes
-  next();
-});
+/* =====================
+   MONGODB NO-SQL SANITIZATION
+===================== */
+const mongoSanitize = require('express-mongo-sanitize');
+app.use(mongoSanitize({ replaceWith: '_' }));
 
 /* =====================
    STATIC ASSETS
@@ -128,7 +142,7 @@ app.use('/assets', express.static(path.join(__dirname, 'assets')));
 ===================== */
 app.use((req, res, next) => {
   const start = Date.now();
-  
+
   // 🛡️ PRIVACY: Anonymize User IP (e.g. 192.168.1.1 -> 192.168.X.X)
   const rawIp = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || 'unknown';
   const ip = rawIp.replace(/(\d+)\.(\d+)\.(\d+)\.(\d+)/, '$1.$2.XXX.XXX').replace(/([a-f\d:]+):[a-f\d:]+:[a-f\d:]+$/, '$1:XXXX:XXXX');
