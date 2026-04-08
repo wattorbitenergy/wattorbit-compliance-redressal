@@ -1352,7 +1352,7 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
         }
 
         // Access check: Only assigned technician, admin, or engineer
-        if (req.user.role !== 'admin' && req.user.role !== 'engineer' && booking.assignedTechnician?.toString() !== req.user.id) {
+        if (req.user.role !== 'admin' && req.user.role !== 'engineer' && req.user.role !== 'employee' && booking.assignedTechnician?.toString() !== req.user.id) {
             return res.status(403).json({ message: 'Access denied' });
         }
 
@@ -1473,7 +1473,7 @@ router.get('/technician/stats', verifyToken, async (req, res) => {
 
         // Authorization
         if (queryTechId && queryTechId !== techId) {
-            if (req.user.role !== 'admin' && req.user.role !== 'engineer') {
+            if (req.user.role !== 'admin' && req.user.role !== 'engineer' && req.user.role !== 'employee') {
                 return res.status(403).json({ message: 'Unauthorized to view other technician stats' });
             }
             techId = queryTechId;
