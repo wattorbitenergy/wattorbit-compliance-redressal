@@ -9,33 +9,46 @@ const express = require('express');
 const compression = require('compression');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const helmet = require('helmet');
-const cityRoutes = require("./routes/cityRoutes");
-const notificationRoutes = require('./routes/notificationRoutes');
-
-/* =====================
-   ENV CHECK (SAFE LOG)
-===================== */
-console.log('Environment Check:');
-console.log('MAILJET_API:', process.env.MAILJET_API_KEY ? 'Loaded' : 'Missing');
-console.log('FAST2SMS_API:', process.env.FAST2SMS_API_KEY ? 'Loaded' : 'Missing');
-console.log('MONGO_URI:', process.env.MONGO_URI ? 'Loaded' : 'Missing');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+console.log('--- Server Initializing ---');
+console.log('ENV: MONGO_URI is', process.env.MONGO_URI ? 'LOADED' : 'MISSING');
+
 /* =====================
-   RATE LIMITING (GLOBAL)
+   BODY PARSER & SMART SANITIZER (EXPRESS 5 COMPATIBLE)
 ===================== */
-const rateLimit = require('express-rate-limit');
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { message: "Too many requests from this IP, please try again after 15 minutes." }
+app.use(express.json({ limit: '10kb' }));
+
+// 🛡️ SECURITY: SmartSanitizer (Prevents NoSQL Injection & XSS)
+// This function cleans values IN-PLACE to avoid "Read-only getter" crashes
+const smartSanitize = (obj) => {
+  if (!obj || typeof obj !== 'object') return;
+  
+  Object.keys(obj).forEach(key => {
+    const val = obj[key];
+    
+    if (typeof val === 'string') {
+      // 1. Clean NoSQL ($) and (..)
+      let clean = val.replace(/\$|\.{2,}/g, '');
+      // 2. Clean XSS (<script>, on*)
+      clean = clean.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+      clean = clean.replace(/<[^>]*on\w+\s*=.*?>/gi, '');
+      
+      obj[key] = clean; // In-place modification is safe
+    } else if (typeof val === 'object' && val !== null) {
+      smartSanitize(val); // Recursive cleaning
+    }
+  });
+};
+
+app.use((req, res, next) => {
+  if (req.body) smartSanitize(req.body);
+  if (req.params) smartSanitize(req.params);
+  if (req.query) smartSanitize(req.query); // 🛡️ Safe: Modifying keys inside, not re-assigning req.query
+  next();
 });
-// app.use('/api/', limiter); // 🛡️ Temporarily disabled for emergency troubleshooting
 
 /* =====================
    TRUST PROXY (RENDER)
@@ -45,7 +58,7 @@ app.set('trust proxy', 1);
 /* =====================
    SECURITY HEADERS
 ===================== */
-// app.use(helmet({ ... })); // 🛡️ Temporarily disabled for emergency troubleshooting
+// Helmet temporarily disabled for troubleshooting
 
 /* =====================
    CORS CONFIGURATION
