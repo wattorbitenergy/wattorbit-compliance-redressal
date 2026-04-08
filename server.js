@@ -29,7 +29,7 @@ if (!process.env.MONGO_URI) {
 
 // 🛡️ Rate Limiting (anti-spam / anti-bruteforce)
 app.use(rateLimit({
-  windowMs: 15 * 60 * 1000, 
+  windowMs: 15 * 60 * 1000,
   max: 200,
   standardHeaders: true,
   legacyHeaders: false
@@ -255,8 +255,9 @@ app.use((err, req, res, next) => {
 /* =====================
    START SERVER
 ===================== */
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running on port ${PORT} (BIND: 0.0.0.0)`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
 
   const initCronJobs = require('./cron/scheduler');
   initCronJobs();
