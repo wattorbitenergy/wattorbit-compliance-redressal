@@ -76,7 +76,7 @@ app.use((req, res, next) => {
 });
 
 // 🛡️ Mongo NoSQL Injection Protection
-app.use(mongoSanitize({ replaceWith: '_' }));
+
 
 /* =====================
    TRUST PROXY
