@@ -107,7 +107,9 @@ app.use(
       const isAllowed =
         allowedOrigins.includes(normalizedOrigin) ||
         normalizedOrigin.includes(".onrender.com") ||
-        normalizedOrigin.startsWith("http://localhost:") ||
+        normalizedOrigin.startsWith("http://localhost") ||
+        normalizedOrigin.startsWith("https://localhost") ||
+        normalizedOrigin.startsWith("capacitor://localhost") ||
         normalizedOrigin.startsWith("http://192.168.");
 
       if (isAllowed) {
