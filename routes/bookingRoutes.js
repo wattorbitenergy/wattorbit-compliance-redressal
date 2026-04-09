@@ -1091,9 +1091,11 @@ router.delete('/admin/:id', verifyToken, async (req, res) => {
             return res.status(403).json({ message: 'Admin access required' });
         }
 
-        const { reason } = req.body;
-        if (!reason) {
-            return res.status(400).json({ message: 'Deletion reason is required' });
+        // 🛡️ BODY SAFETY: Some HTTP clients/proxies strip bodies from DELETE requests.
+        // Accept reason from body OR query string as fallback.
+        const reason = req.body?.reason || req.query?.reason;
+        if (!reason || reason.trim().length < 5) {
+            return res.status(400).json({ message: 'Deletion reason is required (min 5 characters)' });
         }
 
         const booking = await Booking.findById(req.params.id);
