@@ -173,6 +173,21 @@ const bookingSchema = new mongoose.Schema({
         enum: ['COD', 'Online', 'Wallet', 'Mixed'],
         default: 'COD'
     },
+    paymentMethodCorrected: {
+        type: Boolean,
+        default: false
+    },
+    paymentMethodCorrectedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    paymentMethodCorrectedAt: {
+        type: Date
+    },
+    paymentMethodCorrectionReason: {
+        type: String,
+        trim: true
+    },
     razorpayOrderId: {
         type: String,
         trim: true

@@ -1120,6 +1120,80 @@ router.delete('/admin/:id', verifyToken, async (req, res) => {
     }
 });
 
+// POST: Correct a wrongly recorded payment method (Admin Only)
+// Use case: Technician marked paymentReceived=true (online) but actually collected cash (COD)
+router.post('/admin/:id/correct-payment', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const { correctedReason } = req.body;
+        if (!correctedReason || correctedReason.trim().length < 10) {
+            return res.status(400).json({ message: 'A detailed correction reason is required (min 10 characters)' });
+        }
+
+        const booking = await Booking.findById(req.params.id);
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+        if (booking.status !== 'Completed') return res.status(400).json({ message: 'Can only correct completed bookings' });
+        if (booking.paymentMethod === 'COD') return res.status(400).json({ message: 'Booking is already recorded as COD' });
+        if (booking.paymentMethodCorrected) return res.status(400).json({ message: 'Payment method has already been corrected for this booking' });
+        if (!booking.assignedTechnician) return res.status(400).json({ message: 'No technician assigned to this booking' });
+
+        // Retrieve platform financial figures from booking
+        const platformPortion = (booking.platformFees || 0) + (booking.taxes || 0);
+        const techShare = Math.max(0, (booking.technicianCharges || 0) - (booking.technicianDiscountShare || 0));
+        const bookingRef = booking.bookingId || booking._id.toString();
+
+        // Step 1: REVERSE the incorrect EARNING credit (tech does NOT get paid by platform for COD)
+        await updateUniversalLedger(
+            booking.assignedTechnician,
+            'ADJUSTMENT',
+            -techShare,   // Negative: reversing the wrong credit
+            bookingRef,
+            `[PAYMENT CORRECTION] Reversed incorrect EARNING for #${bookingRef}. Booking was COD (cash collected by tech), not online. Reason: ${correctedReason.trim()}`,
+            {
+                bookingId: booking._id,
+                correctedBy: req.user.id,
+                correctionType: 'EARNING_REVERSAL',
+                originalPaymentMethod: booking.paymentMethod
+            }
+        );
+
+        // Step 2: Apply correct COD COMMISSION (tech collected cash, owes platform its share)
+        await updateUniversalLedger(
+            booking.assignedTechnician,
+            'COMMISSION_DEDUCTION',
+            -platformPortion,   // Negative: tech owes platform
+            bookingRef,
+            `[PAYMENT CORRECTION] COD commission applied for #${bookingRef} after payment method correction.`,
+            {
+                bookingId: booking._id,
+                correctedBy: req.user.id,
+                correctionType: 'COD_COMMISSION_APPLIED',
+                breakdown: { platformFees: booking.platformFees, taxes: booking.taxes }
+            }
+        );
+
+        // Step 3: Update booking record
+        booking.paymentMethod = 'COD';
+        booking.paymentMethodCorrected = true;
+        booking.paymentMethodCorrectedBy = req.user.id;
+        booking.paymentMethodCorrectedAt = new Date();
+        booking.paymentMethodCorrectionReason = correctedReason.trim();
+        await booking.save();
+
+        // Invalidate booking cache
+        cache.del('dashboard_stats:role=admin&org=global');
+
+        console.log(`✅ Payment method corrected for booking #${bookingRef} by admin ${req.user.id}`);
+        res.json({
+            message: `Payment method corrected for #${bookingRef}. Earning reversed (-₹${techShare}) and COD commission applied (-₹${platformPortion}).`,
+            reversalAmount: techShare,
+            commissionApplied: platformPortion
+        });
+    } catch (err) {
+        console.error('Error correcting payment method:', err);
+        res.status(500).json({ message: 'Failed to correct payment method' });
+    }
+});
+
 // GET: Get all deleted bookings (Admin audit list)
 router.get('/admin/deleted-list', verifyToken, isAdmin, async (req, res) => {
     try {
