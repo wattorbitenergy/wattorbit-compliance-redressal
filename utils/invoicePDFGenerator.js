@@ -91,18 +91,18 @@ const generateInvoicePDF = (invoice, options = {}) => {
             doc.moveDown(1.5);
 
             // Table Header Styling
-            const tableTop = 260; 
+            const tableTop = 260;
             doc.rect(50, tableTop - 5, 495, 22).fill(primaryColor);
-            doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9); 
+            doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9);
             doc.text('Description', 60, tableTop);
             doc.text('Quantity', 280, tableTop, { width: 90, align: 'right' });
             doc.text('Unit Price', 370, tableTop, { width: 90, align: 'right' });
             doc.text('Total', 460, tableTop, { width: 80, align: 'right' });
- 
+
             // Items List
             doc.fillColor('#000000').font('Helvetica').fontSize(9);
             let y = tableTop + 22;
- 
+
             invoice.items.forEach((item, index) => {
                 // Zebra stripes
                 if (index % 2 === 1) {
@@ -111,69 +111,69 @@ const generateInvoicePDF = (invoice, options = {}) => {
                 } else {
                     doc.fillColor('#000000');
                 }
- 
+
                 doc.text(item.description, 60, y);
                 doc.text(item.quantity, 280, y, { width: 90, align: 'right' });
                 doc.text(`₹${item.unitPrice}`, 370, y, { width: 90, align: 'right' });
                 doc.text(`₹${item.total}`, 460, y, { width: 80, align: 'right' });
-                y += 20; 
+                y += 20;
             });
- 
+
             // Divider Line after items
             doc.lineWidth(0.5).strokeColor('#e5e7eb').moveTo(50, y).lineTo(545, y).stroke();
             y += 8;
- 
+
             // Calculations Section
             const calculationX = 370;
             const valueX = 460;
-            const rowHeight = 18; 
- 
+            const rowHeight = 18;
+
             doc.fillColor(secondaryColor).font('Helvetica');
             doc.text('Subtotal:', calculationX, y, { width: 90, align: 'right' });
             doc.fillColor('#000000').text(`₹${invoice.subtotal}`, valueX, y, { width: 80, align: 'right' });
             y += rowHeight;
- 
+
             doc.fillColor(secondaryColor).text(`GST (18% on PF):`, calculationX, y, { width: 90, align: 'right' });
             doc.fillColor('#000000').text(`₹${invoice.taxAmount.toFixed(2)}`, valueX, y, { width: 80, align: 'right' });
             y += rowHeight;
- 
+
             if (invoice.discount > 0) {
                 doc.fillColor(secondaryColor).text('Discount:', calculationX, y, { width: 90, align: 'right' });
                 doc.fillColor('#ef4444').text(`-₹${invoice.discount}`, valueX, y, { width: 80, align: 'right' });
                 y += rowHeight;
             }
- 
+
             y += 2;
             // Total Box
             doc.rect(360, y - 4, 185, 24).fill(primaryColor);
             doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(10);
-            doc.text('Total Amount Payable:', calculationX - 20, y + 4, { width: 110, align: 'right' });
+            doc.text(' Total Amount Payable:', calculationX - 20, y + 4, { width: 110, align: 'right' });
             doc.text(`₹${invoice.totalAmount.toFixed(2)}`, valueX, y + 4, { width: 80, align: 'right' });
- 
+
             y += 30; // 🔆 Reduced from 35
- 
+
             // Payment Status Section
             doc.fillColor('#000000').font('Helvetica-Bold').fontSize(9);
             doc.text('Payment Status:', 50, y);
- 
+
             const method = invoice.bookingId?.paymentMethod || 'CASH';
             const statusText = invoice.paymentStatus === 'Paid' ? `PAID (${method.toUpperCase()})` : 'UNPAID';
             const statusColor = invoice.paymentStatus === 'Paid' ? '#10b981' : '#ef4444'; // Emerald vs Red
- 
+
             doc.fillColor(statusColor).text(statusText, 130, y);
- 
+
             // Terms and Conditions Section (Compact)
             doc.fillColor('#000000').fontSize(8).font('Helvetica-Bold').text('Terms & Conditions:', 50, y + 18);
             doc.fontSize(7).font('Helvetica').fillColor(secondaryColor);
             doc.text('1. This is an electronically generated invoice and does not require a physical signature.', 50, y + 28);
             doc.text('2. All disputes are subject to Lucknow jurisdiction.', 50, y + 36);
- 
+
             // Promotional Footer
             doc.fontSize(8).font('Helvetica-Bold').fillColor(primaryColor);
             doc.text('Thank you for choosing WattOrbit!', 50, 785, { align: 'center' }); // 🔆 Shifted up from 805
             doc.fontSize(7).font('Helvetica').fillColor(secondaryColor);
             doc.text('⚡ Powering your space with sustainable energy solutions. Visit us at www.wattorbit.in', 50, 795, { align: 'center' }); // 🔆 Shifted up from 815
- 
+
             doc.end();
         } catch (err) {
             reject(err);

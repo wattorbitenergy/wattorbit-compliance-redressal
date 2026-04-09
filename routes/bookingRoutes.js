@@ -10,6 +10,7 @@ const Config = require('../models/Config');
 const TechnicianEarning = require('../models/TechnicianEarning');
 const FinancialLedger = require('../models/FinancialLedger');
 const Invoice = require('../models/Invoice');
+const DeletedBooking = require('../models/DeletedBooking');
 const { generateBookingId } = require('../utils/idGenerator');
 const { triggerAutomation } = require('../utils/automationEngine');
 const { sendUserNotification, sendTopicNotification } = require('../utils/notificationHelper');
@@ -1083,19 +1084,52 @@ router.patch('/:id/status', verifyToken, canManageBookings, async (req, res) => 
     }
 });
 
-// DELETE: Delete booking (Admin Only)
+// DELETE: Delete booking (Admin Only) - 🛡️ RE-IMPLEMENTED as Audited Archive
 router.delete('/admin/:id', verifyToken, async (req, res) => {
     try {
         if (req.user.role !== 'admin') {
             return res.status(403).json({ message: 'Admin access required' });
         }
-        const booking = await Booking.findByIdAndDelete(req.params.id);
+
+        const { reason } = req.body;
+        if (!reason) {
+            return res.status(400).json({ message: 'Deletion reason is required' });
+        }
+
+        const booking = await Booking.findById(req.params.id);
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+        // 🛡️ SECURITY & AUDIT: Archive before deletion
+        await new DeletedBooking({
+            originalBooking: booking.toObject(),
+            deletionReason: reason,
+            deletedBy: req.user.id,
+            bookingId: booking.bookingId || booking._id.toString()
+        }).save();
+
+        // Perform actual deletion
+        await Booking.findByIdAndDelete(req.params.id);
+
         cache.del('dashboard_stats:role=admin&org=global');
-        res.json({ message: 'Booking deleted successfully' });
+        res.json({ message: 'Booking permanently archived and deleted.' });
     } catch (err) {
         console.error('Error deleting booking:', err);
         res.status(500).json({ message: 'Failed to delete booking' });
+    }
+});
+
+// GET: Get all deleted bookings (Admin audit list)
+router.get('/admin/deleted-list', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const deletedRecords = await DeletedBooking.find()
+            .populate('deletedBy', 'name phone email')
+            .sort({ deletedAt: -1 })
+            .lean();
+        
+        res.json(deletedRecords);
+    } catch (err) {
+        console.error('Error fetching deleted records:', err);
+        res.status(500).json({ message: 'Failed to fetch deleted records' });
     }
 });
 

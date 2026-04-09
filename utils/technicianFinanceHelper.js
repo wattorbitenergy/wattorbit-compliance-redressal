@@ -120,14 +120,24 @@ async function updateUniversalLedger(userId, type, amount, referenceId, descript
 
     // 🛡️ SECURITY FIX: Respect the sign of 'amount' passed in. 
     // Positive means inflow (credit), Negative means outflow (deduction)
-    user.walletBalance = (user.walletBalance || 0) + amount;
-    await user.save({ session });
+    // 🧪 DEMO CHECK: Demo bookings do NOT create financial liability.
+    if (!isDemo) {
+        const newBalance = (user.walletBalance || 0) + amount;
+
+        // 💰 ROLE GUARD: Only technicians can have negative wallet balance
+        // (they owe commission to the platform for COD jobs).
+        // All other roles (user, organisation, employee) are always >= 0.
+        const isTechnician = user.role === 'technician';
+        user.walletBalance = isTechnician ? newBalance : Math.max(0, newBalance);
+
+        await user.save({ session });
+    }
 
     const entry = await FinancialLedger.create([{
         userId,
         type,
         amount,
-        description,
+        description: isDemo ? `[DEMO - NO BALANCE IMPACT] ${description}` : description,
         balanceAfter: user.walletBalance,
         referenceId,
         isDemo,
