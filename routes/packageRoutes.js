@@ -159,13 +159,13 @@ router.put('/:id', verifyToken, isAuthorized, async (req, res) => {
             platformFees: platformFees !== undefined ? platformFees : undefined
         };
 
-        if (price !== undefined) {
-            updateData.price = price;
+        if (price !== undefined && price !== "") {
+            updateData.price = Number(price);
         } else if (technicianCharges !== undefined || platformFees !== undefined) {
-            // Recalculate if only components are provided and price is missing
+            // Recalculate if explicitly missing or if components changed and price is not set
             const currentPkg = await ServicePackage.findById(req.params.id);
-            const t = technicianCharges !== undefined ? Number(technicianCharges) : currentPkg.technicianCharges;
-            const p = platformFees !== undefined ? Number(platformFees) : currentPkg.platformFees;
+            const t = technicianCharges !== undefined ? Number(technicianCharges) : (currentPkg.technicianCharges || 0);
+            const p = platformFees !== undefined ? Number(platformFees) : (currentPkg.platformFees || 0);
             updateData.price = t + p + (p * 0.18);
         }
 
