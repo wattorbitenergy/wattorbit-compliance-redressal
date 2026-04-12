@@ -220,8 +220,11 @@ router.post('/check-user', async (req, res) => {
     if (user) {
       return res.json({
         exists: true,
-        role: user.role, // Kept for frontend routing
-        hasPassword: !!user.password
+        role: user.role,
+        hasPassword: !!user.password,
+        name: user.name,
+        email: user.email,
+        phone: user.phone
       });
     }
 
