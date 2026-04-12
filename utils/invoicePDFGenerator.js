@@ -147,7 +147,7 @@ const generateInvoicePDF = (invoice, options = {}) => {
             // Total Box
             doc.rect(360, y - 4, 185, 24).fill(primaryColor);
             doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(10);
-            doc.text(' Total Amount Payable:', calculationX - 20, y + 4, { width: 110, align: 'right' });
+            doc.text('Total Amount Payable:', calculationX - 20, y + 4, { width: 110, align: 'right' });
             doc.text(`₹${invoice.totalAmount.toFixed(2)}`, valueX, y + 4, { width: 80, align: 'right' });
 
             y += 30; // 🔆 Reduced from 35

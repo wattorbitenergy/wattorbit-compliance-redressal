@@ -1676,7 +1676,8 @@ router.post('/employee/initiate-request', verifyToken, isAdminOrEngineer, async 
             addressId,      // If using existing address
             scheduledDate,
             scheduledTimeSlot,
-            customerNotes
+            customerNotes,
+            couponCode
         } = req.body;
 
         if (!phone || !serviceId || !packageId || !scheduledDate || !scheduledTimeSlot) {
@@ -1728,11 +1729,47 @@ router.post('/employee/initiate-request', verifyToken, isAdminOrEngineer, async 
         }
 
         // 4. Calculate Pricing (Simplified for Employee Dashboard)
-        const technicianCharges = servicePackage.technicianCharges || 0;
-        const platformFees = servicePackage.platformFees || 0;
-        const taxes = Math.round((platformFees * 18) / 100);
+        let technicianCharges = servicePackage.technicianCharges || 0;
+        let platformFees = servicePackage.platformFees || 0;
         const basePrice = technicianCharges + platformFees;
-        const totalAmount = basePrice + taxes;
+
+        // Apply coupon if provided
+        let discount = 0;
+        let couponId = null;
+        let technicianAbsorbsPercent = null;
+
+        if (couponCode) {
+            const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
+            if (!coupon) {
+                return res.status(404).json({ message: 'Invalid coupon code' });
+            }
+            if (!coupon.isValid(basePrice)) {
+                return res.status(400).json({ message: 'Coupon has expired or is invalid for this amount' });
+            }
+
+            discount = coupon.calculateDiscount(basePrice);
+            couponId = coupon._id;
+            technicianAbsorbsPercent = coupon.technicianAbsorbsPercent;
+        }
+
+        // Calculate Apportionment for discount
+        let technicianDiscountShare = 0;
+        let platformDiscountShare = 0;
+
+        if (discount > 0) {
+            if (technicianAbsorbsPercent !== null && technicianAbsorbsPercent !== undefined) {
+                technicianDiscountShare = Math.round(discount * (technicianAbsorbsPercent / 100));
+            } else {
+                if (basePrice > 0) {
+                    technicianDiscountShare = Math.round(discount * (technicianCharges / basePrice));
+                }
+            }
+            platformDiscountShare = discount - technicianDiscountShare;
+        }
+
+        const netPlatformFees = Math.max(0, platformFees - platformDiscountShare);
+        const taxes = Math.round((netPlatformFees * 18) / 100);
+        const totalAmount = Math.max(0, basePrice + taxes - discount);
 
         // 5. Generate OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -1753,6 +1790,8 @@ router.post('/employee/initiate-request', verifyToken, isAdminOrEngineer, async 
             technicianCharges,
             platformFees,
             taxes,
+            discount,
+            couponId,
             totalAmount,
             paymentMethod: 'COD',
             status: 'Awaiting Confirmation',
@@ -1762,23 +1801,39 @@ router.post('/employee/initiate-request', verifyToken, isAdminOrEngineer, async 
                 status: 'Awaiting Confirmation',
                 timestamp: new Date(),
                 updatedBy: req.user.id,
-                notes: `Initiated by employee ${req.user.name || req.user.id}`
+                notes: `Initiated by employee ${req.user.name || req.user.id}${couponCode ? ` with coupon ${couponCode.toUpperCase()}` : ''}`
             }]
         });
 
         await booking.save();
 
-        // 7. Send OTP
+        // 7. Send Push Notification (New Secure Confirmation)
+        if (user.fcmToken) {
+            await sendUserNotification(
+                user._id,
+                'Verify Your Booking',
+                `An employee has initiated a ${service.name} request for you. Please confirm it in the app.`,
+                {
+                    type: 'booking_confirmation',
+                    bookingId: booking._id.toString(),
+                    displayId: booking.bookingId,
+                    click_action: 'FLUTTER_NOTIFICATION_CLICK'
+                }
+            );
+        }
+
+        // 8. Send SMS (Fallback/Existing)
         sendServiceRequestOTPSms(user.phone, otp).catch(e => console.error('[SMS] Service OTP error:', e));
         if (user.email) {
             sendServiceRequestOTPEmail(user, otp).catch(e => console.error('[Email] Service OTP error:', e));
         }
 
         res.status(201).json({
-            message: 'Service request initiated. OTP sent to user.',
+            message: 'Service request initiated. Please confirm via App or OTP.',
             bookingId: booking._id,
             displayId: booking.bookingId,
-            isNewUser
+            isNewUser,
+            notificationSent: !!user.fcmToken
         });
 
     } catch (err) {
@@ -1841,6 +1896,59 @@ router.post('/employee/confirm-request', verifyToken, isAdminOrEngineer, async (
 
     } catch (err) {
         console.error('Confirm request error:', err);
+        res.status(500).json({ message: 'Failed to confirm booking' });
+    }
+});
+
+/**
+ * PATCH: Confirm employee-initiated request (Push/In-app)
+ * Authenticated for the user who owns the booking
+ */
+router.patch('/:id/user-confirm', verifyToken, async (req, res) => {
+    try {
+        const booking = await Booking.findById(req.params.id);
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+        // Security check
+        if (booking.userId.toString() !== req.user.id && req.user.role !== 'admin') {
+            return res.status(403).json({ message: 'Unauthorized to confirm this booking' });
+        }
+
+        if (booking.status !== 'Awaiting Confirmation') {
+            return res.status(400).json({ message: 'Booking is not in awaiting confirmation state' });
+        }
+
+        // Clear OTP and update status
+        booking.serviceOTP = undefined;
+        booking.serviceOTPExpires = undefined;
+        const nextStatus = booking.isDemo ? 'Assigned' : 'Pending';
+        booking.status = nextStatus;
+        booking.statusHistory.push({
+            status: nextStatus,
+            timestamp: new Date(),
+            updatedBy: req.user.id,
+            notes: 'User verified via App/Secure link. Booking confirmed.'
+        });
+
+        await booking.save();
+
+        // Trigger Standard automations
+        const service = await Service.findById(booking.serviceId);
+        const user = await User.findById(booking.userId);
+
+        await triggerAutomation('booking.created', booking);
+        
+        // Notify Customer (Push + SMS + Email)
+        sendBookingCreatedSms(user._id, user.name || 'Customer', booking.bookingId, service.name).catch(o => {});
+        sendBookingCreatedEmail(user, booking, service.name).catch(o => {});
+
+        res.json({
+            message: 'Booking confirmed successfully',
+            status: booking.status
+        });
+
+    } catch (err) {
+        console.error('User confirm error:', err);
         res.status(500).json({ message: 'Failed to confirm booking' });
     }
 });
