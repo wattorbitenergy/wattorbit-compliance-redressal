@@ -1706,6 +1706,11 @@ router.post('/employee/initiate-request', verifyToken, isAdminOrEngineer, async 
         // 2. Handle Address
         let finalAddressId = addressId;
         if (!finalAddressId && addressDetails) {
+            // 🛡️ Safety Validation: Prevent 500 crashes if form fails to send mandatory fields
+            if (!addressDetails.street || !addressDetails.city || !addressDetails.state || !addressDetails.pincode) {
+                return res.status(400).json({ message: 'Address street, city, state, and pincode are required.' });
+            }
+
             const newAddress = new Address({
                 userId: user._id,
                 ...addressDetails,

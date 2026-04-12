@@ -26,6 +26,15 @@ const verifyToken = (req, res, next) => {
     }
 };
 
+// Admin or Engineer check middleware
+const isAdminOrEngineer = (req, res, next) => {
+    const roles = ['admin', 'engineer', 'employee'];
+    if (!roles.includes(req.user.role)) {
+        return res.status(403).json({ message: 'Administrative access required' });
+    }
+    next();
+};
+
 // 🚀 DEBUG MIDDLEWARE: Log every request to this router (MOVE TO TOP)
 router.use((req, res, next) => {
     // Address request logged internally
@@ -167,6 +176,21 @@ router.get('/', verifyToken, async (req, res) => {
     } catch (err) {
         console.error('Error fetching addresses:', err);
         res.status(500).json({ message: 'Failed to fetch addresses', error: err.message });
+    }
+});
+
+// GET: Get addresses for a specific user (Admin/Engineer only)
+router.get('/user/:userId', verifyToken, isAdminOrEngineer, async (req, res) => {
+    try {
+        const addresses = await Address.find({
+            userId: req.params.userId,
+            isActive: true
+        }).sort({ isDefault: -1, createdAt: -1 });
+
+        res.json(addresses);
+    } catch (err) {
+        console.error('Error fetching user addresses:', err);
+        res.status(500).json({ message: 'Failed to fetch addresses' });
     }
 });
 
