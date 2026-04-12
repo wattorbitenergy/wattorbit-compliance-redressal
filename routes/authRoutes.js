@@ -220,6 +220,7 @@ router.post('/check-user', async (req, res) => {
     if (user) {
       return res.json({
         exists: true,
+        id: user._id, // 🔥 CRITICAL FIX: Required for fetching saved addresses
         role: user.role,
         hasPassword: !!user.password,
         name: user.name,
