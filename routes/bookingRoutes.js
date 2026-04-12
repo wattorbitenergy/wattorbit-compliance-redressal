@@ -509,7 +509,48 @@ router.get('/track', async (req, res) => {
     }
 });
 
-// GET: Get booking details
+// GET: Get booking details (explicit route for frontend)
+router.get('/details/:id', verifyToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        let query = {};
+
+        // If it looks like a MongoDB ObjectId, check both _id and bookingId
+        // Otherwise, check only bookingId
+        if (id.match(/^[0-9a-fA-F]{24}$/)) {
+            query = { $or: [{ _id: id }, { bookingId: id }] };
+        } else {
+            query = { bookingId: id };
+        }
+
+        const booking = await Booking.findOne(query)
+            .populate('userId', 'name phone email')
+            .populate('serviceId', 'name category description images')
+            .populate('packageId', 'name price features')
+            .populate('addressId')
+            .populate('assignedTechnician', 'name phone email')
+            .populate('organisationId', 'name phone email username');
+
+        if (!booking) {
+            return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        // Check access: user can see their own, admin can see all
+        const isOwner = booking.userId && booking.userId._id.toString() === req.user.id;
+        const isAdminUser = ['admin', 'employee'].includes(req.user.role);
+        
+        if (!isOwner && !isAdminUser) {
+            return res.status(403).json({ message: 'Unauthorized to view these booking details' });
+        }
+
+        res.json(booking);
+    } catch (err) {
+        console.error('Error fetching booking details:', err);
+        res.status(500).json({ message: 'Failed to fetch booking details' });
+    }
+});
+
+// GET: Get booking (generic route)
 router.get('/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
