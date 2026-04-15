@@ -83,8 +83,8 @@ router.post('/register', authLimiter, async (req, res) => {
     if (phone) phone = phone.trim();
 
     // Mandatory Fields Check
-    if (!email || !phone) {
-      return res.status(400).json({ message: 'Email and Phone number are required' });
+    if (!phone) {
+      return res.status(400).json({ message: 'Phone number is required' });
     }
 
     // Determine if password is required
@@ -423,7 +423,112 @@ router.post('/admin-verify-2fa', authLimiter, async (req, res) => {
 
 
 /* =========================
-   SEND OTP (Login)
+   SEND OTP — PHONE FIRST (New Frictionless Onboarding)
+   Works for both new and returning users.
+========================= */
+router.post('/send-otp-phone', async (req, res) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) return res.status(400).json({ message: 'Phone number is required' });
+
+    const cleanPhone = String(phone).replace(/\D/g, '').trim();
+    if (cleanPhone.length < 10) return res.status(400).json({ message: 'Invalid phone number' });
+
+    let user = await User.findOne({ phone: cleanPhone });
+    let isNew = false;
+
+    if (!user) {
+      // Auto-create a minimal user account — name will be set after OTP
+      let newReferralCode;
+      let isUnique = false;
+      while (!isUnique) {
+        newReferralCode = crypto.randomBytes(3).toString('hex').toUpperCase();
+        const existing = await User.findOne({ referralCode: newReferralCode });
+        if (!existing) isUnique = true;
+      }
+      user = new User({
+        phone: cleanPhone,
+        username: `user_${cleanPhone}`,
+        role: 'user',
+        isApproved: true,
+        name: '',
+        referralCode: newReferralCode
+      });
+      await user.save();
+      isNew = true;
+    }
+
+    // Block admins
+    if (user.role === 'admin') {
+      return res.status(403).json({ message: 'Admin accounts use a dedicated login page' });
+    }
+
+    // Generate OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    user.loginOTP = otp;
+    user.loginOTPExpires = Date.now() + 600000; // 10 min
+    await user.save();
+
+    // Try SMS
+    let smsSent = false;
+    try {
+      await sendOTPSms(cleanPhone, otp);
+      smsSent = true;
+    } catch (smsErr) {
+      console.error('[OTP] SMS failed:', smsErr.message);
+    }
+
+    // Development fallback: log OTP if SMS not sent
+    if (!smsSent) {
+      console.log(`[DEV OTP] Phone: ${cleanPhone} → OTP: ${otp}`);
+    }
+
+    res.json({ message: 'OTP sent', isNew });
+  } catch (err) {
+    console.error('[send-otp-phone] Error:', err);
+    res.status(500).json({ message: 'Failed to send OTP' });
+  }
+});
+
+/* =========================
+   VERIFY OTP — PHONE FIRST
+========================= */
+router.post('/verify-otp-phone', authLimiter, async (req, res) => {
+  try {
+    const { phone, otp } = req.body;
+    if (!phone || !otp) return res.status(400).json({ message: 'Phone and OTP are required' });
+
+    const cleanPhone = String(phone).replace(/\D/g, '').trim();
+    const user = await User.findOne({ phone: cleanPhone });
+
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (user.role === 'admin') return res.status(403).json({ message: 'Admin accounts use a dedicated login page' });
+    if (user.loginOTP !== otp || user.loginOTPExpires < Date.now()) {
+      return res.status(401).json({ message: 'Invalid or expired OTP' });
+    }
+
+    // Clear OTP
+    user.loginOTP = undefined;
+    user.loginOTPExpires = undefined;
+    await user.save();
+
+    const isNew = !user.name || user.name.trim() === '';
+
+    const token = jwt.sign(
+      { id: user._id, role: user.role, phone: user.phone, name: user.name },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.json({ token, user, isNew });
+  } catch (err) {
+    console.error('[verify-otp-phone] Error:', err);
+    res.status(500).json({ message: 'OTP verification failed' });
+  }
+});
+
+/* =========================
+   SEND OTP (Login) — Legacy
 ========================= */
 router.post('/send-otp', authLimiter, async (req, res) => {
   try {
@@ -970,6 +1075,33 @@ router.patch('/update-profile/:id', verifyToken, async (req, res) => {
     res.json({ message: 'Profile updated successfully', user });
   } catch (err) {
     console.error('Update profile error:', err);
+    res.status(500).json({ message: 'Failed to update profile' });
+  }
+});
+
+/* =========================
+   SELF: UPDATE OWN PROFILE
+   Used by mobile app — name, city, email (self only)
+   ========================= */
+router.patch('/profile/:userId', verifyToken, async (req, res) => {
+  try {
+    // Users can only update their own profile
+    if (req.user.id !== req.params.userId && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'You can only update your own profile' });
+    }
+
+    const { name, city, email } = req.body;
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    if (name !== undefined && name.trim()) user.name = name.trim();
+    if (city !== undefined) user.city = city.trim();
+    if (email !== undefined && email.trim()) user.email = email.toLowerCase().trim();
+
+    await user.save();
+    res.json({ message: 'Profile updated', user });
+  } catch (err) {
+    console.error('[PATCH /profile] Error:', err);
     res.status(500).json({ message: 'Failed to update profile' });
   }
 });
