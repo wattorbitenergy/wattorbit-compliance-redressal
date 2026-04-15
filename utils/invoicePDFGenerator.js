@@ -147,7 +147,7 @@ const generateInvoicePDF = (invoice, options = {}) => {
             // Total Box
             doc.rect(360, y - 4, 185, 24).fill(primaryColor);
             doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(10);
-            doc.text('Total Amount Payable:', calculationX - 20, y + 4, { width: 110, align: 'right' });
+            doc.text('Total Amount Payable:', 365, y + 4, { width: 95, align: 'left' });
             doc.text(`₹${invoice.totalAmount.toFixed(2)}`, valueX, y + 4, { width: 80, align: 'right' });
 
             y += 30; // 🔆 Reduced from 35
@@ -168,11 +168,10 @@ const generateInvoicePDF = (invoice, options = {}) => {
             doc.text('1. This is an electronically generated invoice and does not require a physical signature.', 50, y + 28);
             doc.text('2. All disputes are subject to Lucknow jurisdiction.', 50, y + 36);
 
-            // Promotional Footer
             doc.fontSize(8).font('Helvetica-Bold').fillColor(primaryColor);
             doc.text('Thank you for choosing WattOrbit!', 50, 785, { align: 'center' }); // 🔆 Shifted up from 805
             doc.fontSize(7).font('Helvetica').fillColor(secondaryColor);
-            doc.text('⚡ Powering your space with sustainable energy solutions. Visit us at www.wattorbit.in', 50, 795, { align: 'center' }); // 🔆 Shifted up from 815
+            doc.text('Powering your space with sustainable energy solutions. Visit us at www.wattorbit.in', 50, 795, { align: 'center' }); // 🔆 Shifted up from 815
 
             doc.end();
         } catch (err) {

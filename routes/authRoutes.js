@@ -1081,7 +1081,7 @@ router.patch('/update-profile/:id', verifyToken, async (req, res) => {
 
 /* =========================
    SELF: UPDATE OWN PROFILE
-   Used by mobile app — name, city, email (self only)
+   Used by mobile app — name, city, email, password (self only)
    ========================= */
 router.patch('/profile/:userId', verifyToken, async (req, res) => {
   try {
@@ -1090,13 +1090,16 @@ router.patch('/profile/:userId', verifyToken, async (req, res) => {
       return res.status(403).json({ message: 'You can only update your own profile' });
     }
 
-    const { name, city, email } = req.body;
+    const { name, city, email, password } = req.body;
     const user = await User.findById(req.params.userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     if (name !== undefined && name.trim()) user.name = name.trim();
     if (city !== undefined) user.city = city.trim();
     if (email !== undefined && email.trim()) user.email = email.toLowerCase().trim();
+    if (password !== undefined && password.trim().length >= 6) {
+      user.password = password.trim();
+    }
 
     await user.save();
     res.json({ message: 'Profile updated', user });
