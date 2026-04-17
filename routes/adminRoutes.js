@@ -147,7 +147,7 @@ router.post('/send-weekly-summary', verifyToken, async (req, res) => {
 router.get('/config/:key', async (req, res) => {
     const publicKeys = [
         'social_wa', 'social_fb', 'social_insta', 'social_yt', 'social_x', 'social_li', 'social_email',
-        'enable_social_links', 'enable_mobile_work_permit', 'enable_curations', 'enable_onboarding'
+        'enable_social_links', 'enable_mobile_work_permit', 'enable_curations', 'enable_onboarding', 'new_home_hero'
     ];
 
     // If key is not in whitelist, require verification
