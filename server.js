@@ -236,6 +236,8 @@ app.use('/api/categories', require('./routes/categoryRoutes'));
 app.use('/api/referral-rules', require('./routes/referralRuleRoutes'));
 app.use('/api/work-permit', require('./routes/workPermitRoutes'));
 app.use('/api/trivia', require('./routes/triviaRoutes'));
+app.use('/api/blogs', require('./routes/blogRoutes'));
+app.use('/api/reviews', require('./routes/reviewRoutes'));
 
 if (process.env.NODE_ENV !== 'production') {
   app.use('/api/test-notification', require('./routes/testNotificationRoutes'));
