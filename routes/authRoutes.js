@@ -847,7 +847,7 @@ router.get('/users', verifyToken, async (req, res) => {
 ========================= */
 router.patch('/admin-reset-password/:id', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'employee') {
       return res.status(403).json({ message: 'Admin access required' });
     }
 
@@ -963,7 +963,7 @@ router.post('/upgrade-membership', verifyToken, async (req, res) => {
 ========================= */
 router.patch('/admin/adjust-points', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'employee') {
       return res.status(403).json({ message: 'Admin access required' });
     }
     const { userId, amount } = req.body;
@@ -1003,7 +1003,7 @@ router.patch('/admin/adjust-points', verifyToken, async (req, res) => {
 ========================= */
 router.patch('/admin/toggle-membership', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'employee') {
       return res.status(403).json({ message: 'Admin access required' });
     }
     const { userId, isPlusMember } = req.body;
@@ -1136,7 +1136,7 @@ router.patch('/set-role/:id', verifyToken, async (req, res) => {
 ========================= */
 router.delete('/admin/delete-user/:id', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'employee') {
       return res.status(403).json({ message: 'Admin access required' });
     }
     const user = await User.findByIdAndDelete(req.params.id);
@@ -1154,7 +1154,7 @@ router.delete('/admin/delete-user/:id', verifyToken, async (req, res) => {
    ========================= */
 router.patch('/update-profile/:id', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'employee') {
       return res.status(403).json({ message: 'Admin access required' });
     }
 
@@ -1190,8 +1190,8 @@ router.patch('/update-profile/:id', verifyToken, async (req, res) => {
 router.patch('/profile/:userId', verifyToken, async (req, res) => {
   try {
     // Users can only update their own profile
-    if (req.user.id !== req.params.userId && req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'You can only update your own profile' });
+    if (req.user.id !== req.params.userId && req.user.role !== 'admin' && req.user.role !== 'employee') {
+      return res.status(403).json({ message: 'Access denied: You can only update your own profile unless you are an Admin or Employee.' });
     }
 
     const { name, city, email, password } = req.body;
@@ -1247,8 +1247,8 @@ router.patch('/update-technician-financials', verifyToken, async (req, res) => {
 
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ message: 'User not found' });
-    if (user.role !== 'technician' && req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Only technicians can update financial details' });
+    if (user.role !== 'technician' && req.user.role !== 'admin' && req.user.role !== 'employee') {
+      return res.status(403).json({ message: 'Access denied: Requires Technician, Admin, or Employee role' });
     }
 
     user.bankAccountNo = bankAccountNo;
@@ -1273,7 +1273,7 @@ router.patch('/update-technician-financials', verifyToken, async (req, res) => {
    ========================= */
 router.get('/admin/technician-financials/:userId', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'employee') {
       return res.status(403).json({ message: 'Admin access required' });
     }
 
@@ -1299,7 +1299,7 @@ router.get('/admin/technician-financials/:userId', verifyToken, async (req, res)
 ========================= */
 router.patch('/admin/toggle-sms/:userId', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'employee') {
       return res.status(403).json({ message: 'Admin access required' });
     }
     const user = await User.findById(req.params.userId);
