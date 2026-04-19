@@ -45,14 +45,15 @@ async function recordTechnicianEarning(booking) {
         }
 
         const techShare = Math.max(0, (booking.technicianCharges || 0) - (booking.technicianDiscountShare || 0));
-        const platformPortion = (booking.platformFees || 0) + (booking.taxes || 0);
+        const netPlatformFees = Math.max(0, (booking.platformFees || 0) - (booking.platformDiscountShare || 0));
+        const platformPortion = netPlatformFees + (booking.taxes || 0);
         
         const earning = await TechnicianEarning.create([{
             technicianId: booking.assignedTechnician,
             bookingId: booking._id,
             totalAmount: booking.totalAmount || 0,
             technicianShare: techShare,
-            platformFee: booking.platformFees || 0,
+            platformFee: netPlatformFees,
             taxAmount: booking.taxes || 0,
             status: 'credited',
             isDemo: booking.isDemo || false,
@@ -82,7 +83,7 @@ async function recordTechnicianEarning(booking) {
                 breakdown: {
                     totalAmount: booking.totalAmount,
                     technicianShare: techShare,
-                    platformFees: booking.platformFees,
+                    platformFees: netPlatformFees,
                     taxes: booking.taxes,
                     discount: booking.discount,
                     dynamicCharges: booking.appliedDynamicCharges || []
