@@ -1609,6 +1609,16 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
             await booking.save();
         }
 
+        // 🛡️ CRITICAL FIX: Populate before returning to prevent "vanishing details" on the frontend
+        await booking.populate([
+            { path: 'userId', select: 'name email phone' },
+            { path: 'serviceId', select: 'name category description' },
+            { path: 'packageId', select: 'name price description' },
+            { path: 'addressId' },
+            { path: 'assignedTechnician', select: 'name phone email' },
+            { path: 'organisationId', select: 'name phone email' }
+        ]);
+
         res.json({ message: 'Booking updated successfully', booking });
     } catch (err) {
         console.error('Tech update error:', err);
@@ -2335,8 +2345,9 @@ router.post('/:id/confirm-payment', verifyToken, async (req, res) => {
         await booking.save();
 
         // Auto-generate or update invoice — will now have paymentStatus: 'Paid'
-        // If invoice exists, delete and regenerate so it reflects paid status
-        const existingInvoice = await Invoice.findOneAndDelete({ bookingId: booking._id });
+        // 🛡️ REVISION: Do not delete invoices when payment is received. 
+        // Instead, the autoGenerateInvoice helper will update the existing invoice's paymentStatus.
+        // This ensures the Invoice ID remains stable for audit purposes.
         const invoice = await autoGenerateInvoice(booking._id);
 
         // Push notifications

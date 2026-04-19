@@ -10,10 +10,22 @@ const { generateInvoiceId } = require('./idGenerator');
  */
 async function autoGenerateInvoice(bookingId) {
     try {
-        // Check if invoice already exists
+        // 🛡️ REVISION: If invoice exists, update its payment status/paid amount instead of doing nothing.
+        // This ensures the Invoice ID remains stable and the document stays in sync with booking updates.
         const existingInvoice = await Invoice.findOne({ bookingId });
         if (existingInvoice) {
-            console.log(`Invoice already exists for booking ${bookingId}`);
+            console.log(`Invoice already exists for booking ${bookingId}, checking for status updates...`);
+            
+            // Get payment details if any
+            const payment = await Payment.findOne({ bookingId });
+            const booking = await Booking.findById(bookingId);
+            
+            if (booking) {
+                const isPaid = (payment && payment.status === 'Paid') || booking.paymentReceived;
+                existingInvoice.paymentStatus = isPaid ? 'Paid' : 'Unpaid';
+                existingInvoice.paidAmount = isPaid ? booking.totalAmount : 0;
+                await existingInvoice.save();
+            }
             return existingInvoice;
         }
 

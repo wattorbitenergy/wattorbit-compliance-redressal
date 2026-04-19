@@ -377,9 +377,6 @@ router.post('/admin-login', authLimiter, async (req, res) => {
   } catch (err) {
     console.error("Admin Login Error:", err);
     res.status(500).json({ message: 'Admin login failed' });
-  }
-});
-
 /* =========================
    ADMIN 2FA VERIFY (STEP 2: OTP)
    Issues 15-minute token
@@ -389,17 +386,36 @@ router.post('/admin-verify-2fa', authLimiter, async (req, res) => {
     const { tempRef, otp } = req.body;
     if (!tempRef || !otp) return res.status(400).json({ message: 'Missing 2FA data' });
 
-    const user = await User.findById(tempRef);
+    // Fetch user with backup codes included for check
+    const user = await User.findById(tempRef).select('+backupCodes +password');
     if (!user || user.role !== 'admin') return res.status(401).json({ message: 'Invalid session' });
 
-    if (user.loginOTP !== otp || user.loginOTPExpires < Date.now()) {
-      return res.status(401).json({ message: 'Invalid or expired OTP' });
+    // 🛡️ SECURITY: Backup Code check first
+    let isBackupCode = false;
+    if (user.backupCodes && user.backupCodes.length > 0) {
+      const bcrypt = require('bcryptjs');
+      for (let i = 0; i < user.backupCodes.length; i++) {
+        const match = await bcrypt.compare(otp, user.backupCodes[i]);
+        if (match) {
+          isBackupCode = true;
+          user.backupCodes.splice(i, 1);
+          user.loginOTP = undefined;
+          user.loginOTPExpires = undefined;
+          await user.save();
+          break;
+        }
+      }
     }
 
-    // Clear OTP
-    user.loginOTP = undefined;
-    user.loginOTPExpires = undefined;
-    await user.save();
+    if (!isBackupCode) {
+      if (user.loginOTP !== otp || user.loginOTPExpires < Date.now()) {
+        return res.status(401).json({ message: 'Invalid or expired OTP/Backup Code' });
+      }
+      // Clear OTP (Standard login)
+      user.loginOTP = undefined;
+      user.loginOTPExpires = undefined;
+      await user.save();
+    }
 
     // Issue 15-minute token
     const token = jwt.sign(
@@ -415,9 +431,45 @@ router.post('/admin-verify-2fa', authLimiter, async (req, res) => {
       { expiresIn: '15m' }
     );
 
-    res.json({ token, user, message: 'Admin authenticated successfully. Session valid for 15 minutes.' });
+    res.json({ token, user, message: isBackupCode ? 'Authenticated via Backup Code.' : 'Admin authenticated successfully.' });
   } catch (err) {
+    console.error("Admin Verify 2FA Error:", err);
     res.status(500).json({ message: '2FA verification failed' });
+  }
+});
+
+/* =========================
+   GENERATE ADMIN BACKUP CODES
+========================= */
+router.post('/admin/generate-backup-codes', authLimiter, verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: 'Forbidden' });
+
+    const user = await User.findById(req.user.id).select('+backupCodes');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Generate 10 alphanumeric codes (e.g. ABCD-1234)
+    const codes = [];
+    const hashedCodes = [];
+    const bcrypt = require('bcryptjs');
+
+    for (let i = 0; i < 10; i++) {
+        // Generate 6-digit numeric code (XXXXXX format) for uniformity with OTP
+        const plainCode = Math.floor(100000 + Math.random() * 900000).toString();
+        codes.push(plainCode);
+        hashedCodes.push(await bcrypt.hash(plainCode, 10));
+    }
+
+    user.backupCodes = hashedCodes;
+    await user.save();
+
+    res.json({ 
+      message: 'New backup codes generated. Save these immediately as they will not be shown again.',
+      codes 
+    });
+  } catch (err) {
+    console.error('Backup code generation error:', err);
+    res.status(500).json({ message: 'Failed to generate backup codes' });
   }
 });
 
@@ -469,8 +521,28 @@ router.post('/send-otp-phone', async (req, res) => {
     user.loginOTPExpires = Date.now() + 600000; // 10 min
     await user.save();
 
-    // Try SMS
+    // 📧 Admin Alert for Frictionless Registration
+    if (isNew) {
+      sendAdminAlertEmail(
+        `🆕 New Frictionless User — ${user.phone}`,
+        `<div style="font-family:Arial,sans-serif;max-width:500px;padding:20px;border:1px solid #ddd;border-radius:8px;">
+          <h3 style="color:#1e3a8a;">New Mobile Registration</h3>
+          <p>A new user has registered using phone-only OTP.</p>
+          <table style="width:100%;border-collapse:collapse;">
+            <tr style="background:#f8f9fa;"><td style="padding:6px;font-weight:bold;">Phone</td><td style="padding:6px;">${user.phone}</td></tr>
+            <tr><td style="padding:6px;font-weight:bold;">Status</td><td style="padding:6px;">Auto-Approved</td></tr>
+            <tr style="background:#f8f9fa;"><td style="padding:6px;font-weight:bold;">Registered At</td><td style="padding:6px;">${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</td></tr>
+          </table>
+          <p style="margin-top:16px;"><a href="https://wattorbit.in/admin/users" style="background:#1e3a8a;color:#fff;padding:8px 16px;text-decoration:none;border-radius:6px;">View in Admin Panel</a></p>
+        </div>`
+      ).catch(e => console.error('[Email] Frictionless Admin alert error:', e));
+    }
+
+    // Try both channels if available
     let smsSent = false;
+    let emailSent = false;
+
+    // 📱 Try SMS
     try {
       await sendOTPSms(cleanPhone, otp);
       smsSent = true;
@@ -478,8 +550,23 @@ router.post('/send-otp-phone', async (req, res) => {
       console.error('[OTP] SMS failed:', smsErr.message);
     }
 
-    // Development fallback: log OTP if SMS not sent
-    if (!smsSent) {
+    // 📧 Try Email (if user has one)
+    if (user.email) {
+      try {
+        await mailer.sendMail({
+          to: user.email,
+          subject: 'WattOrbit Login OTP',
+          html: `<h2>Login Verification</h2><p>Your OTP for login is: <strong>${otp}</strong></p><p>This code expires in 10 minutes.</p>`,
+          from: "otp@wattorbit.in"
+        });
+        emailSent = true;
+      } catch (e) {
+        console.error('[OTP] Email failed:', e.message);
+      }
+    }
+
+    // Development fallback: log OTP if no delivery successful
+    if (!smsSent && !emailSent) {
       console.log(`[DEV OTP] Phone: ${cleanPhone} → OTP: ${otp}`);
     }
 
@@ -542,12 +629,9 @@ router.post('/send-otp', authLimiter, async (req, res) => {
 
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    // 🛡️ SECURITY: Block Admin from standard OTP route
     if (user.role === 'admin') {
       return res.status(403).json({ message: 'Admin accounts cannot use standard OTP login' });
     }
-
-    if (!user.email) return res.status(400).json({ message: 'No email registered for this user' });
 
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -556,26 +640,43 @@ router.post('/send-otp', authLimiter, async (req, res) => {
     await user.save();
     cache.del('dashboard_stats:role=admin&org=global');
 
+    let emailSent = false;
+    let smsSent = false;
+
     // Send OTP via email
     if (user.email) {
-      await mailer.sendMail({
-        to: user.email,
-        subject: 'WattOrbit Login OTP',
-        html: `
-          <h2>Login Verification</h2>
-          <p>Your OTP for login is: <strong>${otp}</strong></p>
-          <p>This code expires in 10 minutes.</p>
-        `,
-        from: "otp@wattorbit.in"
-      });
+      try {
+        await mailer.sendMail({
+          to: user.email,
+          subject: 'WattOrbit Login OTP',
+          html: `
+            <h2>Login Verification</h2>
+            <p>Your OTP for login is: <strong>${otp}</strong></p>
+            <p>This code expires in 10 minutes.</p>
+          `,
+          from: "otp@wattorbit.in"
+        });
+        emailSent = true;
+      } catch (e) {
+        console.error('[OTP] Legacy Email failed:', e.message);
+      }
     }
 
-    // Send OTP via SMS (Fast2SMS - WTORBT header)
+    // Send OTP via SMS
     if (user.phone) {
-      await sendOTPSms(user.phone, otp);
+      try {
+        await sendOTPSms(user.phone, otp);
+        smsSent = true;
+      } catch (e) {
+        console.error('[OTP] Legacy SMS failed:', e.message);
+      }
     }
 
-    res.json({ message: 'OTP sent' });
+    if (!emailSent && !smsSent) {
+      return res.status(500).json({ message: 'Failed to deliver OTP via any registered channel' });
+    }
+
+    res.json({ message: 'OTP sent successfully' });
   } catch (error) {
     console.error('OTP Send Error:', error);
     res.status(500).json({ message: 'Failed to send OTP' });

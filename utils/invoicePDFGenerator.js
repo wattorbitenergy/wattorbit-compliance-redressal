@@ -145,9 +145,10 @@ const generateInvoicePDF = (invoice, options = {}) => {
 
             y += 2;
             // Total Box
-            doc.rect(360, y - 4, 185, 24).fill(primaryColor);
+            // Total Box — EXPANDED for better spacing and to prevent text wrap
+            doc.rect(300, y - 6, 245, 28).fill(primaryColor);
             doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(10);
-            doc.text('Total Amount Payable:', 365, y + 4, { width: 95, align: 'left' });
+            doc.text('Total Amount Payable:', 310, y + 4, { width: 140, align: 'left' });
             doc.text(`₹${invoice.totalAmount.toFixed(2)}`, valueX, y + 4, { width: 80, align: 'right' });
 
             y += 30; // 🔆 Reduced from 35

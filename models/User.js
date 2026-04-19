@@ -97,6 +97,10 @@ const userSchema = new mongoose.Schema({
     financialDetailsProvided: {
         type: Boolean,
         default: false
+    },
+    backupCodes: {
+        type: [String],
+        select: false
     }
 }, { timestamps: true });
 
@@ -133,6 +137,7 @@ userSchema.set('toJSON', {
         delete ret.aadhaarNo;
         delete ret.panCard;
         delete ret.upiId;
+        delete ret.backupCodes;
         delete ret.__v;
         return ret;
     }
