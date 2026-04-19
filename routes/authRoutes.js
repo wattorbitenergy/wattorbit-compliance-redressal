@@ -52,7 +52,7 @@ const verifyToken = (req, res, next) => {
 ========================= */
 router.get('/public-features', async (req, res) => {
   try {
-    const whitelist = ['ff_onboarding', 'ff_promo_images'];
+    const whitelist = ['enable_onboarding', 'ff_promo_images'];
     const configs = await Config.find({ key: { $in: whitelist } });
     const flags = {};
     configs.forEach(c => flags[c.key] = c.value);
@@ -377,6 +377,9 @@ router.post('/admin-login', authLimiter, async (req, res) => {
   } catch (err) {
     console.error("Admin Login Error:", err);
     res.status(500).json({ message: 'Admin login failed' });
+  }
+});
+
 /* =========================
    ADMIN 2FA VERIFY (STEP 2: OTP)
    Issues 15-minute token

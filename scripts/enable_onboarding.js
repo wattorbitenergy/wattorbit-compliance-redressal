@@ -15,12 +15,12 @@ async function run() {
         console.log('Connected to MongoDB');
 
         await Config.findOneAndUpdate(
-            { key: 'ff_onboarding' },
+            { key: 'enable_onboarding' },
             { value: true },
             { upsert: true, new: true }
         );
 
-        console.log('✅ Feature flag ff_onboarding ENABLED');
+        console.log('✅ Feature flag enable_onboarding ENABLED');
         process.exit(0);
     } catch (err) {
         console.error('Error:', err);
