@@ -255,6 +255,7 @@ const bookingSchema = new mongoose.Schema({
     
     // Technician Job Photos
     jobPhotos: {
+        problem: [String],
         start: [String],
         progress: [String],
         completion: [String]

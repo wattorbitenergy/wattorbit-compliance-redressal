@@ -2403,15 +2403,17 @@ router.post('/:id/upload-photo', verifyToken, upload.single('image'), async (req
             return res.status(400).json({ message: 'Cannot upload photos to a cancelled booking' });
         }
         
-        // Authorization: Assigned Technician, Admin, Employee, or Engineer
+        // Authorization: Assigned Technician, Admin, Employee, or Engineer, OR Booking Owner (for problem photos)
         const isAssigned = booking.assignedTechnician?.toString() === req.user.id;
         const isPrivileged = ['admin', 'employee', 'engineer'].includes(req.user.role);
-        if (!isPrivileged && !isAssigned) {
+        const isOwner = booking.userId?.toString() === req.user.id;
+
+        if (!isPrivileged && !isAssigned && !(isOwner && stage === 'problem')) {
             return res.status(403).json({ message: 'Unauthorized to upload photos' });
         }
 
-        if (!['start', 'progress', 'completion'].includes(stage)) {
-            return res.status(400).json({ message: 'Invalid stage. Must be start, progress, or completion' });
+        if (!['problem', 'start', 'progress', 'completion'].includes(stage)) {
+            return res.status(400).json({ message: 'Invalid stage. Must be problem, start, progress, or completion' });
         }
 
         if (!req.file) {
@@ -2426,7 +2428,7 @@ router.post('/:id/upload-photo', verifyToken, upload.single('image'), async (req
 
         // 🔆 Photo Sequencing Rules — enforced for active jobs; waived for privileged users on completed bookings
         const isCompleted = booking.status === 'Completed';
-        if (!isCompleted || !isPrivileged) {
+        if ((!isCompleted || !isPrivileged) && stage !== 'problem') {
             if (stage === 'progress' && (!booking.jobPhotos.start || booking.jobPhotos.start.length === 0)) {
                 return res.status(400).json({ message: 'Must upload "Start" photos before "Progress" photos' });
             }
