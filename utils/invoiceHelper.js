@@ -91,6 +91,18 @@ async function autoGenerateInvoice(bookingId) {
             });
         }
 
+        // 3. Add Materials / Spares
+        if (booking.materialsUsed && booking.materialsUsed.length > 0) {
+            booking.materialsUsed.forEach(m => {
+                items.push({
+                    description: `Spare: ${m.name} [${m.make}]`,
+                    quantity: m.quantity,
+                    unitPrice: m.sellingPrice,
+                    total: m.totalLineAmount
+                });
+            });
+        }
+
         // Format address
         const addr = booking.addressId;
         const customerAddress = `${addr.flatNo ? addr.flatNo + ', ' : ''}${addr.building ? addr.building + ', ' : ''}${addr.street}, ${addr.landmark ? addr.landmark + ', ' : ''}${addr.city}, ${addr.state} - ${addr.pincode}`;
@@ -102,9 +114,9 @@ async function autoGenerateInvoice(bookingId) {
             invoiceDate: new Date(),
             dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days due
             items,
-            subtotal: booking.basePrice,
+            subtotal: booking.basePrice + (booking.materialTotal || 0),
             taxRate: 18,
-            taxAmount: booking.taxes || 0,
+            taxAmount: (booking.taxes || 0) + (booking.materialTaxTotal || 0),
             discount: booking.discount || 0,
             totalAmount: booking.totalAmount,
             paymentStatus: (payment && payment.status === 'Paid') || booking.paymentReceived ? 'Paid' : 'Unpaid',

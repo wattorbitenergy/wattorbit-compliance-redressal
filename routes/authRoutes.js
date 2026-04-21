@@ -32,20 +32,7 @@ const authLimiter = rateLimit({
 /* =========================
    JWT VERIFY
 ========================= */
-const verifyToken = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Authorization header missing or invalid' });
-  }
-
-  try {
-    const token = authHeader.split(' ')[1];
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    return res.status(401).json({ message: 'Invalid or expired token' });
-  }
-};
+const { verifyToken } = require('../middleware/authMiddleware');
 
 /* =========================
    PUBLIC FEATURES (Before Login)

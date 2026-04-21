@@ -138,6 +138,7 @@ if (require('fs').existsSync(imagesDir)) {
 }
 
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 /* =====================
    REQUEST LOGGER (ANONYMIZED)
@@ -238,6 +239,7 @@ app.use('/api/work-permit', require('./routes/workPermitRoutes'));
 app.use('/api/trivia', require('./routes/triviaRoutes'));
 app.use('/api/blogs', require('./routes/blogRoutes'));
 app.use('/api/reviews', require('./routes/reviewRoutes'));
+app.use('/api/materials', require('./routes/materialRoutes'));
 
 if (process.env.NODE_ENV !== 'production') {
   app.use('/api/test-notification', require('./routes/testNotificationRoutes'));

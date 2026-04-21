@@ -55,47 +55,12 @@ const upload = multer({
     limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
 });
 
-// Verify token middleware
-const verifyToken = (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'Authorization header missing or invalid' });
-    }
-
-    const token = authHeader.split(' ')[1];
-    try {
-        req.user = jwt.verify(token, process.env.JWT_SECRET);
-        next();
-    } catch (err) {
-        return res.status(401).json({ message: 'Invalid or expired token' });
-    }
-};
-
-// Admin check middleware
-const isAdmin = (req, res, next) => {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ message: 'Admin access required' });
-    }
-    next();
-};
-
-// Admin, Engineer, or Partner (Organisation) check middleware
-const canManageBookings = (req, res, next) => {
-    const roles = ['admin', 'engineer', 'organisation', 'employee'];
-    if (!roles.includes(req.user.role)) {
-        return res.status(403).json({ message: 'Access denied: Requires Admin, Engineer, or Partner role' });
-    }
-    next();
-};
-
-// Admin or Engineer check middleware
-const isAdminOrEngineer = (req, res, next) => {
-    const roles = ['admin', 'engineer', 'employee'];
-    if (!roles.includes(req.user.role)) {
-        return res.status(403).json({ message: 'Administrative access required' });
-    }
-    next();
-};
+const { 
+    verifyToken, 
+    isAdmin, 
+    canManageBookings, 
+    isAdminOrEngineer 
+} = require('../middleware/authMiddleware');
 
 /* =====================
    USER ENDPOINTS
@@ -223,19 +188,13 @@ router.post('/', verifyToken, async (req, res) => {
 
         // --- Calculate Apportionment ---
         let technicianDiscountShare = 0;
-        let platformDiscountShare = 0;
+        let platformDiscountShare = discount;
 
-        if (discount > 0) {
-            if (technicianAbsorbsPercent !== null && technicianAbsorbsPercent !== undefined) {
-                technicianDiscountShare = Math.round(discount * (technicianAbsorbsPercent / 100));
-            } else {
-                if (basePrice > 0) {
-                    technicianDiscountShare = Math.round(discount * (technicianCharges / basePrice));
-                }
-            }
+        if (discount > 0 && typeof technicianAbsorbsPercent !== 'undefined' && technicianAbsorbsPercent !== null) {
+            technicianDiscountShare = Math.round((discount * technicianAbsorbsPercent) / 100);
             platformDiscountShare = discount - technicianDiscountShare;
         }
-
+        
         const netPlatformFees = platformFees - platformDiscountShare;
 
         const taxRate = 18; // 18% GST on platform fees only
@@ -766,6 +725,70 @@ router.patch('/:id/reschedule', verifyToken, async (req, res) => {
    ADMIN ENDPOINTS
 ===================== */
 
+// PATCH: Admin Apply Coupon to existing booking
+router.patch('/:id/admin-apply-coupon', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const { couponCode } = req.body;
+        if (!couponCode) return res.status(400).json({ message: 'Coupon code required' });
+
+        const booking = await Booking.findById(req.params.id);
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+        const coupon = await Coupon.findOne({ code: couponCode.toUpperCase(), isActive: true });
+        if (!coupon) return res.status(404).json({ message: 'Invalid or inactive coupon' });
+
+        if (coupon.expiryDate < new Date()) {
+            return res.status(400).json({ message: 'Coupon has expired' });
+        }
+
+        // Recalculate totals
+        const basePrice = booking.basePrice;
+        if (!coupon.isValid(basePrice)) {
+            return res.status(400).json({ message: `Coupon not applicable. Min order amount: ₹${coupon.minOrderAmount}` });
+        }
+
+        const discount = coupon.calculateDiscount(basePrice);
+        
+        // Update booking
+        booking.couponId = coupon._id;
+        booking.couponCode = coupon.code;
+        booking.discount = discount;
+
+        // Apportionment
+        let technicianDiscountShare = 0;
+        let platformDiscountShare = discount;
+        if (coupon.technicianAbsorbsPercent !== null) {
+            technicianDiscountShare = Math.round((discount * coupon.technicianAbsorbsPercent) / 100);
+            platformDiscountShare = discount - technicianDiscountShare;
+        }
+        booking.technicianDiscountShare = technicianDiscountShare;
+        booking.platformDiscountShare = platformDiscountShare;
+
+        // Recalculate Taxes and Total
+        const netPlatformFees = booking.platformFees - platformDiscountShare;
+        const taxRate = 18;
+        booking.taxes = Math.max(0, Math.round((netPlatformFees * taxRate) / 100));
+        booking.totalAmount = Math.max(0, booking.basePrice + booking.taxes - discount - (booking.pointsUsed || 0));
+
+        booking.statusHistory.push({
+            status: booking.status,
+            timestamp: new Date(),
+            updatedBy: req.user.id,
+            notes: `Coupon ${coupon.code} applied by Admin. Discount: ₹${discount}`
+        });
+
+        await booking.save();
+        await Coupon.findByIdAndUpdate(coupon._id, { $inc: { usedCount: 1 } });
+        cache.del('dashboard_stats:role=admin&org=global');
+
+        res.json({ message: 'Coupon applied successfully', booking });
+    } catch (err) {
+        console.error('Admin apply coupon error:', err);
+        res.status(500).json({ message: 'Failed to apply coupon' });
+    }
+});
+
+
 // GET: Get all bookings with filters (admin and supervisor)
 router.get('/admin/all', verifyToken, isAdminOrEngineer, async (req, res) => {
     try {
@@ -1283,11 +1306,13 @@ router.get('/technician/my-assignments', verifyToken, async (req, res) => {
     }
 });
 
-// PATCH: Start service (technician only)
+// PATCH: Start service (technician or Admin override)
 router.patch('/:id/start', verifyToken, async (req, res) => {
     try {
-        if (req.user.role !== 'technician') {
-            return res.status(403).json({ message: 'Technician access required' });
+        const isAdminOverride = ['admin', 'employee'].includes(req.user.role);
+        
+        if (req.user.role !== 'technician' && !isAdminOverride) {
+            return res.status(403).json({ message: 'Technician access or Admin override required' });
         }
 
         const booking = await Booking.findById(req.params.id);
@@ -1301,9 +1326,10 @@ router.patch('/:id/start', verifyToken, async (req, res) => {
             return res.status(400).json({ message: `Cannot start a ${booking.status.toLowerCase()} booking` });
         }
 
-        // Check if technician is assigned to this booking
-        if (!booking.assignedTechnician || booking.assignedTechnician.toString() !== req.user.id) {
-            return res.status(403).json({ message: 'You are not assigned to this booking' });
+        // Check if technician is assigned or is Admin acting on behalf
+        const isAssigned = booking.assignedTechnician && booking.assignedTechnician.toString() === req.user.id;
+        if (!isAssigned && !isAdminOverride) {
+            return res.status(403).json({ message: 'You are not assigned to this booking, and no Admin override privileges detected.' });
         }
 
         if (booking.status !== 'Assigned') {
@@ -1346,11 +1372,13 @@ router.patch('/:id/start', verifyToken, async (req, res) => {
     }
 });
 
-// PATCH: Complete service (technician only)
+// PATCH: Complete service (technician or Admin override)
 router.patch('/:id/complete', verifyToken, async (req, res) => {
     try {
-        if (req.user.role !== 'technician') {
-            return res.status(403).json({ message: 'Technician access required' });
+        const isAdminOverride = ['admin', 'employee'].includes(req.user.role);
+
+        if (req.user.role !== 'technician' && !isAdminOverride) {
+            return res.status(403).json({ message: 'Technician access or Admin override required' });
         }
 
         const { technicianNotes } = req.body;
@@ -1366,9 +1394,10 @@ router.patch('/:id/complete', verifyToken, async (req, res) => {
             return res.status(400).json({ message: `Booking is already ${booking.status.toLowerCase()}` });
         }
 
-        // Check if technician is assigned to this booking
-        if (!booking.assignedTechnician || booking.assignedTechnician.toString() !== req.user.id) {
-            return res.status(403).json({ message: 'You are not assigned to this booking' });
+        // Check if technician is assigned or is Admin acting on behalf
+        const isAssigned = booking.assignedTechnician && booking.assignedTechnician.toString() === req.user.id;
+        if (!isAssigned && !isAdminOverride) {
+             return res.status(403).json({ message: 'You are not assigned to this booking, and no Admin override privileges detected.' });
         }
 
         if (booking.status !== 'In Progress') {
@@ -1816,9 +1845,7 @@ router.post('/employee/initiate-request', verifyToken, isAdminOrEngineer, async 
             if (technicianAbsorbsPercent !== null && technicianAbsorbsPercent !== undefined) {
                 technicianDiscountShare = Math.round(discount * (technicianAbsorbsPercent / 100));
             } else {
-                if (basePrice > 0) {
-                    technicianDiscountShare = Math.round(discount * (technicianCharges / basePrice));
-                }
+                technicianDiscountShare = 0;
             }
             platformDiscountShare = discount - technicianDiscountShare;
         }
@@ -2464,6 +2491,134 @@ router.post('/:id/upload-photo', verifyToken, upload.single('image'), async (req
         console.error('Photo upload error:', err);
         if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         res.status(500).json({ message: 'Failed to upload photo' });
+    }
+});
+
+/* =====================
+   MATERIAL / SPARES MANAGEMENT
+===================== */
+
+// POST: Add material to a booking (Technician or Manage roles)
+router.patch('/:id/add-material', verifyToken, async (req, res) => {
+    try {
+        const { materialId, quantity } = req.body;
+        if (!materialId || !quantity) {
+            return res.status(400).json({ message: 'materialId and quantity are required' });
+        }
+
+        const Material = require('../models/Material');
+        const material = await Material.findById(materialId);
+        if (!material || !material.isActive) {
+            return res.status(404).json({ message: 'Material not found or inactive' });
+        }
+
+        const qty = Number(quantity);
+
+        // 🛡️ Stock check
+        if (material.stockQuantity < qty) {
+            return res.status(400).json({ 
+                message: `Insufficient stock. Available: ${material.stockQuantity} ${material.unit}(s), Requested: ${qty}` 
+            });
+        }
+
+        const booking = await Booking.findById(req.params.id);
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+        // Authorization: Only assigned tech or management roles
+        const canEdit = req.user.role === 'admin' || req.user.role === 'employee' || 
+                        (req.user.role === 'technician' && booking.assignedTechnician?.toString() === req.user.id);
+        
+        if (!canEdit) return res.status(403).json({ message: 'Access denied' });
+        if (['Completed', 'Cancelled'].includes(booking.status)) {
+            return res.status(400).json({ message: 'Cannot add materials to completed or cancelled bookings' });
+        }
+
+        // Calculate snapshots
+        const sellingPrice = material.sellingPrice;
+        const sellingTaxRate = material.sellingTaxRate;
+        const sellingTaxAmount = Math.round((sellingPrice * sellingTaxRate) / 100);
+        const lineTaxAmount = sellingTaxAmount * qty;
+        const totalLineAmount = qty * sellingPrice + lineTaxAmount;
+
+        // Add to array
+        booking.materialsUsed.push({
+            materialId: material._id,
+            name: material.name,
+            make: material.make,
+            quantity: qty,
+            sellingPrice,
+            sellingTaxRate,
+            sellingTaxAmount,
+            lineTaxAmount,
+            totalLineAmount
+        });
+
+        // 📦 Decrement stock
+        material.stockQuantity = Math.max(0, material.stockQuantity - qty);
+        await material.save();
+
+        // Recalculate totals
+        let materialTotal = 0;
+        let materialTaxTotal = 0;
+        booking.materialsUsed.forEach(m => {
+            materialTotal += (m.sellingPrice * m.quantity);
+            materialTaxTotal += (m.sellingTaxAmount * m.quantity);
+        });
+
+        booking.materialTotal = materialTotal;
+        booking.materialTaxTotal = materialTaxTotal;
+        
+        // Recalculate Grand Total
+        booking.totalAmount = Math.max(0, booking.basePrice + booking.taxes + materialTotal + materialTaxTotal - (booking.discount || 0) - (booking.pointsUsed || 0));
+
+        await booking.save();
+        res.json({ message: 'Material added', booking });
+    } catch (err) {
+        res.status(500).json({ message: 'Error adding material', error: err.message });
+    }
+});
+
+// DELETE: Remove material from booking
+router.delete('/:id/remove-material/:lineItemId', verifyToken, async (req, res) => {
+    try {
+        const booking = await Booking.findById(req.params.id);
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+        const canEdit = req.user.role === 'admin' || req.user.role === 'employee' || 
+                        (req.user.role === 'technician' && booking.assignedTechnician?.toString() === req.user.id);
+        
+        if (!canEdit) return res.status(403).json({ message: 'Access denied' });
+        if (['Completed', 'Cancelled'].includes(booking.status)) {
+            return res.status(400).json({ message: 'Cannot remove materials from completed or cancelled bookings' });
+        }
+
+        // 📦 Find the line item to restore stock before removing
+        const removedItem = booking.materialsUsed.find(m => m._id.toString() === req.params.lineItemId);
+        if (removedItem && removedItem.materialId) {
+            const Material = require('../models/Material');
+            await Material.findByIdAndUpdate(removedItem.materialId, {
+                $inc: { stockQuantity: removedItem.quantity }
+            });
+        }
+
+        booking.materialsUsed = booking.materialsUsed.filter(m => m._id.toString() !== req.params.lineItemId);
+
+        // Recalculate totals
+        let materialTotal = 0;
+        let materialTaxTotal = 0;
+        booking.materialsUsed.forEach(m => {
+            materialTotal += (m.sellingPrice * m.quantity);
+            materialTaxTotal += (m.sellingTaxAmount * m.quantity);
+        });
+
+        booking.materialTotal = materialTotal;
+        booking.materialTaxTotal = materialTaxTotal;
+        booking.totalAmount = Math.max(0, booking.basePrice + booking.taxes + materialTotal + materialTaxTotal - (booking.discount || 0) - (booking.pointsUsed || 0));
+
+        await booking.save();
+        res.json({ message: 'Material removed', booking });
+    } catch (err) {
+        res.status(500).json({ message: 'Error removing material', error: err.message });
     }
 });
 

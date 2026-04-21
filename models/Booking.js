@@ -144,6 +144,26 @@ const bookingSchema = new mongoose.Schema({
         recipient: { type: String, enum: ['Platform', 'Technician'] }
     }],
 
+    // 🛠️ MATERIALS / INVENTORY
+    materialsUsed: [{
+        materialId: { type: mongoose.Schema.Types.ObjectId, ref: 'Material' },
+        name: String,
+        make: String,
+        quantity: { type: Number, default: 1 },
+        sellingPrice: Number,      // Snapshot of net price at time of use
+        sellingTaxRate: Number,    // Snapshot of tax rate at time of use
+        sellingTaxAmount: Number,  // Snapshot of tax amount
+        totalLineAmount: Number    // Qty * (Net + Tax)
+    }],
+    materialTotal: {
+        type: Number,
+        default: 0
+    },
+    materialTaxTotal: {
+        type: Number,
+        default: 0
+    },
+
     // Additional details
     customerNotes: {
         type: String,
