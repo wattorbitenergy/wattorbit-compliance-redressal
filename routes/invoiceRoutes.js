@@ -10,7 +10,7 @@ const { generateInvoiceId } = require('../utils/idGenerator');
 const { convertNumberToWords } = require('../utils/numberToWords');
 const jwt = require('jsonwebtoken');
 
-// ... (verifyToken middleware remains same)
+const { verifyToken } = require('../middleware/authMiddleware');
 
 // POST: Generate invoice for booking (auto-triggered or manual)
 router.post('/generate', verifyToken, async (req, res) => {
