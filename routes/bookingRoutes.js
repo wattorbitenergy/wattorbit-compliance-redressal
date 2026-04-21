@@ -12,6 +12,7 @@ const FinancialLedger = require('../models/FinancialLedger');
 const Invoice = require('../models/Invoice');
 const DeletedBooking = require('../models/DeletedBooking');
 const { generateBookingId } = require('../utils/idGenerator');
+const { round } = require('../utils/mathUtils');
 const { triggerAutomation } = require('../utils/automationEngine');
 const { sendUserNotification, sendTopicNotification } = require('../utils/notificationHelper');
 const { autoGenerateInvoice } = require('../utils/invoiceHelper');
@@ -182,7 +183,7 @@ router.post('/', verifyToken, async (req, res) => {
         // Note: Deciding that coupons take precedence and are not additive by default unless specified
         if (discount === 0 && servicePackage.discount && servicePackage.discount.percentage > 0) {
             if (!servicePackage.discount.validUntil || new Date(servicePackage.discount.validUntil) >= new Date()) {
-                discount = Math.round((basePrice * servicePackage.discount.percentage) / 100);
+                discount = round((basePrice * servicePackage.discount.percentage) / 100);
             }
         }
 
@@ -191,16 +192,16 @@ router.post('/', verifyToken, async (req, res) => {
         let platformDiscountShare = discount;
 
         if (discount > 0 && typeof technicianAbsorbsPercent !== 'undefined' && technicianAbsorbsPercent !== null) {
-            technicianDiscountShare = Math.round((discount * technicianAbsorbsPercent) / 100);
-            platformDiscountShare = discount - technicianDiscountShare;
+            technicianDiscountShare = round((discount * technicianAbsorbsPercent) / 100);
+            platformDiscountShare = round(discount - technicianDiscountShare);
         }
         
-        const netPlatformFees = platformFees - platformDiscountShare;
+        const netPlatformFees = round(platformFees - platformDiscountShare);
 
         const taxRate = 18; // 18% GST on platform fees only
-        const taxes = Math.max(0, Math.round((netPlatformFees * taxRate) / 100));
+        const taxes = Math.max(0, round((netPlatformFees * taxRate) / 100));
 
-        const totalAmount = Math.max(0, basePrice + taxes - discount - pointsToUse);
+        const totalAmount = Math.max(0, round(basePrice + taxes - discount - pointsToUse));
 
         // For Online payments: defer bookingId generation until payment is verified.
         // For COD/Wallet: generate bookingId immediately.
@@ -765,10 +766,10 @@ router.patch('/:id/admin-apply-coupon', verifyToken, isAdmin, async (req, res) =
         booking.platformDiscountShare = platformDiscountShare;
 
         // Recalculate Taxes and Total
-        const netPlatformFees = booking.platformFees - platformDiscountShare;
+        const netPlatformFees = round((booking.platformFees || 0) - (booking.platformDiscountShare || 0));
         const taxRate = 18;
-        booking.taxes = Math.max(0, Math.round((netPlatformFees * taxRate) / 100));
-        booking.totalAmount = Math.max(0, booking.basePrice + booking.taxes - discount - (booking.pointsUsed || 0));
+        booking.taxes = Math.max(0, round((netPlatformFees * taxRate) / 100));
+        booking.totalAmount = Math.max(0, round(booking.basePrice + booking.taxes - (booking.discount || 0) - (booking.pointsUsed || 0)));
 
         booking.statusHistory.push({
             status: booking.status,
@@ -1843,16 +1844,16 @@ router.post('/employee/initiate-request', verifyToken, isAdminOrEngineer, async 
 
         if (discount > 0) {
             if (technicianAbsorbsPercent !== null && technicianAbsorbsPercent !== undefined) {
-                technicianDiscountShare = Math.round(discount * (technicianAbsorbsPercent / 100));
+                technicianDiscountShare = round(discount * (technicianAbsorbsPercent / 100));
             } else {
                 technicianDiscountShare = 0;
             }
             platformDiscountShare = discount - technicianDiscountShare;
         }
 
-        const netPlatformFees = Math.max(0, platformFees - platformDiscountShare);
-        const taxes = Math.round((netPlatformFees * 18) / 100);
-        const totalAmount = Math.max(0, basePrice + taxes - discount);
+        const netPlatformFees = round(platformFees - platformDiscountShare);
+        const taxes = round((netPlatformFees * 18) / 100);
+        const totalAmount = Math.max(0, round(basePrice + taxes - discount));
 
         // 5. Generate OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -2545,6 +2546,7 @@ router.patch('/:id/add-material', verifyToken, async (req, res) => {
             materialId: material._id,
             name: material.name,
             make: material.make,
+            hsnCode: material.hsnCode,
             quantity: qty,
             sellingPrice,
             sellingTaxRate,

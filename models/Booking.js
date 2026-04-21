@@ -149,6 +149,7 @@ const bookingSchema = new mongoose.Schema({
         materialId: { type: mongoose.Schema.Types.ObjectId, ref: 'Material' },
         name: String,
         make: String,
+        hsnCode: String,           // Snapshot of HSN code at time of use
         quantity: { type: Number, default: 1 },
         sellingPrice: Number,      // Snapshot of net price at time of use
         sellingTaxRate: Number,    // Snapshot of tax rate at time of use

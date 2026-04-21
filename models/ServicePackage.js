@@ -16,6 +16,11 @@ const servicePackageSchema = new mongoose.Schema({
         required: true,
         trim: true
     },
+    sacCode: {
+        type: String,
+        default: '998700',
+        trim: true
+    },
     description: {
         type: String,
         required: true

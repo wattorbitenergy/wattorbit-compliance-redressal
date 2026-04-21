@@ -7,8 +7,11 @@ const TechnicianPayout = require('../models/TechnicianPayout');
 const Booking = require('../models/Booking');
 const User = require('../models/User');
 const mongoose = require('mongoose');
+const Invoice = require('../models/Invoice');
 const { updateUniversalLedger } = require('../utils/technicianFinanceHelper');
 const auditLogger = require('../utils/auditLogger');
+const { round } = require('../utils/mathUtils');
+const { jsonToCsv } = require('../utils/csvUtils');
 
 router.use(auditLogger);
 
@@ -382,68 +385,123 @@ router.patch('/admin/process-redemption/:id', verifyToken, isAdmin, async (req, 
 
 /**
  * GET: Admin GST Liability
- * Calculates GST based on net platform earnings for completed/confirmed bookings
+ * Calculates GST based on Invoices (Output Tax) minus Material Purchase Taxes (Input Tax Credit)
  */
 router.get('/admin/finance/gst-liability', verifyToken, isAdmin, async (req, res) => {
     try {
         const { startDate, endDate } = req.query;
-        let query = {
-            status: { $in: ['Completed', 'Confirmed', 'Assigned', 'In Progress'] } // Bookings that generate liability
-        };
+        let query = {};
 
         if (startDate || endDate) {
-            query.createdAt = {};
-            if (startDate) query.createdAt.$gte = new Date(startDate);
-            if (endDate) query.createdAt.$lte = new Date(endDate);
+            query.invoiceDate = {};
+            if (startDate) query.invoiceDate.$gte = new Date(startDate);
+            if (endDate) query.invoiceDate.$lte = new Date(endDate);
         }
 
-        const bookings = await Booking.find(query)
-            .populate('assignedTechnician', 'name phone')
-            .sort({ createdAt: -1 })
+        // 1. Get all Invoices in period
+        const invoices = await Invoice.find(query)
+            .populate({
+                path: 'bookingId',
+                select: 'bookingId materialsUsed status'
+            })
+            .sort({ invoiceDate: -1 })
             .lean();
 
-        let totalGrossPlatformFees = 0;
-        let totalPlatformDiscountShare = 0;
-        let totalNetPlatformEarnings = 0;
-        let totalGstLiability = 0;
+        let totalOutputTax = 0;
+        let totalInputTax = 0; // ITC
+        let totalTaxableValue = 0;
 
-        const liabilityData = bookings.map(b => {
-            const grossPlatformFee = b.platformFees || 0;
-            const platformDiscountShare = b.platformDiscountShare || 0;
-            const netPlatformFee = Math.max(0, grossPlatformFee - platformDiscountShare);
-            const gst = b.taxes || 0; // The already calculated GST stored on the booking (18% of net)
+        const liabilityData = invoices.map(inv => {
+            const outputTax = round(inv.taxAmount || 0);
+            const taxableValue = round(inv.subtotal || 0);
+            
+            // Calculate ITC from linked booking materials
+            let itemITC = 0;
+            if (inv.bookingId && inv.bookingId.materialsUsed) {
+                inv.bookingId.materialsUsed.forEach(m => {
+                    // ITC is the tax paid during purchase
+                    itemITC += round((m.purchaseTaxAmount || 0) * (m.quantity || 1));
+                });
+            }
 
-            totalGrossPlatformFees += grossPlatformFee;
-            totalPlatformDiscountShare += platformDiscountShare;
-            totalNetPlatformEarnings += netPlatformFee;
-            totalGstLiability += gst;
+            totalOutputTax += outputTax;
+            totalInputTax += itemITC;
+            totalTaxableValue += taxableValue;
 
             return {
-                bookingId: b.bookingId || b._id,
-                date: b.createdAt,
-                status: b.status,
-                technician: b.assignedTechnician ? b.assignedTechnician.name : 'Unassigned',
-                basePrice: b.basePrice || 0,
-                grossPlatformFee,
-                platformDiscountShare,
-                netPlatformFee,
-                gstLiability: gst
+                invoiceId: inv.invoiceId,
+                date: inv.invoiceDate,
+                customer: inv.customerName,
+                taxableValue,
+                outputTax,
+                inputTaxCredit: round(itemITC),
+                netLiability: round(outputTax - itemITC),
+                cgst: round(inv.totalCGST || 0),
+                sgst: round(inv.totalSGST || 0),
+                igst: round(inv.totalIGST || 0)
             };
         });
 
         res.json({
             summary: {
-                totalBookings: liabilityData.length,
-                totalGrossPlatformFees,
-                totalPlatformDiscountShare,
-                totalNetPlatformEarnings,
-                totalGstLiability
+                totalInvoices: invoices.length,
+                totalTaxableValue: round(totalTaxableValue),
+                totalOutputTax: round(totalOutputTax),
+                totalInputTaxCredit: round(totalInputTax),
+                netGstLiability: round(totalOutputTax - totalInputTax)
             },
             data: liabilityData
         });
     } catch (err) {
         console.error('Error fetching GST liability:', err);
         res.status(500).json({ message: 'Failed to fetch GST liability' });
+    }
+});
+
+/**
+ * GET: Export Ledger as CSV
+ */
+router.get('/admin/finance/ledger/export', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const { startDate, endDate, userId } = req.query;
+        let query = {};
+        
+        if (userId) query.userId = userId;
+        if (startDate || endDate) {
+            query.createdAt = {};
+            if (startDate) query.createdAt.$gte = new Date(startDate);
+            if (endDate) query.createdAt.$lte = new Date(endDate);
+        }
+
+        const entries = await FinancialLedger.find(query)
+            .populate('userId', 'name role phone')
+            .sort({ createdAt: -1 })
+            .lean();
+
+        if (entries.length === 0) {
+            return res.status(404).json({ message: 'No entries found for export' });
+        }
+
+        // Flatten data for CSV
+        const csvData = entries.map(e => ({
+            Date: new Date(e.createdAt).toLocaleString(),
+            UserName: e.userId?.name || 'N/A',
+            Role: e.userId?.role || 'N/A',
+            Type: e.type,
+            Amount: e.amount,
+            BalanceAfter: e.balanceAfter,
+            Description: e.description,
+            ReferenceID: e.referenceId || 'N/A'
+        }));
+
+        const csv = jsonToCsv(csvData);
+        
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename=ledger-export-${new Date().getTime()}.csv`);
+        res.status(200).send(csv);
+    } catch (err) {
+        console.error('Ledger export error:', err);
+        res.status(500).json({ message: 'Failed to export ledger' });
     }
 });
 

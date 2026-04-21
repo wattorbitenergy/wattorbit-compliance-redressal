@@ -124,9 +124,13 @@ const materialSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
+const { round } = require('../utils/mathUtils');
+
+// ... (schema definition remains same)
+
 // Pre-save hook to calculate tax amounts and liability
 materialSchema.pre('save', async function (next) {
-    // Auto-generate Material Code (10001+)
+    // ... (material code generation remains same)
     if (this.isNew || !this.materialCode) {
         try {
             const lastMaterial = await this.constructor.findOne(
@@ -145,13 +149,12 @@ materialSchema.pre('save', async function (next) {
             this.materialCode = nextCode.toString();
         } catch (err) {
             console.error('[MaterialCode] Error generating code:', err);
-            // Optionally handle error, but let validation catch uniqueness if fail
         }
     }
 
-    this.purchaseTaxAmount = Math.round((this.purchasePrice * this.purchaseTaxRate) / 100);
-    this.sellingTaxAmount = Math.round((this.sellingPrice * this.sellingTaxRate) / 100);
-    this.taxLiability = this.sellingTaxAmount - this.purchaseTaxAmount;
+    this.purchaseTaxAmount = round((this.purchasePrice * this.purchaseTaxRate) / 100);
+    this.sellingTaxAmount = round((this.sellingPrice * this.sellingTaxRate) / 100);
+    this.taxLiability = round(this.sellingTaxAmount - this.purchaseTaxAmount);
     next();
 });
 
