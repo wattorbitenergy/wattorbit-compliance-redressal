@@ -20,7 +20,13 @@ const canManageInventory = (req, res, next) => {
 
 // Multer config for material images
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, path.join(__dirname, '../uploads/materials')),
+    destination: (req, file, cb) => {
+        const dest = path.join(__dirname, '../uploads/materials');
+        if (!fs.existsSync(dest)) {
+            fs.mkdirSync(dest, { recursive: true });
+        }
+        cb(null, dest);
+    },
     filename: (req, file, cb) => cb(null, `material_${Date.now()}${path.extname(file.originalname)}`)
 });
 const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 } }); // 2MB max
