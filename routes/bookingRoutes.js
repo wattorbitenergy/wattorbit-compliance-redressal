@@ -556,10 +556,23 @@ router.get('/:id', verifyToken, async (req, res) => {
             return res.status(403).json({ message: 'Access denied' });
         }
 
-        // 🛡️ SECURITY: Hide technician photos from customers
-        if (req.user.role === 'user' || req.user.role === 'organisation') {
+        // 🛡️ SECURITY: Hide sensitive data from customers and technicians
+        if (['user', 'organisation', 'technician', 'engineer'].includes(req.user.role)) {
             const bookingObj = booking.toObject();
-            delete bookingObj.jobPhotos;
+            
+            // Hide technician photos from customers/orgs
+            if (['user', 'organisation'].includes(req.user.role)) {
+                delete bookingObj.jobPhotos;
+            }
+
+            // Hide purchase prices from everyone except admin/employee
+            if (bookingObj.materialsUsed && bookingObj.materialsUsed.length > 0) {
+                bookingObj.materialsUsed = bookingObj.materialsUsed.map(m => {
+                    const { purchasePrice, purchaseTaxRate, purchaseTaxAmount, ...publicData } = m;
+                    return publicData;
+                });
+            }
+
             return res.json(bookingObj);
         }
 
