@@ -93,7 +93,7 @@ router.post('/register', authLimiter, async (req, res) => {
     if (exists) return res.status(409).json({ message: 'User already exists' });
 
     const safeRole = role === 'admin' ? 'user' : role || 'user';
-    const autoApprove = safeRole === 'user';
+    const autoApprove = (safeRole === 'user') || (isAdminOrEmployee && req.body.isApproved === true);
 
     const user = new User({
       username,

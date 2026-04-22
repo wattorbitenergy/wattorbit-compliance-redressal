@@ -151,9 +151,13 @@ const bookingSchema = new mongoose.Schema({
         make: String,
         hsnCode: String,           // Snapshot of HSN code at time of use
         quantity: { type: Number, default: 1 },
+        purchasePrice: Number,     // Snapshot of purchase price
+        purchaseTaxRate: Number,   // Snapshot of purchase tax rate
+        purchaseTaxAmount: Number, // Snapshot of purchase tax amount
         sellingPrice: Number,      // Snapshot of net price at time of use
         sellingTaxRate: Number,    // Snapshot of tax rate at time of use
         sellingTaxAmount: Number,  // Snapshot of tax amount
+        lineTaxAmount: Number,     // Qty * sellingTaxAmount
         totalLineAmount: Number    // Qty * (Net + Tax)
     }],
     materialTotal: {
@@ -188,6 +192,11 @@ const bookingSchema = new mongoose.Schema({
     paymentReceived: {
         type: Boolean,
         default: false
+    },
+    paymentCollectedBy: {
+        type: String,
+        enum: ['Technician', 'Platform'],
+        required: false
     },
     paymentMethod: {
         type: String,

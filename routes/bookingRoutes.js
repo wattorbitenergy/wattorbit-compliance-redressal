@@ -1058,7 +1058,7 @@ router.patch('/:id/assign', verifyToken, canManageBookings, async (req, res) => 
 // PATCH: Update booking status (admin/engineer/partner)
 router.patch('/:id/status', verifyToken, canManageBookings, async (req, res) => {
     try {
-        const { status, notes } = req.body;
+        const { status, notes, paymentCollectedBy } = req.body;
 
         if (!status) {
             return res.status(400).json({ message: 'Status required' });
@@ -1089,11 +1089,13 @@ router.patch('/:id/status', verifyToken, canManageBookings, async (req, res) => 
         }
 
         booking.status = status;
+        if (paymentCollectedBy) booking.paymentCollectedBy = paymentCollectedBy;
+
         booking.statusHistory.push({
             status,
             timestamp: new Date(),
             updatedBy: req.user.id,
-            notes
+            notes: notes ? `${notes}${paymentCollectedBy ? ` (Payment collected by ${paymentCollectedBy})` : ''}` : (paymentCollectedBy ? `Payment collected by ${paymentCollectedBy}` : undefined)
         });
 
         if (status === 'Completed') {
@@ -1515,7 +1517,7 @@ router.get('/:id/whatsapp/technician', verifyToken, async (req, res) => {
 // PATCH: Generic update for technicians/admin/engineer (Web Dashboard compatibility)
 router.patch('/:id/tech-update', verifyToken, async (req, res) => {
     try {
-        const { status, remark, paymentReceived, customerBehavior, userRating } = req.body;
+        const { status, remark, paymentReceived, paymentCollectedBy, customerBehavior, userRating } = req.body;
         const booking = await Booking.findById(req.params.id);
 
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
@@ -1539,6 +1541,7 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
 
         if (status && !isAlreadyCompleted) booking.status = status;
         if (remark) booking.technicianNotes = remark;
+        if (paymentCollectedBy) booking.paymentCollectedBy = paymentCollectedBy;
         if (paymentReceived !== undefined) {
             booking.paymentReceived = paymentReceived;
             // Sync paymentStatus for consistency
@@ -1572,7 +1575,7 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
             status: booking.status,
             timestamp: new Date(),
             updatedBy: req.user.id,
-            notes: remark || (paymentReceived === true ? 'Payment marked as received' : 'Status updated via dashboard')
+            notes: remark || (paymentReceived === true ? `Payment marked as received${paymentCollectedBy ? ` (Collected by ${paymentCollectedBy})` : ''}` : 'Status updated via dashboard')
         });
 
         if (status === 'Completed' || paymentReceived === true) {
@@ -2548,6 +2551,9 @@ router.patch('/:id/add-material', verifyToken, async (req, res) => {
             make: material.make,
             hsnCode: material.hsnCode,
             quantity: qty,
+            purchasePrice: material.purchasePrice,
+            purchaseTaxRate: material.purchaseTaxRate,
+            purchaseTaxAmount: material.purchaseTaxAmount,
             sellingPrice,
             sellingTaxRate,
             sellingTaxAmount,

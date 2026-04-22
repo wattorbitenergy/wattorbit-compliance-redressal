@@ -60,15 +60,23 @@ async function recordTechnicianEarning(booking) {
             notes: `Earnings for booking #${booking.bookingId} (${booking.paymentMethod})`
         }], { session });
 
-        // 💰 Deduct/Credit based on Payment Method
-        // COD: Tech took cash, owes platform its portion.
-        // Online: Platform took cash, owes tech their share.
-        const isCOD = booking.paymentMethod === 'COD' || !booking.paymentMethod;
-        const amount = isCOD ? -platformPortion : techShare;
-        const type = isCOD ? 'COMMISSION_DEDUCTION' : 'EARNING';
-        const description = isCOD 
-            ? `Commission deducted for COD booking #${booking.bookingId}` 
-            : `Earning credited for online booking #${booking.bookingId}`;
+        // 💰 Deduct/Credit based on Payment Collector
+        // Technician: Tech took cash, owes platform its portion (COMMISSION_DEDUCTION).
+        // Platform: Platform took payment, owes tech their share (EARNING).
+        let isDeduction = false;
+        
+        if (booking.paymentCollectedBy) {
+            isDeduction = booking.paymentCollectedBy === 'Technician';
+        } else {
+            // Backward compatibility fallback
+            isDeduction = booking.paymentMethod === 'COD' || !booking.paymentMethod;
+        }
+
+        const amount = isDeduction ? -platformPortion : techShare;
+        const type = isDeduction ? 'COMMISSION_DEDUCTION' : 'EARNING';
+        const description = isDeduction 
+            ? `Commission deducted for booking #${booking.bookingId} (Collected by ${booking.paymentCollectedBy || 'Technician'})` 
+            : `Earning credited for booking #${booking.bookingId} (Collected by Platform)`;
 
         // 📜 Record in Universal Financial Ledger
         await updateUniversalLedger(

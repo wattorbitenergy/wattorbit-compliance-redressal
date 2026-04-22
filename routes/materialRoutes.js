@@ -88,6 +88,7 @@ router.get('/reports/usage', verifyToken, canManageInventory, async (req, res) =
         const usageMap = {};
         let totalRevenue = 0;
         let totalTax = 0;
+        let totalInputTax = 0;
         let totalUnits = 0;
 
         bookings.forEach(b => {
@@ -100,15 +101,18 @@ router.get('/reports/usage', verifyToken, canManageInventory, async (req, res) =
                         totalQuantity: 0,
                         totalRevenue: 0,
                         totalTax: 0,
+                        totalInputTax: 0,
                         usageCount: 0
                     };
                 }
                 usageMap[key].totalQuantity += m.quantity;
                 usageMap[key].totalRevenue += m.sellingPrice * m.quantity;
                 usageMap[key].totalTax += m.sellingTaxAmount * m.quantity;
+                usageMap[key].totalInputTax += (m.purchaseTaxAmount || 0) * m.quantity;
                 usageMap[key].usageCount += 1;
                 totalRevenue += m.sellingPrice * m.quantity;
                 totalTax += m.sellingTaxAmount * m.quantity;
+                totalInputTax += (m.purchaseTaxAmount || 0) * m.quantity;
                 totalUnits += m.quantity;
             });
         });
@@ -120,7 +124,9 @@ router.get('/reports/usage', verifyToken, canManageInventory, async (req, res) =
                 totalBookingsWithMaterials: bookings.length,
                 totalUnitsUsed: totalUnits,
                 totalMaterialRevenue: totalRevenue,
-                totalMaterialTax: totalTax
+                totalMaterialOutputTax: totalTax,
+                totalMaterialInputTax: totalInputTax,
+                netMaterialLiability: totalTax - totalInputTax
             },
             materials: usageList
         });
