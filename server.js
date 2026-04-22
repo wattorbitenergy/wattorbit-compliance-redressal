@@ -240,6 +240,7 @@ app.use('/api/trivia', require('./routes/triviaRoutes'));
 app.use('/api/blogs', require('./routes/blogRoutes'));
 app.use('/api/reviews', require('./routes/reviewRoutes'));
 app.use('/api/materials', require('./routes/materialRoutes'));
+app.use('/api/orders', require('./routes/orderRoutes'));
 
 if (process.env.NODE_ENV !== 'production') {
   app.use('/api/test-notification', require('./routes/testNotificationRoutes'));

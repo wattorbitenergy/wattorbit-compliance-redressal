@@ -129,7 +129,7 @@ const { round } = require('../utils/mathUtils');
 // ... (schema definition remains same)
 
 // Pre-save hook to calculate tax amounts and liability
-materialSchema.pre('save', async function (next) {
+materialSchema.pre('save', async function () {
     // ... (material code generation remains same)
     if (this.isNew || !this.materialCode) {
         try {
@@ -155,7 +155,6 @@ materialSchema.pre('save', async function (next) {
     this.purchaseTaxAmount = round((this.purchasePrice * this.purchaseTaxRate) / 100);
     this.sellingTaxAmount = round((this.sellingPrice * this.sellingTaxRate) / 100);
     this.taxLiability = round(this.sellingTaxAmount - this.purchaseTaxAmount);
-    next();
 });
 
 // Virtual: check if stock is low
