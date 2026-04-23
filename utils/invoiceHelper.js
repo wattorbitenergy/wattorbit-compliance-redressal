@@ -69,13 +69,19 @@ async function autoGenerateInvoice(bookingId) {
                 description: `${booking.serviceId.name} - ${booking.packageId.name} (Technician Fees)`,
                 quantity: 1,
                 unitPrice: baseTechFee,
+                taxableValue: baseTechFee,
+                taxRate: 0,
+                taxAmount: 0,
                 total: baseTechFee
             },
             {
                 description: `${booking.serviceId.name} - ${booking.packageId.name} (Platform Fees)`,
                 quantity: 1,
                 unitPrice: basePlatformFee,
-                total: basePlatformFee
+                taxableValue: basePlatformFee,
+                taxRate: 18,
+                taxAmount: booking.taxes || 0, // Use the pre-calculated taxes from booking
+                total: basePlatformFee + (booking.taxes || 0)
             }
         ];
 
@@ -86,6 +92,9 @@ async function autoGenerateInvoice(bookingId) {
                     description: `Surcharge: ${charge.name}`,
                     quantity: 1,
                     unitPrice: charge.amount,
+                    taxableValue: charge.amount,
+                    taxRate: charge.recipient === 'Technician' ? 0 : 18,
+                    taxAmount: 0, // Simplified for surcharges as they are usually small
                     total: charge.amount
                 });
             });
@@ -98,6 +107,9 @@ async function autoGenerateInvoice(bookingId) {
                     description: `Spare: ${m.name} [${m.make}]`,
                     quantity: m.quantity,
                     unitPrice: m.sellingPrice,
+                    taxableValue: m.taxableValue || (m.sellingPrice * m.quantity),
+                    taxRate: m.taxRate || 0,
+                    taxAmount: m.taxAmount || 0,
                     total: m.totalLineAmount
                 });
             });

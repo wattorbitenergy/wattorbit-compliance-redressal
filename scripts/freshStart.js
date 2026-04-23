@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
-const User = require('./models/User');
-const Complaint = require('./models/Complaint');
-const Counter = require('./models/Counter');
+const User = require('../models/User');
+const Complaint = require('../models/Complaint');
+const Counter = require('../models/Counter');
 require('dotenv').config();
 
 const MONGO_URI = process.env.MONGO_URI;

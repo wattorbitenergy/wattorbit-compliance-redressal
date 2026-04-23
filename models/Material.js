@@ -68,11 +68,11 @@ const materialSchema = new mongoose.Schema({
         comment: "Unit of measurement: Nos., Mtr, Lot"
     },
 
-    // Photo
-    imageUrl: {
-        type: String,
-        default: '',
-        comment: "Product/packaging photo URL"
+    // Photos
+    images: {
+        type: [String],
+        default: [],
+        comment: "Product/packaging photo URLs"
     },
     
     // Financials - Purchase
@@ -94,6 +94,12 @@ const materialSchema = new mongoose.Schema({
     },
 
     // Financials - Selling
+    mrp: {
+        type: Number,
+        required: true,
+        min: 0,
+        comment: "Maximum Retail Price (Inclusive of all taxes)"
+    },
     sellingPrice: {
         type: Number,
         required: true,
@@ -125,6 +131,13 @@ const materialSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const { round } = require('../utils/mathUtils');
+
+// Virtual: Discount Percentage
+materialSchema.virtual('discountPercentage').get(function () {
+    const totalSellingPrice = this.sellingPrice + this.sellingTaxAmount;
+    if (!this.mrp || totalSellingPrice >= this.mrp) return 0;
+    return Math.round(((this.mrp - totalSellingPrice) / this.mrp) * 100);
+});
 
 // ... (schema definition remains same)
 

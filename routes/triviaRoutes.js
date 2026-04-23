@@ -116,8 +116,8 @@ router.delete('/admin/:id', verifyToken, isAdmin, async (req, res) => {
 // USER ROUTES
 // ==========================================
 
-// GET daily active trivia for the user
-router.get('/daily', verifyToken, async (req, res) => {
+// GET daily active trivia for the user (Public access to see the question)
+router.get('/daily', async (req, res) => {
   try {
     const activeTrivia = await Trivia.findOne({ isActive: true });
     
@@ -125,22 +125,38 @@ router.get('/daily', verifyToken, async (req, res) => {
       return res.json({ available: false });
     }
 
-    // Check if user already attempted it
-    const attempt = await TriviaAttempt.findOne({ 
-      userId: req.user._id, 
-      triviaId: activeTrivia._id 
-    });
+    let hasAttempted = false;
+    let attemptDetails = null;
+
+    // Optional check if token is provided
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+            const token = authHeader.split(' ')[1];
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            
+            // Check if user already attempted it
+            const attempt = await TriviaAttempt.findOne({ 
+                userId: decoded._id || decoded.id, 
+                triviaId: activeTrivia._id 
+            });
+            
+            if (attempt) {
+                hasAttempted = true;
+                attemptDetails = { isCorrect: attempt.isCorrect, pointsAwarded: attempt.pointsAwarded };
+            }
+        } catch (e) {}
+    }
 
     res.json({
       available: true,
-      hasAttempted: !!attempt,
-      attemptDetails: attempt ? { isCorrect: attempt.isCorrect, pointsAwarded: attempt.pointsAwarded } : null,
+      hasAttempted,
+      attemptDetails,
       trivia: {
         _id: activeTrivia._id,
         questionText: activeTrivia.questionText,
         options: activeTrivia.options,
         rewardPoints: activeTrivia.rewardPoints,
-        // intentionally NOT sending correctOptionIndex
       }
     });
 

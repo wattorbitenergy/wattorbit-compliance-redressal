@@ -68,8 +68,12 @@ async function recordTechnicianEarning(booking) {
         if (booking.paymentCollectedBy) {
             isDeduction = booking.paymentCollectedBy === 'Technician';
         } else {
-            // Backward compatibility fallback
-            isDeduction = booking.paymentMethod === 'COD' || !booking.paymentMethod;
+            // 🛡️ SAFETY: If paymentCollectedBy is not explicitly set, default to Platform (EARNING).
+            // This prevents accidental commission deductions for online payments that were
+            // incorrectly left with paymentMethod=COD.
+            // The routes now enforce paymentCollectedBy, so this fallback should rarely trigger.
+            console.warn(`⚠️ [Finance] paymentCollectedBy not set for booking ${booking.bookingId || booking._id}. Defaulting to Platform (EARNING). PaymentMethod: ${booking.paymentMethod}`);
+            isDeduction = false;
         }
 
         const amount = isDeduction ? -platformPortion : techShare;

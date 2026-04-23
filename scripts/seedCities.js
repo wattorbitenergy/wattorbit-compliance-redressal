@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const City = require("./models/City"); // adjust path if needed
+const City = require("../models/City"); // adjust path if needed
 
 const MONGO_URI = "mongodb://127.0.0.1:27017/your_db_name"; 
 // OR your MongoDB Atlas URI

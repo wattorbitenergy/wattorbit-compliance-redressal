@@ -1556,6 +1556,13 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
         if (remark) booking.technicianNotes = remark;
         if (paymentCollectedBy) booking.paymentCollectedBy = paymentCollectedBy;
         if (paymentReceived !== undefined) {
+            // 🛡️ FINANCE SAFETY: Require paymentCollectedBy when marking payment as received
+            // This prevents wrong wallet calculations (COD fallback treating online as cash)
+            if (paymentReceived === true && !booking.paymentCollectedBy && !paymentCollectedBy) {
+                return res.status(400).json({ 
+                    message: 'paymentCollectedBy is required when marking payment as received. Use "Technician" (cash) or "Platform" (online/QR).' 
+                });
+            }
             booking.paymentReceived = paymentReceived;
             // Sync paymentStatus for consistency
             if (paymentReceived === true) {
@@ -2347,7 +2354,7 @@ router.get('/:id/payment-qr', verifyToken, async (req, res) => {
  */
 router.post('/:id/confirm-payment', verifyToken, async (req, res) => {
     try {
-        const { paymentId, notes } = req.body;
+        const { paymentId, notes, paymentCollectedBy } = req.body;
         const booking = await Booking.findById(req.params.id);
 
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
@@ -2367,6 +2374,14 @@ router.post('/:id/confirm-payment', verifyToken, async (req, res) => {
             return res.status(403).json({ message: 'Unauthorized' });
         }
 
+        // 🛡️ FINANCE SAFETY: Require paymentCollectedBy for correct wallet calculation
+        if (!paymentCollectedBy && !booking.paymentCollectedBy) {
+            return res.status(400).json({ 
+                message: 'paymentCollectedBy is required. Use "Technician" (cash) or "Platform" (online/QR).' 
+            });
+        }
+        if (paymentCollectedBy) booking.paymentCollectedBy = paymentCollectedBy;
+
         const wasAlreadyCompleted = booking.status === 'Completed';
 
         booking.paymentStatus = 'paid';
@@ -2383,7 +2398,7 @@ router.post('/:id/confirm-payment', verifyToken, async (req, res) => {
             status: booking.status,
             timestamp: new Date(),
             updatedBy: req.user.id,
-            notes: notes || `Payment confirmed. TrxID: ${paymentId || 'COD'}`
+            notes: notes || `Payment confirmed. TrxID: ${paymentId || 'COD'}. Collected by: ${booking.paymentCollectedBy}`
         });
 
         await booking.save();

@@ -7,9 +7,9 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const mongoose = require('mongoose');
-const Service = require('./models/Service');
-const ServicePackage = require('./models/ServicePackage');
-const { generateServiceId, generatePackageId } = require('./utils/idGenerator');
+const Service = require('../models/Service');
+const ServicePackage = require('../models/ServicePackage');
+const { generateServiceId, generatePackageId } = require('../utils/idGenerator');
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/wcrm_dev';
 

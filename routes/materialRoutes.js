@@ -31,19 +31,21 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 } }); // 2MB max
 
-// GET: List all materials (3-tier access)
-router.get('/', verifyToken, async (req, res) => {
+// GET: List all materials (Public access)
+router.get('/', async (req, res) => {
     try {
-        const role = req.user.role;
-        const isManager = ['admin', 'employee'].includes(role);
-        const isTechnician = role === 'technician';
+        let selectFields = 'name make description materialCode unit sellingPrice images mrp isActive';
         
-        // 3-tier field selection
-        let selectFields = '';
-        if (isTechnician) {
-            selectFields = 'name make description hsnCode materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity imageUrl isActive';
-        } else if (!isManager) {
-            selectFields = 'name make description materialCode unit sellingPrice imageUrl isActive';
+        // If logged in, we might provide more info
+        const authHeader = req.headers.authorization;
+        if (authHeader) {
+            try {
+                const token = authHeader.split(' ')[1];
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                if (['admin', 'employee', 'technician'].includes(decoded.role)) {
+                    selectFields = 'name make description hsnCode materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity images mrp isActive';
+                }
+            } catch (e) {}
         }
 
         const materials = await Material.find({ isActive: true }).select(selectFields).sort({ name: 1 });
@@ -141,18 +143,20 @@ router.get('/reports/usage', verifyToken, canManageInventory, async (req, res) =
     }
 });
 
-// GET: Single material
-router.get('/:id', verifyToken, async (req, res) => {
+// GET: Single material (Public access)
+router.get('/:id', async (req, res) => {
     try {
-        const role = req.user.role;
-        const isManager = ['admin', 'employee'].includes(role);
-        const isTechnician = role === 'technician';
-        
-        let selectFields = '';
-        if (isTechnician) {
-            selectFields = 'name make description hsnCode materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity imageUrl isActive';
-        } else if (!isManager) {
-            selectFields = 'name make description materialCode unit sellingPrice imageUrl isActive';
+        let selectFields = 'name make description materialCode unit sellingPrice images mrp isActive';
+
+        const authHeader = req.headers.authorization;
+        if (authHeader) {
+            try {
+                const token = authHeader.split(' ')[1];
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                if (['admin', 'employee', 'technician'].includes(decoded.role)) {
+                    selectFields = 'name make description hsnCode materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity images mrp isActive';
+                }
+            } catch (e) {}
         }
         
         const material = await Material.findById(req.params.id).select(selectFields);
@@ -229,17 +233,59 @@ router.post('/:id/upload-image', verifyToken, canManageInventory, upload.single(
         // Upload to Cloudinary
         const cloudinaryResult = await uploadToCloudinary(req.file.path, 'wattorbit/materials');
         
-        // Build URL path
-        material.imageUrl = cloudinaryResult.url;
+        // Push to images array
+        if (!material.images) material.images = [];
+        material.images.push(cloudinaryResult.url);
         await material.save();
 
         // Clean up temp file
         if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
 
-        res.json({ message: 'Image uploaded to Cloudinary', imageUrl: material.imageUrl, material });
+        res.json({ message: 'Image uploaded to Cloudinary', images: material.images, material });
     } catch (err) {
         if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         res.status(500).json({ message: 'Error uploading image to Cloudinary', error: err.message });
+    }
+});
+
+// --- REVIEWS ---
+const MaterialReview = require('../models/MaterialReview');
+
+// POST: Add a review
+router.post('/:id/reviews', verifyToken, async (req, res) => {
+    try {
+        const { rating, comment, images } = req.body;
+        const materialId = req.params.id;
+        const userId = req.user.id || req.user._id;
+        const userName = req.user.name || req.user.username;
+
+        // Check if user already reviewed
+        const existing = await MaterialReview.findOne({ materialId, userId });
+        if (existing) return res.status(400).json({ message: 'You have already reviewed this material' });
+
+        const review = new MaterialReview({
+            materialId,
+            userId,
+            userName,
+            rating,
+            comment,
+            images: images || []
+        });
+
+        await review.save();
+        res.status(201).json(review);
+    } catch (err) {
+        res.status(400).json({ message: 'Error adding review', error: err.message });
+    }
+});
+
+// GET: Get reviews for a material
+router.get('/:id/reviews', async (req, res) => {
+    try {
+        const reviews = await MaterialReview.find({ materialId: req.params.id }).sort({ createdAt: -1 });
+        res.json(reviews);
+    } catch (err) {
+        res.status(500).json({ message: 'Error fetching reviews', error: err.message });
     }
 });
 
