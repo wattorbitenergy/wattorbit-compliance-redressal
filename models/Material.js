@@ -127,6 +127,14 @@ const materialSchema = new mongoose.Schema({
     isActive: {
         type: Boolean,
         default: true
+    },
+    deactivationRemark: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    deactivatedAt: {
+        type: Date
     }
 }, { timestamps: true });
 

@@ -308,9 +308,18 @@ router.put('/:id', verifyToken, canManageInventory, async (req, res) => {
 // DELETE: Deactivate material (Admin/Employee only)
 router.delete('/:id', verifyToken, canManageInventory, async (req, res) => {
     try {
-        const material = await Material.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
+        const { remark } = req.body;
+        const material = await Material.findByIdAndUpdate(
+            req.params.id, 
+            { 
+                isActive: false, 
+                deactivationRemark: remark || 'No reason provided',
+                deactivatedAt: new Date()
+            }, 
+            { new: true }
+        );
         if (!material) return res.status(404).json({ message: 'Material not found' });
-        res.json({ message: 'Material deactivated' });
+        res.json({ message: 'Material deactivated successfully', material });
     } catch (err) {
         res.status(500).json({ message: 'Error deactivating material', error: err.message });
     }
