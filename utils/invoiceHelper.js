@@ -108,8 +108,8 @@ async function autoGenerateInvoice(bookingId) {
                     quantity: m.quantity,
                     unitPrice: m.sellingPrice,
                     taxableValue: m.taxableValue || (m.sellingPrice * m.quantity),
-                    taxRate: m.taxRate || 0,
-                    taxAmount: m.taxAmount || 0,
+                    taxRate: m.sellingTaxRate || 0,
+                    taxAmount: m.sellingTaxAmount || 0,
                     total: m.totalLineAmount
                 });
             });

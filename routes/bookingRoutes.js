@@ -198,7 +198,7 @@ router.post('/', verifyToken, async (req, res) => {
         
         const netPlatformFees = round(platformFees - platformDiscountShare);
 
-        const taxRate = 18; // 18% GST on platform fees only
+        const taxRate = servicePackage.taxRate || 18; // 18% GST on platform fees only
         const taxes = Math.max(0, round((netPlatformFees * taxRate) / 100));
 
         const totalAmount = Math.max(0, round(basePrice + taxes - discount - pointsToUse));
@@ -780,7 +780,7 @@ router.patch('/:id/admin-apply-coupon', verifyToken, isAdmin, async (req, res) =
 
         // Recalculate Taxes and Total
         const netPlatformFees = round((booking.platformFees || 0) - (booking.platformDiscountShare || 0));
-        const taxRate = 18;
+        const taxRate = (booking.packageId && booking.packageId.taxRate) || 18;
         booking.taxes = Math.max(0, round((netPlatformFees * taxRate) / 100));
         booking.totalAmount = Math.max(0, round(booking.basePrice + booking.taxes - (booking.discount || 0) - (booking.pointsUsed || 0)));
 

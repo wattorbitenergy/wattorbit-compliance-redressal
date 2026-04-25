@@ -42,6 +42,11 @@ const servicePackageSchema = new mongoose.Schema({
         default: 0,
         min: 0
     },
+    taxRate: {
+        type: Number,
+        default: 18,
+        enum: [0, 5, 12, 18, 28]
+    },
     duration: {
         type: Number, // Duration in minutes
         required: true,

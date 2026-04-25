@@ -34,7 +34,7 @@ const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 } }); // 2M
 // GET: List all materials (Public access)
 router.get('/', async (req, res) => {
     try {
-        let selectFields = 'name make description materialCode unit sellingPrice images mrp isActive stockQuantity averageRating numReviews';
+        let selectFields = 'name make description materialCode unit sellingPrice sellingTaxRate sellingTaxAmount images mrp isActive stockQuantity averageRating numReviews';
         
         // If logged in, we might provide more info
         const authHeader = req.headers.authorization;
@@ -146,7 +146,7 @@ router.get('/reports/usage', verifyToken, canManageInventory, async (req, res) =
 // GET: Single material (Public access)
 router.get('/:id', async (req, res) => {
     try {
-        let selectFields = 'name make description materialCode unit sellingPrice images mrp isActive stockQuantity averageRating numReviews';
+        let selectFields = 'name make description materialCode unit sellingPrice sellingTaxRate sellingTaxAmount images mrp isActive stockQuantity averageRating numReviews';
 
         const authHeader = req.headers.authorization;
         if (authHeader) {
