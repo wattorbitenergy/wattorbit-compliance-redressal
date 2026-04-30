@@ -212,11 +212,16 @@ router.get('/:id', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Invoice not found' });
         }
 
-        // Check access: user themselves, admin, employee, engineer, or their organisation
+        // Check access: user themselves, admin, employee, engineer, or assigned technician/organisation
+        const isAssignedTech = invoice.bookingId?.assignedTechnician?.toString() === req.user.id;
+        const isAssignedOrg = invoice.bookingId?.organisationId?.toString() === req.user.id;
+        const isPrivileged = ['admin', 'employee', 'engineer'].includes(req.user.role);
+
         if (
             invoice.userId._id.toString() !== req.user.id &&
-            !['admin', 'employee', 'engineer'].includes(req.user.role) &&
-            !(req.user.role === 'organisation' && invoice.bookingId?.organisationId?.toString() === req.user.id)
+            !isPrivileged &&
+            !isAssignedOrg &&
+            !isAssignedTech
         ) {
             return res.status(403).json({ message: 'Access denied' });
         }
@@ -239,11 +244,16 @@ router.get('/booking/:bookingId', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Invoice not found for this booking' });
         }
 
-        // Check access: user themselves, admin, employee, engineer, or their organisation
+        // Check access: user themselves, admin, employee, engineer, or assigned technician/organisation
+        const isAssignedTech = invoice.bookingId?.assignedTechnician?.toString() === req.user.id;
+        const isAssignedOrg = invoice.bookingId?.organisationId?.toString() === req.user.id;
+        const isPrivileged = ['admin', 'employee', 'engineer'].includes(req.user.role);
+
         if (
             invoice.userId._id.toString() !== req.user.id &&
-            !['admin', 'employee', 'engineer'].includes(req.user.role) &&
-            !(req.user.role === 'organisation' && invoice.bookingId?.organisationId?.toString() === req.user.id)
+            !isPrivileged &&
+            !isAssignedOrg &&
+            !isAssignedTech
         ) {
             return res.status(403).json({ message: 'Access denied' });
         }
@@ -282,11 +292,16 @@ router.get('/:id/download', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Invoice not found' });
         }
 
-        // Check access: user themselves, admin, employee, engineer, or their organisation
+        // Check access: user themselves, admin, employee, engineer, or assigned technician/organisation
+        const isAssignedTech = invoice.bookingId?.assignedTechnician?.toString() === req.user.id;
+        const isAssignedOrg = invoice.bookingId?.organisationId?.toString() === req.user.id;
+        const isPrivileged = ['admin', 'employee', 'engineer'].includes(req.user.role);
+
         if (
             invoice.userId._id.toString() !== req.user.id &&
-            !['admin', 'employee', 'engineer'].includes(req.user.role) &&
-            !(req.user.role === 'organisation' && invoice.bookingId?.organisationId?.toString() === req.user.id)
+            !isPrivileged &&
+            !isAssignedOrg &&
+            !isAssignedTech
         ) {
             return res.status(403).json({ message: 'Access denied' });
         }

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const ReferralRule = require('../models/ReferralRule');
 const rateLimit = require('express-rate-limit');
 const User = require('../models/User');
@@ -180,7 +181,8 @@ router.post('/register', authLimiter, async (req, res) => {
     ).catch(e => console.error('[Email] Admin registration alert error:', e));
 
     res.status(201).json({ message: autoApprove ? 'Registered successfully' : 'Awaiting approval' });
-  } catch {
+  } catch (err) {
+    console.error('[Register] Error:', err);
     res.status(500).json({ message: 'Registration failed' });
   }
 });
@@ -312,7 +314,9 @@ router.post('/admin-login', authLimiter, async (req, res) => {
 
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    user.loginOTP = otp;
+    // Hash OTP before storing — never store plaintext OTPs
+    const otpHash = await bcrypt.hash(otp, 8);
+    user.loginOTP = otpHash;
     user.loginOTPExpires = Date.now() + 600000; // 10 minutes
     await user.save();
 
@@ -398,7 +402,8 @@ router.post('/admin-verify-2fa', authLimiter, async (req, res) => {
     }
 
     if (!isBackupCode) {
-      if (user.loginOTP !== otp || user.loginOTPExpires < Date.now()) {
+      const otpMatch = await bcrypt.compare(otp, user.loginOTP || '');
+      if (!otpMatch || user.loginOTPExpires < Date.now()) {
         return res.status(401).json({ message: 'Invalid or expired OTP/Backup Code' });
       }
       // Clear OTP (Standard login)
@@ -468,7 +473,7 @@ router.post('/admin/generate-backup-codes', authLimiter, verifyToken, async (req
    SEND OTP — PHONE FIRST (New Frictionless Onboarding)
    Works for both new and returning users.
 ========================= */
-router.post('/send-otp-phone', async (req, res) => {
+router.post('/send-otp-phone', authLimiter, async (req, res) => {
   try {
     const { phone } = req.body;
     if (!phone) return res.status(400).json({ message: 'Phone number is required' });
@@ -507,7 +512,9 @@ router.post('/send-otp-phone', async (req, res) => {
 
     // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    user.loginOTP = otp;
+    // Hash OTP before storing — never store plaintext OTPs
+    const otpHash = await bcrypt.hash(otp, 8);
+    user.loginOTP = otpHash;
     user.loginOTPExpires = Date.now() + 600000; // 10 min
     await user.save();
 
@@ -580,7 +587,8 @@ router.post('/verify-otp-phone', authLimiter, async (req, res) => {
 
     if (!user) return res.status(404).json({ message: 'User not found' });
     if (user.role === 'admin') return res.status(403).json({ message: 'Admin accounts use a dedicated login page' });
-    if (user.loginOTP !== otp || user.loginOTPExpires < Date.now()) {
+    const otpMatch = await bcrypt.compare(otp, user.loginOTP || '');
+    if (!otpMatch || user.loginOTPExpires < Date.now()) {
       return res.status(401).json({ message: 'Invalid or expired OTP' });
     }
 
@@ -625,7 +633,9 @@ router.post('/send-otp', authLimiter, async (req, res) => {
 
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    user.loginOTP = otp;
+    // Hash OTP before storing — never store plaintext OTPs
+    const otpHash = await bcrypt.hash(otp, 8);
+    user.loginOTP = otpHash;
     user.loginOTPExpires = Date.now() + 600000; // 10 minutes
     await user.save();
     cache.del('dashboard_stats:role=admin&org=global');
@@ -686,7 +696,8 @@ router.post('/otp-login', authLimiter, async (req, res) => {
       $or: [{ email: identifier }, { phone: String(identity).trim() }, { username: identifier }]
     });
 
-    if (!user || user.loginOTP !== otp || user.loginOTPExpires < Date.now()) {
+    const otpMatch = user.loginOTP && await bcrypt.compare(otp, user.loginOTP);
+    if (!user || !otpMatch || user.loginOTPExpires < Date.now()) {
       return res.status(401).json({ message: 'Invalid or expired OTP' });
     }
 
@@ -775,21 +786,31 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
    RESET PASSWORD
 ========================= */
 router.post('/reset-password', authLimiter, async (req, res) => {
-  const tokenStr = String(req.body.token || '');
-  const hashed = crypto.createHash('sha256').update(tokenStr).digest('hex');
-  const user = await User.findOne({
-    resetPasswordToken: hashed,
-    resetPasswordExpires: { $gt: Date.now() }
-  });
+  try {
+    const tokenStr = String(req.body.token || '');
+    if (!tokenStr) return res.status(400).json({ message: 'Reset token is required' });
+    if (!req.body.newPassword || req.body.newPassword.length < 6) {
+      return res.status(400).json({ message: 'New password must be at least 6 characters' });
+    }
 
-  if (!user) return res.status(400).json({ message: 'Invalid token' });
+    const hashed = crypto.createHash('sha256').update(tokenStr).digest('hex');
+    const user = await User.findOne({
+      resetPasswordToken: hashed,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
 
-  user.password = req.body.newPassword;
-  user.resetPasswordToken = undefined;
-  user.resetPasswordExpires = undefined;
-  await user.save();
+    if (!user) return res.status(400).json({ message: 'Invalid or expired reset token' });
 
-  res.json({ message: 'Password reset successful' });
+    user.password = req.body.newPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.json({ message: 'Password reset successful' });
+  } catch (err) {
+    console.error('[reset-password] Error:', err);
+    res.status(500).json({ message: 'Password reset failed' });
+  }
 });
 
 /* =========================

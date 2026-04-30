@@ -77,10 +77,6 @@ app.use((req, res, next) => {
 ===================== */
 app.set('trust proxy', 1);
 
-if (!process.env.MONGO_URI && process.env.NODE_ENV === 'production') {
-  console.error("⚠️ WARNING: MONGO_URI is missing in production environment!");
-}
-
 /* =====================
    CORS CONFIG
 ===================== */
@@ -229,7 +225,6 @@ app.use('/api/coupons', require('./routes/couponRoutes'));
 app.use('/api/invoices', require('./routes/invoiceRoutes'));
 app.use('/api/feedback', require('./routes/feedbackRoutes'));
 app.use('/api/finance', require('./routes/technicianFinanceRoutes'));
-app.use('/api/technician-finance', require('./routes/technicianFinanceRoutes'));
 app.use('/api/automation', require('./routes/automationRoutes'));
 app.use('/api/promotions', require('./routes/promotionRoutes'));
 app.use('/api/curations', require('./routes/curationRoutes'));
@@ -255,8 +250,7 @@ app.use((err, req, res, next) => {
   console.error(err.stack); // 🔍 Show stack trace for emergency debugging
 
   res.status(err.status || 500).json({
-    message: err.message || 'Internal server error',
-    error: err.stack // 🔍 Send stack back to console during this test phase
+    message: err.message || 'Internal server error'
   });
 });
 

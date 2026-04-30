@@ -11,6 +11,7 @@ const TechnicianEarning = require('../models/TechnicianEarning');
 const FinancialLedger = require('../models/FinancialLedger');
 const Invoice = require('../models/Invoice');
 const DeletedBooking = require('../models/DeletedBooking');
+const Material = require('../models/Material');
 const { generateBookingId } = require('../utils/idGenerator');
 const { round } = require('../utils/mathUtils');
 const { triggerAutomation } = require('../utils/automationEngine');
@@ -2246,9 +2247,13 @@ router.post('/:id/add-service', verifyToken, async (req, res) => {
             return res.status(400).json({ message: 'Cannot add services to a paid booking' });
         }
 
-        // Access Check: Admin or Assigned Technician
-        const isAssigned = booking.assignedTechnician && booking.assignedTechnician.toString() === req.user.id;
-        if (req.user.role !== 'admin' && req.user.role !== 'employee' && !isAssigned) {
+        // Access Check: Admin, Employee, Engineer, or Assigned Technician/Organisation, OR Booking Owner
+        const isAssignedTech = booking.assignedTechnician && booking.assignedTechnician.toString() === req.user.id;
+        const isAssignedOrg = booking.organisationId && booking.organisationId.toString() === req.user.id;
+        const isPrivileged = ['admin', 'employee', 'engineer'].includes(req.user.role);
+        const isOwner = booking.userId && booking.userId.toString() === req.user.id;
+
+        if (!isPrivileged && !isAssignedTech && !isAssignedOrg && !isOwner) {
             return res.status(403).json({ message: 'Unauthorized to modify this booking' });
         }
 
@@ -2538,13 +2543,15 @@ router.patch('/:id/add-material', verifyToken, async (req, res) => {
             return res.status(400).json({ message: 'materialId and quantity are required' });
         }
 
-        const Material = require('../models/Material');
         const material = await Material.findById(materialId);
         if (!material || !material.isActive) {
             return res.status(404).json({ message: 'Material not found or inactive' });
         }
 
         const qty = Number(quantity);
+        if (isNaN(qty) || qty < 1 || !Number.isInteger(qty)) {
+            return res.status(400).json({ message: 'quantity must be a positive whole number' });
+        }
 
         // 🛡️ Stock check
         if (material.stockQuantity < qty) {
@@ -2556,11 +2563,13 @@ router.patch('/:id/add-material', verifyToken, async (req, res) => {
         const booking = await Booking.findById(req.params.id);
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
-        // Authorization: Only assigned tech or management roles
-        const canEdit = req.user.role === 'admin' || req.user.role === 'employee' || 
-                        (req.user.role === 'technician' && booking.assignedTechnician?.toString() === req.user.id);
-        
-        if (!canEdit) return res.status(403).json({ message: 'Access denied' });
+        // Authorization: Only assigned tech/org or management roles, OR Booking Owner
+        const isAssignedTech = booking.assignedTechnician && booking.assignedTechnician.toString() === req.user.id;
+        const isAssignedOrg = booking.organisationId && booking.organisationId.toString() === req.user.id;
+        const isPrivileged = ['admin', 'employee', 'engineer'].includes(req.user.role);
+        const isOwner = booking.userId && booking.userId.toString() === req.user.id;
+
+        if (!isPrivileged && !isAssignedTech && !isAssignedOrg && !isOwner) return res.status(403).json({ message: 'Access denied' });
         if (['Completed', 'Cancelled'].includes(booking.status)) {
             return res.status(400).json({ message: 'Cannot add materials to completed or cancelled bookings' });
         }
