@@ -73,21 +73,6 @@ function processItem(item, intrastate) {
  */
 async function autoGenerateInvoice(bookingId) {
     try {
-        // 🛡️ If invoice exists, sync payment status instead of recreating
-        const existingInvoice = await Invoice.findOne({ bookingId });
-        if (existingInvoice) {
-            console.log(`Invoice already exists for booking ${bookingId}, syncing status...`);
-            const payment = await Payment.findOne({ bookingId });
-            const booking = await Booking.findById(bookingId);
-            if (booking) {
-                const isPaid = (payment && payment.status === 'Paid') || booking.paymentReceived;
-                existingInvoice.paymentStatus = isPaid ? 'Paid' : 'Unpaid';
-                existingInvoice.paidAmount = isPaid ? booking.totalAmount : 0;
-                await existingInvoice.save();
-            }
-            return existingInvoice;
-        }
-
         // Get booking with all necessary refs
         const booking = await Booking.findById(bookingId)
             .populate('userId')
@@ -100,6 +85,9 @@ async function autoGenerateInvoice(bookingId) {
             return null;
         }
 
+        // 🛡️ Check if invoice exists to preserve invoiceId
+        const existingInvoice = await Invoice.findOne({ bookingId });
+
         // Fetch bank & business details from Config
         const bankConfig = await Config.findOne({ key: 'bank_details' });
         const biz = bankConfig?.value || {};
@@ -109,7 +97,7 @@ async function autoGenerateInvoice(bookingId) {
         const intrastate = isIntrastateSupply(buyerState);
 
         const payment = await Payment.findOne({ bookingId });
-        const invoiceId = await generateInvoiceId();
+        const invoiceId = existingInvoice ? existingInvoice.invoiceId : await generateInvoiceId();
 
         // --- Build line items ---
         const invoiceItems = [];
@@ -240,18 +228,18 @@ async function autoGenerateInvoice(bookingId) {
             `${addr?.state} - ${addr?.pincode}`
         ].filter(Boolean).join(', ');
 
-        const invoice = new Invoice({
+        const invoiceData = {
             invoiceId,
             bookingRef: booking.bookingId,
             bookingId,
             userId: booking.userId._id,
-            invoiceDate: new Date(),
-            dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            // Preserve original dates if updating
+            invoiceDate: existingInvoice ? existingInvoice.invoiceDate : new Date(),
+            dueDate: existingInvoice ? existingInvoice.dueDate : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
             items: invoiceItems,
             subtotal: parseFloat(totalTaxable.toFixed(2)),
             taxAmount: totalTaxAmount,
             discount: booking.discount || 0,
-            // Explicit bearer breakdown — sourced from coupon config, not approximated
             platformDiscountShare: parseFloat((booking.platformDiscountShare || 0).toFixed(2)),
             technicianDiscountShare: parseFloat((booking.technicianDiscountShare || 0).toFixed(2)),
             couponCode: booking.couponCode || null,
@@ -280,10 +268,21 @@ async function autoGenerateInvoice(bookingId) {
             customerPhone: booking.userId.phone,
             customerEmail: booking.userId.email,
             customerAddress
-        });
+        };
 
-        await invoice.save();
-        console.log(`✅ Auto-generated invoice ${invoiceId} for booking ${booking.bookingId}`);
+        let invoice;
+        if (existingInvoice) {
+            invoice = await Invoice.findOneAndUpdate(
+                { bookingId },
+                { $set: invoiceData },
+                { new: true }
+            );
+            console.log(`✅ Updated existing invoice ${invoiceId} for booking ${booking.bookingId}`);
+        } else {
+            invoice = new Invoice(invoiceData);
+            await invoice.save();
+            console.log(`✅ Auto-generated new invoice ${invoiceId} for booking ${booking.bookingId}`);
+        }
         return invoice;
     } catch (err) {
         console.error('Error in autoGenerateInvoice:', err);

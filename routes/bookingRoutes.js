@@ -1615,10 +1615,7 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
             await booking.save();
 
             // Auto-generate or update invoice on completion or payment receipt
-            if (paymentReceived === true) {
-                // To ensure transparency and reflect 'Paid' status, we delete the old invoice and let helper regenerate it
-                await Invoice.findOneAndDelete({ bookingId: booking._id });
-            }
+
             const invoice = await autoGenerateInvoice(booking._id);
 
             if (status === 'Completed' && !isAlreadyCompleted) {
