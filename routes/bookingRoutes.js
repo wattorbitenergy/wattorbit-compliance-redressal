@@ -2614,7 +2614,7 @@ router.patch('/:id/add-material', verifyToken, async (req, res) => {
         booking.materialTaxTotal = materialTaxTotal;
         
         // Recalculate Grand Total
-        booking.totalAmount = Math.max(0, booking.basePrice + booking.taxes + materialTotal + materialTaxTotal - (booking.discount || 0) - (booking.pointsUsed || 0));
+        booking.totalAmount = Math.max(0, booking.basePrice + booking.taxes + materialTotal + materialTaxTotal - (booking.discount || 0) - (booking.lineItemDiscount || 0) - (booking.pointsUsed || 0));
 
         await booking.save();
         res.json({ message: 'Material added', booking });
@@ -2658,7 +2658,7 @@ router.delete('/:id/remove-material/:lineItemId', verifyToken, async (req, res) 
 
         booking.materialTotal = materialTotal;
         booking.materialTaxTotal = materialTaxTotal;
-        booking.totalAmount = Math.max(0, booking.basePrice + booking.taxes + materialTotal + materialTaxTotal - (booking.discount || 0) - (booking.pointsUsed || 0));
+        booking.totalAmount = Math.max(0, booking.basePrice + booking.taxes + materialTotal + materialTaxTotal - (booking.discount || 0) - (booking.lineItemDiscount || 0) - (booking.pointsUsed || 0));
 
         await booking.save();
         res.json({ message: 'Material removed', booking });
