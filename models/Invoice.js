@@ -42,6 +42,8 @@ const invoiceSchema = new mongoose.Schema({
         sgstAmount: { type: Number, default: 0 },
         igstRate: { type: Number, default: 0 },
         igstAmount: { type: Number, default: 0 },
+        // Discount actually borne by this fee type (from coupon bearer config, not proportional)
+        discountShare: { type: Number, default: 0 },
         total: { type: Number, required: true }
     }],
 
@@ -56,6 +58,12 @@ const invoiceSchema = new mongoose.Schema({
     totalCGST: { type: Number, default: 0 },
     totalSGST: { type: Number, default: 0 },
     totalIGST: { type: Number, default: 0 },
+
+    // Discount bearer breakdown (sourced from coupon config — not proportional)
+    platformDiscountShare: { type: Number, default: 0 },    // amount borne by platform
+    technicianDiscountShare: { type: Number, default: 0 },  // amount borne by technician
+    couponCode: { type: String, default: null },             // coupon code applied (snapshot)
+    pointsUsed: { type: Number, default: 0 },                // wallet points applied as a cash discount
 
     // Supply Details
     placeOfSupply: { type: String }, // State Name
@@ -90,6 +98,10 @@ const invoiceSchema = new mongoose.Schema({
     customerEmail: { type: String },
     customerAddress: { type: String, required: true },
     customerGST: { type: String }, // For B2B
+
+    // Booking reference (human-readable, e.g., WO-2026-032) — stored as snapshot for quick access
+    bookingRef: { type: String },
+
 }, { timestamps: true });
 
 // Indexes for efficient queries
