@@ -63,11 +63,8 @@ const orderSchema = new mongoose.Schema({
 // Auto-generate Order ID
 orderSchema.pre('save', async function () {
     if (this.isNew && !this.orderId) {
-        const date = new Date();
-        const year = date.getFullYear().toString().slice(-2);
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const count = await this.constructor.countDocuments() + 1001;
-        this.orderId = `ORD-${year}${month}-${count}`;
+        const count = await this.constructor.countDocuments();
+        this.orderId = (6000001 + count).toString();
     }
 });
 

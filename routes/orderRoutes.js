@@ -171,8 +171,8 @@ router.get('/my-orders', verifyToken, async (req, res) => {
     try {
         let query = { userId: req.user.id };
         
-        // Admins and Employees can see all standalone orders
-        if (['admin', 'employee'].includes(req.user.role)) {
+        // Admins, Employees and Engineers can see all standalone orders
+        if (['admin', 'employee', 'engineer'].includes(req.user.role)) {
             query = {};
         }
 
@@ -187,10 +187,10 @@ router.get('/my-orders', verifyToken, async (req, res) => {
     }
 });
 
-// PATCH: Update Order Status (Admin/Employee Only)
+// PATCH: Update Order Status (Admin/Employee/Engineer Only)
 router.patch('/:id/status', verifyToken, async (req, res) => {
     try {
-        if (!['admin', 'employee'].includes(req.user.role)) {
+        if (!['admin', 'employee', 'engineer'].includes(req.user.role)) {
             return res.status(403).json({ message: 'Unauthorized' });
         }
 

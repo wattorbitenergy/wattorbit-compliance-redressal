@@ -72,6 +72,7 @@ const materialSchema = new mongoose.Schema({
     images: {
         type: [String],
         default: [],
+        validate: [function (val) { return val.length <= 4; }, 'Maximum 4 photos allowed per material'],
         comment: "Product/packaging photo URLs"
     },
     

@@ -11,9 +11,9 @@ const { verifyToken } = require('../middleware/authMiddleware');
 
 // Admin/Employee check
 const canManageInventory = (req, res, next) => {
-    const allowedRoles = ['admin', 'employee'];
+    const allowedRoles = ['admin', 'employee', 'engineer'];
     if (!allowedRoles.includes(req.user.role)) {
-        return res.status(403).json({ message: 'Access denied: Requires Admin or Employee role' });
+        return res.status(403).json({ message: 'Access denied: Requires Admin, Employee, or Engineer role' });
     }
     next();
 };
@@ -228,6 +228,11 @@ router.post('/:id/upload-image', verifyToken, canManageInventory, upload.single(
         if (!material) {
             if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
             return res.status(404).json({ message: 'Material not found' });
+        }
+
+        if (material.images && material.images.length >= 4) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(400).json({ message: 'Maximum 4 photos allowed per material' });
         }
 
         // Upload to Cloudinary

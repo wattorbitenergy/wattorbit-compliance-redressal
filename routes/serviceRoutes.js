@@ -27,9 +27,9 @@ const verifyToken = (req, res, next) => {
 
 // Admin check middleware
 const isAuthorized = (req, res, next) => {
-    const allowedRoles = ['admin', 'employee'];
+    const allowedRoles = ['admin', 'employee', 'engineer'];
     if (!allowedRoles.includes(req.user.role)) {
-        return res.status(403).json({ message: 'Administrative access required' });
+        return res.status(403).json({ message: 'Access denied: Requires Admin, Employee, or Engineer role' });
     }
     next();
 };

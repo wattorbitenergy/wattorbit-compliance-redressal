@@ -191,14 +191,28 @@ const generateInvoicePDF = (invoice, options = {}) => {
                 y += 15;
             };
 
-            addSummaryRow('Total Taxable Value:', invoice.subtotal.toFixed(2));
+            // 🛡️ Categorize Subtotals for clarity (Taxable vs Nil Rated)
+            const taxableSubtotal = (invoice.items || []).reduce((sum, item) => sum + (item.taxAmount > 0 ? item.taxableValue : 0), 0);
+            const nilRatedSubtotal = (invoice.items || []).reduce((sum, item) => sum + (item.taxAmount === 0 ? item.taxableValue : 0), 0);
 
-            // Show correct GST bifurcation
-            if ((invoice.totalIGST || 0) > 0) {
-                addSummaryRow('Integrated Tax (IGST) @18%:', invoice.totalIGST.toFixed(2));
+            if (nilRatedSubtotal > 0 && taxableSubtotal > 0) {
+                addSummaryRow('Taxable Value (GST Items):', taxableSubtotal.toFixed(2));
+                addSummaryRow('Nil Rated / Exempt Value:', nilRatedSubtotal.toFixed(2));
             } else {
-                addSummaryRow(`Central Tax (CGST) @${(invoice.totalCGST / invoice.subtotal * 100 || 9).toFixed(0)}%:`, (invoice.totalCGST || 0).toFixed(2));
-                addSummaryRow(`State Tax (SGST) @${(invoice.totalSGST / invoice.subtotal * 100 || 9).toFixed(0)}%:`, (invoice.totalSGST || 0).toFixed(2));
+                addSummaryRow('Total Taxable Value:', invoice.subtotal.toFixed(2));
+            }
+
+            // Show correct GST bifurcation with accurate rate calculation
+            if ((invoice.totalIGST || 0) > 0) {
+                const igstRate = taxableSubtotal > 0 ? Math.round(invoice.totalIGST / taxableSubtotal * 100) : 18;
+                addSummaryRow(`Integrated Tax (IGST) @${igstRate}%:`, invoice.totalIGST.toFixed(2));
+            } else if ((invoice.totalCGST || 0) > 0) {
+                // Calculate actual applied rate based on the taxable base only
+                const cgstRate = taxableSubtotal > 0 ? Math.round(invoice.totalCGST / taxableSubtotal * 100) : 9;
+                const sgstRate = taxableSubtotal > 0 ? Math.round(invoice.totalSGST / taxableSubtotal * 100) : 9;
+                
+                addSummaryRow(`Central Tax (CGST) @${cgstRate}%:`, (invoice.totalCGST || 0).toFixed(2));
+                addSummaryRow(`State Tax (SGST) @${sgstRate}%:`, (invoice.totalSGST || 0).toFixed(2));
             }
 
             if ((invoice.discount || 0) > 0) {
