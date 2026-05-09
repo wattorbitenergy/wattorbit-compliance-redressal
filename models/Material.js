@@ -125,6 +125,32 @@ const materialSchema = new mongoose.Schema({
         comment: "Output Tax - Input Tax"
     },
 
+    // Logistics Dimensions & Weight
+    weight: {
+        type: Number,
+        default: 0,
+        min: 0,
+        comment: "Actual weight in KG"
+    },
+    length: {
+        type: Number,
+        default: 0,
+        min: 0,
+        comment: "Length in cm"
+    },
+    width: {
+        type: Number,
+        default: 0,
+        min: 0,
+        comment: "Width in cm"
+    },
+    height: {
+        type: Number,
+        default: 0,
+        min: 0,
+        comment: "Height in cm"
+    },
+
     isActive: {
         type: Boolean,
         default: true

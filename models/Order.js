@@ -33,6 +33,22 @@ const orderSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
+    deliveryFee: {
+        type: Number,
+        default: 0
+    },
+    chargeableWeight: {
+        type: Number,
+        default: 0
+    },
+    baseDeliveryFee: {
+        type: Number,
+        default: 0
+    },
+    volumetricWeightFee: {
+        type: Number,
+        default: 0
+    },
     addressId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Address',

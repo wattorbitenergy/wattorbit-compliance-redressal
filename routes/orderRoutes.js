@@ -7,8 +7,15 @@ const Material = require('../models/Material');
 const User = require('../models/User');
 const Address = require('../models/Address');
 const { verifyToken } = require('../middleware/authMiddleware');
+const Config = require('../models/Config');
 const { updateUniversalLedger } = require('../utils/technicianFinanceHelper');
 const { sendUserNotification, sendTopicNotification } = require('../utils/notificationHelper');
+const { 
+    sendMaterialOrderConfirmedSms,
+    sendMaterialOrderDispatchedSms,
+    sendMaterialOrderOutForDeliverySms,
+    sendMaterialOrderCancelledSms
+} = require('../utils/smsHelper');
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
@@ -28,7 +35,22 @@ router.post('/create', verifyToken, async (req, res) => {
         if (!address) return res.status(404).json({ message: 'Address not found' });
 
         let totalAmount = 0;
+        let totalWeight = 0;
+        let totalVolumetricWeight = 0;
         const orderItems = [];
+
+        // Fetch Logistics Settings
+        const [shipRateConfig, volDivisorConfig, baseFeeConfig, freeThreshConfig] = await Promise.all([
+            Config.findOne({ key: 'shipping_rate_per_kg' }),
+            Config.findOne({ key: 'volumetric_divisor' }),
+            Config.findOne({ key: 'base_delivery_charge' }),
+            Config.findOne({ key: 'free_delivery_threshold' })
+        ]);
+
+        const shippingRatePerKg = shipRateConfig?.value || 40; // Default ₹40/kg
+        const volDivisor = volDivisorConfig?.value || 5000;    // Default 5000
+        const baseDeliveryCharge = baseFeeConfig?.value || 50;  // Default ₹50
+        const freeDeliveryThreshold = freeThreshConfig?.value || 1000; // Default ₹1000
 
         // Validate and Snapshot Items
         for (const item of items) {
@@ -42,6 +64,13 @@ router.post('/create', verifyToken, async (req, res) => {
             const sellingTaxAmount = Math.round((material.sellingPrice * material.sellingTaxRate) / 100);
             const lineAmount = (material.sellingPrice + sellingTaxAmount) * item.quantity;
 
+            // Logistics calculations
+            const itemWeight = (material.weight || 0) * item.quantity;
+            const itemVolumetricWeight = ((material.length || 0) * (material.width || 0) * (material.height || 0) / volDivisor) * item.quantity;
+            
+            totalWeight += itemWeight;
+            totalVolumetricWeight += itemVolumetricWeight;
+
             orderItems.push({
                 materialId: material._id,
                 name: material.name,
@@ -50,15 +79,34 @@ router.post('/create', verifyToken, async (req, res) => {
                 sellingPrice: material.sellingPrice,
                 sellingTaxRate: material.sellingTaxRate,
                 sellingTaxAmount: sellingTaxAmount,
-                totalLineAmount: lineAmount
+                totalLineAmount: lineAmount,
+                weight: material.weight,
+                dimensions: {
+                    length: material.length,
+                    width: material.width,
+                    height: material.height
+                }
             });
 
             totalAmount += lineAmount;
         }
 
+        // Calculate Final Delivery Fee
+        const chargeableWeight = Math.max(totalWeight, totalVolumetricWeight);
+        let deliveryFee = 0;
+        let baseFeeApplied = 0;
+        let volWeightFee = Math.round(chargeableWeight * shippingRatePerKg);
+
+        if (totalAmount < freeDeliveryThreshold) {
+            baseFeeApplied = baseDeliveryCharge;
+        }
+        
+        deliveryFee = baseFeeApplied + volWeightFee;
+        const grandTotal = totalAmount + deliveryFee;
+
         // Create Razorpay Order
         const options = {
-            amount: Math.round(totalAmount * 100),
+            amount: Math.round(grandTotal * 100),
             currency: 'INR',
             receipt: `order_${Date.now()}`,
             notes: {
@@ -73,7 +121,11 @@ router.post('/create', verifyToken, async (req, res) => {
         const order = new Order({
             userId: req.user.id,
             items: orderItems,
-            totalAmount,
+            totalAmount: grandTotal,
+            deliveryFee,
+            chargeableWeight,
+            baseDeliveryFee: baseFeeApplied,
+            volumetricWeightFee: volWeightFee,
             addressId,
             notes,
             razorpayOrderId: rzpOrder.id,
@@ -156,6 +208,12 @@ router.post('/verify', verifyToken, async (req, res) => {
             { type: 'ORDER_CONFIRMED', orderId: order._id.toString() }
         );
 
+        // SMS Notification
+        const customer = await User.findById(order.userId).select('name');
+        if (customer) {
+            await sendMaterialOrderConfirmedSms(order.userId, customer.name, order.orderId);
+        }
+
         await sendTopicNotification(
             'admin',
             'New Material Order',
@@ -195,8 +253,8 @@ router.get('/delivery/assigned', verifyToken, async (req, res) => {
         if (req.user.role !== 'delivery') return res.status(403).json({ message: 'Unauthorized' });
 
         const orders = await Order.find({ deliveryBoyId: req.user.id })
+            .select('-items')
             .sort({ createdAt: -1 })
-            .populate('items.materialId', 'imageUrl unit name')
             .populate('userId', 'name phone email')
             .populate('addressId');
         res.json(orders);
@@ -248,6 +306,85 @@ router.get('/:id', verifyToken, async (req, res) => {
         res.status(500).json({ message: 'Error fetching order details', error: err.message });
     }
 });
+// PATCH: Cancel Order
+router.patch('/:id/cancel', verifyToken, async (req, res) => {
+    try {
+        const { cancelReason, message } = req.body;
+        const order = await Order.findById(req.params.id);
+        
+        if (!order) return res.status(404).json({ message: 'Order not found' });
+        
+        if (order.status === 'Cancelled') {
+            return res.status(400).json({ message: 'Order is already cancelled' });
+        }
+
+        const isAdmin = ['admin', 'employee'].includes(req.user.role);
+        const isOwner = order.userId.toString() === req.user.id;
+
+        // Validation
+        if (!isAdmin && !isOwner) {
+            return res.status(403).json({ message: 'Unauthorized to cancel this order' });
+        }
+
+        if (!isAdmin && !['Pending', 'Confirmed'].includes(order.status)) {
+            return res.status(400).json({ message: `Cannot cancel order at ${order.status} stage` });
+        }
+
+        const cancelMessage = message || cancelReason || (isAdmin ? "Cancelled by Administrator" : "Cancelled by User");
+
+        // 1. Update Status & History
+        order.status = 'Cancelled';
+        order.trackingHistory.push({
+            status: 'Cancelled',
+            message: cancelMessage
+        });
+
+        // 2. Financial Refund (if Paid)
+        if (order.paymentStatus === 'Paid' && order.totalAmount > 0) {
+            await updateUniversalLedger(
+                order.userId,
+                'REFUND',
+                order.totalAmount, // +amount to refund
+                order.orderId,
+                `Refund for cancelled order #${order.orderId}`,
+                { 
+                    orderId: order._id,
+                    reason: cancelMessage
+                }
+            ).catch(e => console.error('[Order Refund Ledger] Error:', e));
+            order.paymentStatus = 'Refunded';
+        }
+
+        // 3. Restore Stock Inventory
+        for (const item of order.items) {
+            await Material.findByIdAndUpdate(item.materialId, {
+                $inc: { stockQuantity: item.quantity }
+            });
+        }
+
+        await order.save();
+
+        // 4. Notifications
+        await sendUserNotification(
+            order.userId,
+            'Order Cancelled',
+            `Your order #${order.orderId} has been cancelled. Reason: ${cancelMessage}`,
+            { type: 'ORDER_CANCELLED', orderId: order._id.toString() }
+        );
+
+        // SMS Notification
+        const customer = await User.findById(order.userId).select('name');
+        if (customer) {
+            await sendMaterialOrderCancelledSms(order.userId, customer.name, order.orderId);
+        }
+
+        res.json({ message: 'Order successfully cancelled and refunded', order });
+
+    } catch (err) {
+        console.error('[Order Cancel] Error:', err);
+        res.status(500).json({ message: 'Error cancelling order', error: err.message });
+    }
+});
 
 // PATCH: Update Order Status
 router.patch('/:id/status', verifyToken, async (req, res) => {
@@ -267,6 +404,10 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
         }
 
         if (status) {
+            if (status === 'Cancelled') {
+                return res.status(400).json({ message: 'Please use the dedicated Cancel Order route to ensure proper refunds and inventory restoration.' });
+            }
+
             order.status = status;
             order.trackingHistory.push({
                 status,
@@ -281,12 +422,33 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
 
         // Notify user of status change
         if (status) {
+            let notificationTitle = `Order ${status}!`;
+            let notificationBody = `Your order #${order.orderId} status has been updated to ${status}.`;
+
+            if (status === 'Out for Delivery') {
+                notificationTitle = 'Out for Delivery! 🚚';
+                notificationBody = `Your order #${order.orderId} is out for delivery. Our partner will reach you soon.`;
+            } else if (status === 'Dispatched') {
+                notificationTitle = 'Order Dispatched! 📦';
+                notificationBody = `Your order #${order.orderId} has been dispatched. Tracking: ${trackingId || 'N/A'}`;
+            }
+
             await sendUserNotification(
                 order.userId,
-                `Order ${status}!`,
-                `Your order #${order.orderId} status has been updated to ${status}.`,
+                notificationTitle,
+                notificationBody,
                 { type: 'ORDER_STATUS_UPDATE', orderId: order._id.toString(), status }
             );
+
+            // SMS Notification
+            const customer = await User.findById(order.userId).select('name');
+            if (customer) {
+                if (status === 'Dispatched') {
+                    await sendMaterialOrderDispatchedSms(order.userId, customer.name, order.orderId, trackingId || 'N/A');
+                } else if (status === 'Out for Delivery') {
+                    await sendMaterialOrderOutForDeliverySms(order.userId, customer.name, order.orderId);
+                }
+            }
         }
 
         res.json({ message: 'Order updated successfully', order });
