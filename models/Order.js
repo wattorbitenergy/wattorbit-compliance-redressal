@@ -52,12 +52,29 @@ const orderSchema = new mongoose.Schema({
     razorpayPaymentId: String,
     status: {
         type: String,
-        enum: ['Confirmed', 'Processing', 'Dispatched', 'Delivered', 'Cancelled'],
-        default: 'Confirmed'
+        enum: ['Pending', 'Confirmed', 'Packed', 'Dispatched', 'In Transit', 'Arrived at Hub', 'Out for Delivery', 'Delivered', 'Cancelled'],
+        default: 'Pending'
     },
+    deliveryMode: {
+        type: String,
+        enum: ['Unassigned', 'Internal', 'External'],
+        default: 'Unassigned'
+    },
+    deliveryBoyId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    logisticsPartner: String,
+    externalTrackingId: String,
     deliveryPartner: String,
     trackingId: String,
-    notes: String
+    notes: String,
+    trackingHistory: [{
+        status: String,
+        location: String,
+        message: String,
+        timestamp: { type: Date, default: Date.now }
+    }]
 }, { timestamps: true });
 
 // Auto-generate Order ID
