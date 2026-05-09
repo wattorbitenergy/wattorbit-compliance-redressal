@@ -464,12 +464,13 @@ router.patch('/:id/assign-delivery', verifyToken, async (req, res) => {
             return res.status(403).json({ message: 'Unauthorized' });
         }
 
-        const { deliveryMode, deliveryBoyId, logisticsPartner } = req.body;
+        const { deliveryMode, deliveryBoyId, logisticsPartner, pickupAddress } = req.body;
         const order = await Order.findById(req.params.id);
         
         if (!order) return res.status(404).json({ message: 'Order not found' });
 
         order.deliveryMode = deliveryMode;
+        if (pickupAddress) order.pickupAddress = pickupAddress;
 
         if (deliveryMode === 'Internal') {
             order.deliveryBoyId = deliveryBoyId;

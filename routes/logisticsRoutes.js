@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const LogisticsConfig = require('../models/LogisticsConfig');
-const { verifyToken, isAdmin } = require('../middleware/authMiddleware');
+const { verifyToken, isAdmin, isAdminOrEngineer } = require('../middleware/authMiddleware');
 
 // GET: All logistics configs
-router.get('/configs', verifyToken, isAdmin, async (req, res) => {
+router.get('/configs', verifyToken, isAdminOrEngineer, async (req, res) => {
     try {
         const configs = await LogisticsConfig.find();
         res.json(configs);
@@ -16,14 +16,14 @@ router.get('/configs', verifyToken, isAdmin, async (req, res) => {
 // POST: Save or update logistics config
 router.post('/configs', verifyToken, isAdmin, async (req, res) => {
     try {
-        const { providerName, apiKey, isActive } = req.body;
+        const { providerName, isActive } = req.body;
         
         let config = await LogisticsConfig.findOne({ providerName });
         if (config) {
-            config.apiKey = apiKey;
             if (isActive !== undefined) config.isActive = isActive;
         } else {
-            config = new LogisticsConfig({ providerName, apiKey, isActive });
+            // apiKey is now managed via .env, we just store the name and status
+            config = new LogisticsConfig({ providerName, apiKey: 'ENV_MANAGED', isActive });
         }
         
         await config.save();

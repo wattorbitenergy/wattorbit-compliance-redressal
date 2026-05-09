@@ -81,6 +81,7 @@ const orderSchema = new mongoose.Schema({
         ref: 'User'
     },
     logisticsPartner: String,
+    pickupAddress: String,
     externalTrackingId: String,
     deliveryPartner: String,
     trackingId: String,
