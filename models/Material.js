@@ -93,6 +93,13 @@ const materialSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    purchaseDiscount: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 100,
+        comment: "Percentage discount on MRP to calculate purchase price"
+    },
 
     // Financials - Selling
     mrp: {
@@ -232,6 +239,15 @@ materialSchema.pre('save', async function () {
             this.materialCode = nextCode.toString();
         } catch (err) {
             console.error('[MaterialCode] Error generating code:', err);
+        }
+    }
+
+    // Pre-save hook to calculate prices and tax amounts
+    if (this.mrp > 0) {
+        if (this.purchaseDiscount > 0 && (!this.purchasePrice || this.purchasePrice === 0)) {
+            this.purchasePrice = round(this.mrp * (1 - this.purchaseDiscount / 100));
+        } else if (this.purchasePrice > 0 && (!this.purchaseDiscount || this.purchaseDiscount === 0)) {
+            this.purchaseDiscount = round(((this.mrp - this.purchasePrice) / this.mrp) * 100);
         }
     }
 
