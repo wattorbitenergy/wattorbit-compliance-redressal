@@ -1,0 +1,232 @@
+2026-05-12 07:06:04 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-05-12 07:06:04 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+2026-05-12 07:06:05 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: 🤖 agentic secret storage: https://dotenvx.com/as2
+2026-05-12 07:06:06 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-05-12 07:06:07 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚡️ secrets for agents: https://dotenvx.com/as2
+2026-05-12 07:06:08 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+2026-05-12 07:06:09 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚡️ secrets for agents: https://dotenvx.com/as2
+2026-05-12 07:06:10 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-05-12 07:06:09 +05:30: --- Server Initializing ---
+2026-05-12 07:06:09 +05:30: ENV: MONGO_URI is LOADED
+2026-05-12 07:06:09 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-12 07:06:09 +05:30: --- Server Initializing ---
+2026-05-12 07:06:09 +05:30: ENV: MONGO_URI is LOADED
+2026-05-12 07:06:09 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-12 07:06:10 +05:30: --- Server Initializing ---
+2026-05-12 07:06:10 +05:30: ENV: MONGO_URI is LOADED
+2026-05-12 07:06:10 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-12 07:06:11 +05:30: --- Server Initializing ---
+2026-05-12 07:06:11 +05:30: ENV: MONGO_URI is LOADED
+2026-05-12 07:06:11 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-12 07:06:15 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-12 07:06:15 +05:30: 🌍 Environment: production
+2026-05-12 07:06:15 +05:30: Initializing Cron Jobs...
+2026-05-12 07:06:15 +05:30: Cron Jobs Initialized.
+2026-05-12 07:06:15 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-12 07:06:15 +05:30: 🌍 Environment: production
+2026-05-12 07:06:15 +05:30: Initializing Cron Jobs...
+2026-05-12 07:06:15 +05:30: Cron Jobs Initialized.
+2026-05-12 07:06:15 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-12 07:06:15 +05:30: 🌍 Environment: production
+2026-05-12 07:06:15 +05:30: Initializing Cron Jobs...
+2026-05-12 07:06:15 +05:30: Cron Jobs Initialized.
+2026-05-12 07:06:15 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-12 07:06:15 +05:30: 🌍 Environment: production
+2026-05-12 07:06:15 +05:30: Initializing Cron Jobs...
+2026-05-12 07:06:15 +05:30: Cron Jobs Initialized.
+2026-05-12 07:06:12 +05:30: --- Server Initializing ---
+2026-05-12 07:06:12 +05:30: ENV: MONGO_URI is LOADED
+2026-05-12 07:06:12 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-12 07:06:16 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-12 07:06:16 +05:30: 🌍 Environment: production
+2026-05-12 07:06:16 +05:30: Initializing Cron Jobs...
+2026-05-12 07:06:16 +05:30: Cron Jobs Initialized.
+2026-05-12 07:06:13 +05:30: --- Server Initializing ---
+2026-05-12 07:06:13 +05:30: ENV: MONGO_URI is LOADED
+2026-05-12 07:06:13 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-12 07:06:17 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-12 07:06:17 +05:30: 🌍 Environment: production
+2026-05-12 07:06:17 +05:30: Initializing Cron Jobs...
+2026-05-12 07:06:18 +05:30: Cron Jobs Initialized.
+2026-05-12 07:06:14 +05:30: --- Server Initializing ---
+2026-05-12 07:06:14 +05:30: ENV: MONGO_URI is LOADED
+2026-05-12 07:06:14 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-12 07:06:14 +05:30: --- Server Initializing ---
+2026-05-12 07:06:14 +05:30: ENV: MONGO_URI is LOADED
+2026-05-12 07:06:14 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-12 07:06:18 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-12 07:06:18 +05:30: 🌍 Environment: production
+2026-05-12 07:06:18 +05:30: Initializing Cron Jobs...
+2026-05-12 07:06:18 +05:30: Cron Jobs Initialized.
+2026-05-12 07:06:18 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-12 07:06:18 +05:30: 🌍 Environment: production
+2026-05-12 07:06:18 +05:30: Initializing Cron Jobs...
+2026-05-12 07:06:18 +05:30: Cron Jobs Initialized.
+2026-05-12 07:06:19 +05:30: MongoDB connected: CLOUD
+2026-05-12 07:06:19 +05:30: MongoDB connected: CLOUD
+2026-05-12 07:06:19 +05:30: MongoDB connected: CLOUD
+2026-05-12 07:06:19 +05:30: MongoDB connected: CLOUD
+2026-05-12 07:06:19 +05:30: MongoDB connected: CLOUD
+2026-05-12 07:06:19 +05:30: MongoDB connected: CLOUD
+2026-05-12 07:06:19 +05:30: MongoDB connected: CLOUD
+2026-05-12 07:06:19 +05:30: MongoDB connected: CLOUD
+2026-05-24 07:14:38 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+2026-05-24 07:14:38 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-05-24 07:14:38 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+2026-05-24 07:14:39 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-05-24 07:14:39 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-05-24 07:14:39 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: 🛡️ auth for agents: https://vestauth.com
+2026-05-24 07:14:40 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-05-24 07:14:41 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+2026-05-24 07:14:42 +05:30: --- Server Initializing ---
+2026-05-24 07:14:42 +05:30: ENV: MONGO_URI is LOADED
+2026-05-24 07:14:42 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-24 07:14:42 +05:30: --- Server Initializing ---
+2026-05-24 07:14:42 +05:30: ENV: MONGO_URI is LOADED
+2026-05-24 07:14:42 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-24 07:14:42 +05:30: --- Server Initializing ---
+2026-05-24 07:14:42 +05:30: ENV: MONGO_URI is LOADED
+2026-05-24 07:14:42 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-24 07:14:42 +05:30: --- Server Initializing ---
+2026-05-24 07:14:42 +05:30: ENV: MONGO_URI is LOADED
+2026-05-24 07:14:42 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-24 07:14:42 +05:30: --- Server Initializing ---
+2026-05-24 07:14:42 +05:30: ENV: MONGO_URI is LOADED
+2026-05-24 07:14:42 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-24 07:14:46 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-24 07:14:46 +05:30: 🌍 Environment: production
+2026-05-24 07:14:46 +05:30: Initializing Cron Jobs...
+2026-05-24 07:14:46 +05:30: Cron Jobs Initialized.
+2026-05-24 07:14:46 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-24 07:14:46 +05:30: 🌍 Environment: production
+2026-05-24 07:14:46 +05:30: Initializing Cron Jobs...
+2026-05-24 07:14:46 +05:30: Cron Jobs Initialized.
+2026-05-24 07:14:46 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-24 07:14:46 +05:30: 🌍 Environment: production
+2026-05-24 07:14:46 +05:30: Initializing Cron Jobs...
+2026-05-24 07:14:46 +05:30: Cron Jobs Initialized.
+2026-05-24 07:14:46 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-24 07:14:46 +05:30: 🌍 Environment: production
+2026-05-24 07:14:46 +05:30: Initializing Cron Jobs...
+2026-05-24 07:14:46 +05:30: Cron Jobs Initialized.
+2026-05-24 07:14:46 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-24 07:14:46 +05:30: 🌍 Environment: production
+2026-05-24 07:14:46 +05:30: Initializing Cron Jobs...
+2026-05-24 07:14:46 +05:30: Cron Jobs Initialized.
+2026-05-24 07:14:43 +05:30: --- Server Initializing ---
+2026-05-24 07:14:43 +05:30: ENV: MONGO_URI is LOADED
+2026-05-24 07:14:43 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-24 07:14:47 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-24 07:14:47 +05:30: 🌍 Environment: production
+2026-05-24 07:14:47 +05:30: Initializing Cron Jobs...
+2026-05-24 07:14:47 +05:30: Cron Jobs Initialized.
+2026-05-24 07:14:44 +05:30: --- Server Initializing ---
+2026-05-24 07:14:44 +05:30: ENV: MONGO_URI is LOADED
+2026-05-24 07:14:44 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-24 07:14:47 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-24 07:14:47 +05:30: 🌍 Environment: production
+2026-05-24 07:14:47 +05:30: Initializing Cron Jobs...
+2026-05-24 07:14:47 +05:30: Cron Jobs Initialized.
+2026-05-24 07:14:44 +05:30: --- Server Initializing ---
+2026-05-24 07:14:44 +05:30: ENV: MONGO_URI is LOADED
+2026-05-24 07:14:44 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-05-24 07:14:48 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-05-24 07:14:48 +05:30: 🌍 Environment: production
+2026-05-24 07:14:48 +05:30: Initializing Cron Jobs...
+2026-05-24 07:14:48 +05:30: Cron Jobs Initialized.
+2026-05-24 07:14:57 +05:30: MongoDB connected: CLOUD
+2026-05-24 07:14:57 +05:30: MongoDB connected: CLOUD
+2026-05-24 07:14:57 +05:30: MongoDB connected: CLOUD
+2026-05-24 07:14:57 +05:30: MongoDB connected: CLOUD
+2026-05-24 07:14:57 +05:30: MongoDB connected: CLOUD
+2026-05-24 07:14:57 +05:30: MongoDB connected: CLOUD
+2026-05-24 07:14:57 +05:30: MongoDB connected: CLOUD
+2026-05-24 07:15:02 +05:30: MongoDB connected: CLOUD
+2026-06-26 21:50:15 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+2026-06-26 21:50:15 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+2026-06-26 21:50:15 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-06-26 21:50:15 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-06-26 21:50:15 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+2026-06-26 21:50:16 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚡️ secrets for agents: https://dotenvx.com/as2
+2026-06-26 21:50:16 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-06-26 21:50:16 +05:30: [dotenv@17.3.1] injecting env (27) from .env -- tip: 🛡️ auth for agents: https://vestauth.com
+2026-06-26 21:50:19 +05:30: --- Server Initializing ---
+2026-06-26 21:50:19 +05:30: ENV: MONGO_URI is LOADED
+2026-06-26 21:50:19 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-06-26 21:50:19 +05:30: --- Server Initializing ---
+2026-06-26 21:50:19 +05:30: ENV: MONGO_URI is LOADED
+2026-06-26 21:50:19 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-06-26 21:50:19 +05:30: --- Server Initializing ---
+2026-06-26 21:50:19 +05:30: ENV: MONGO_URI is LOADED
+2026-06-26 21:50:19 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-06-26 21:50:19 +05:30: --- Server Initializing ---
+2026-06-26 21:50:19 +05:30: ENV: MONGO_URI is LOADED
+2026-06-26 21:50:19 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-06-26 21:50:19 +05:30: --- Server Initializing ---
+2026-06-26 21:50:19 +05:30: ENV: MONGO_URI is LOADED
+2026-06-26 21:50:19 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-06-26 21:50:19 +05:30: --- Server Initializing ---
+2026-06-26 21:50:19 +05:30: ENV: MONGO_URI is LOADED
+2026-06-26 21:50:19 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-06-26 21:50:19 +05:30: --- Server Initializing ---
+2026-06-26 21:50:19 +05:30: ENV: MONGO_URI is LOADED
+2026-06-26 21:50:19 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-06-26 21:50:19 +05:30: --- Server Initializing ---
+2026-06-26 21:50:19 +05:30: ENV: MONGO_URI is LOADED
+2026-06-26 21:50:19 +05:30: ✅ Serving images from: C:\Users\suraj\Desktop\industrial\wattorbit-compliance-redressal\backend\public\images
+2026-06-26 21:50:22 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-06-26 21:50:22 +05:30: 🌍 Environment: production
+2026-06-26 21:50:22 +05:30: Initializing Cron Jobs...
+2026-06-26 21:50:22 +05:30: Cron Jobs Initialized.
+2026-06-26 21:50:22 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-06-26 21:50:22 +05:30: 🌍 Environment: production
+2026-06-26 21:50:22 +05:30: Initializing Cron Jobs...
+2026-06-26 21:50:22 +05:30: Cron Jobs Initialized.
+2026-06-26 21:50:22 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-06-26 21:50:22 +05:30: 🌍 Environment: production
+2026-06-26 21:50:22 +05:30: Initializing Cron Jobs...
+2026-06-26 21:50:22 +05:30: Cron Jobs Initialized.
+2026-06-26 21:50:22 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-06-26 21:50:22 +05:30: 🌍 Environment: production
+2026-06-26 21:50:22 +05:30: Initializing Cron Jobs...
+2026-06-26 21:50:22 +05:30: Cron Jobs Initialized.
+2026-06-26 21:50:22 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-06-26 21:50:22 +05:30: 🌍 Environment: production
+2026-06-26 21:50:22 +05:30: Initializing Cron Jobs...
+2026-06-26 21:50:22 +05:30: Cron Jobs Initialized.
+2026-06-26 21:50:22 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-06-26 21:50:22 +05:30: 🌍 Environment: production
+2026-06-26 21:50:23 +05:30: Initializing Cron Jobs...
+2026-06-26 21:50:23 +05:30: Cron Jobs Initialized.
+2026-06-26 21:50:22 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-06-26 21:50:22 +05:30: 🌍 Environment: production
+2026-06-26 21:50:23 +05:30: Initializing Cron Jobs...
+2026-06-26 21:50:23 +05:30: Cron Jobs Initialized.
+2026-06-26 21:50:22 +05:30: 🚀 Server running on port 5000 (BIND: 0.0.0.0)
+2026-06-26 21:50:22 +05:30: 🌍 Environment: production
+2026-06-26 21:50:23 +05:30: Initializing Cron Jobs...
+2026-06-26 21:50:23 +05:30: Cron Jobs Initialized.
+2026-06-26 21:50:26 +05:30: MongoDB connected: CLOUD
+2026-06-26 21:50:26 +05:30: MongoDB connected: CLOUD
+2026-06-26 21:50:26 +05:30: MongoDB connected: CLOUD
+2026-06-26 21:50:26 +05:30: MongoDB connected: CLOUD
+2026-06-26 21:50:26 +05:30: MongoDB connected: CLOUD
+2026-06-26 21:50:26 +05:30: MongoDB connected: CLOUD
+2026-06-26 21:50:26 +05:30: MongoDB connected: CLOUD
+2026-06-26 21:50:27 +05:30: MongoDB connected: CLOUD
+2026-06-26 22:00:00 +05:30: Running Feedback Reminder Job...
+2026-06-26 22:00:00 +05:30: Running Feedback Reminder Job...
+2026-06-26 22:00:00 +05:30: Running Feedback Reminder Job...
+2026-06-26 22:00:00 +05:30: Running Feedback Reminder Job...
+2026-06-26 22:00:00 +05:30: Running Feedback Reminder Job...
+2026-06-26 22:00:00 +05:30: Running Feedback Reminder Job...
+2026-06-26 22:00:00 +05:30: Running Feedback Reminder Job...
+2026-06-26 22:00:00 +05:30: Running Feedback Reminder Job...
+2026-06-26 22:00:00 +05:30: Found 0 bookings eligible for feedback reminder.
+2026-06-26 22:00:00 +05:30: Found 0 bookings eligible for feedback reminder.
+2026-06-26 22:00:00 +05:30: Found 0 bookings eligible for feedback reminder.
+2026-06-26 22:00:00 +05:30: Found 0 bookings eligible for feedback reminder.
+2026-06-26 22:00:00 +05:30: Found 0 bookings eligible for feedback reminder.
+2026-06-26 22:00:00 +05:30: Found 0 bookings eligible for feedback reminder.
+2026-06-26 22:00:00 +05:30: Found 0 bookings eligible for feedback reminder.
+2026-06-26 22:00:00 +05:30: Found 0 bookings eligible for feedback reminder.

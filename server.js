@@ -11,6 +11,11 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const { getCacheStats } = require('./middleware/cache');
+
+// Ensure logs directory exists for PM2
+const fs = require('fs');
+if (!fs.existsSync('./logs')) fs.mkdirSync('./logs', { recursive: true });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -183,8 +188,15 @@ app.get('/', (req, res) => {
 app.get('/api/heartbeat', (req, res) => {
   res.json({
     status: 'ok',
-    version: '1.0.7-secure',
-    timestamp: new Date().toISOString()
+    version: '1.0.8-cached',
+    timestamp: new Date().toISOString(),
+    pid: process.pid,
+    uptime: Math.floor(process.uptime()) + 's',
+    cache: getCacheStats(),
+    memory: {
+      rss: (process.memoryUsage().rss / 1024 / 1024).toFixed(1) + 'MB',
+      heap: (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1) + 'MB',
+    }
   });
 });
 

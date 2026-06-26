@@ -3,6 +3,7 @@ const router = express.Router();
 const Category = require('../models/Category');
 const jwt = require('jsonwebtoken');
 const auditLogger = require('../utils/auditLogger');
+const { cacheMiddleware, invalidateCache, CACHE_KEYS } = require('../middleware/cache');
 
 router.use(auditLogger);
 
@@ -34,8 +35,8 @@ const isAdmin = (req, res, next) => {
    PUBLIC ENDPOINTS
 ===================== */
 
-// GET: List all active categories
-router.get('/', async (req, res) => {
+// GET: List all active categories (cached 5 min)
+router.get('/', cacheMiddleware(CACHE_KEYS.CATEGORIES, 300), async (req, res) => {
     try {
         const categories = await Category.find({ isActive: true }).sort({ order: 1, name: 1 });
         res.json(categories);
@@ -65,6 +66,7 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
     try {
         const category = new Category(req.body);
         await category.save();
+        invalidateCache(CACHE_KEYS.CATEGORIES); // Clear stale cache
         res.status(201).json({ message: 'Category created successfully', category });
     } catch (err) {
         console.error('Error creating category:', err);
@@ -77,6 +79,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         const category = await Category.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
         if (!category) return res.status(404).json({ message: 'Category not found' });
+        invalidateCache(CACHE_KEYS.CATEGORIES); // Clear stale cache
         res.json({ message: 'Category updated successfully', category });
     } catch (err) {
         console.error('Error updating category:', err);
@@ -89,6 +92,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         const category = await Category.findByIdAndDelete(req.params.id);
         if (!category) return res.status(404).json({ message: 'Category not found' });
+        invalidateCache(CACHE_KEYS.CATEGORIES); // Clear stale cache
         res.json({ message: 'Category deleted successfully' });
     } catch (err) {
         console.error('Error deleting category:', err);
