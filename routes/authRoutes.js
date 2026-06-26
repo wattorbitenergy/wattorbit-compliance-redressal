@@ -765,20 +765,31 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
     const resetUrl = `${origin}/reset-password?token=${resetToken}`;
 
     if (user.email) {
-      await mailer.sendMail({
-        to: user.email,
-        subject: 'WattOrbit Password Reset',
-        html: `
-          <h2>Password Reset</h2>
-          <p>Click below to reset your password:</p>
-          <a href="${resetUrl}">${resetUrl}</a>
-        `
-      });
+      try {
+        await mailer.sendMail({
+          to: user.email,
+          subject: 'WattOrbit Password Reset',
+          html: `
+            <h2>Password Reset</h2>
+            <p>Click below to reset your password:</p>
+            <a href="${resetUrl}">${resetUrl}</a>
+          `
+        });
+      } catch (mailErr) {
+        // Email failed even after retries — log it but don't crash the route.
+        // The reset token is already saved, so the user could still use the link
+        // if they retrieve it through another channel (e.g., SMS fallback).
+        console.error('[forgot-password] Email delivery failed after retries:', mailErr.message || mailErr);
+        return res.status(503).json({
+          message: 'We could not send the reset email right now due to a mail server issue. Please try again in a few minutes, or contact support.'
+        });
+      }
     }
 
     res.json({ message: 'Password reset link sent to registered mail' });
-  } catch {
-    res.status(500).json({ message: 'Reset failed' });
+  } catch (err) {
+    console.error('[forgot-password] Unexpected error:', err);
+    res.status(500).json({ message: 'Reset failed. Please try again.' });
   }
 });
 
