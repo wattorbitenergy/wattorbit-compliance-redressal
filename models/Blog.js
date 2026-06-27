@@ -25,14 +25,6 @@ const blogSchema = new mongoose.Schema({
     type: String,
     default: 'WattOrbit Team'
   },
-  authorImage: {
-    type: String,
-    trim: true,
-  },
-  authorDetails: {
-    type: String,
-    trim: true,
-  },
   tags: [{
     type: String,
     trim: true
@@ -55,7 +47,7 @@ const blogSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Auto-generate slug from title if not provided or empty
-blogSchema.pre('validate', function() {
+blogSchema.pre('validate', function(next) {
   if (this.title && !this.slug) {
     this.slug = this.title
       .toLowerCase()
@@ -68,6 +60,7 @@ blogSchema.pre('validate', function() {
   if (!this.seoDescription && this.excerpt) {
     this.seoDescription = this.excerpt;
   }
+  next();
 });
 
 module.exports = mongoose.model('Blog', blogSchema);

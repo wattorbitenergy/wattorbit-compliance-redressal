@@ -4,7 +4,7 @@ const Service = require('../models/Service');
 const ServicePackage = require('../models/ServicePackage');
 const { generateServiceId } = require('../utils/idGenerator');
 const jwt = require('jsonwebtoken');
-const { cacheMiddleware, invalidateCache, CACHE_KEYS } = require('../middleware/cache');
+const cache = require('../utils/cache');
 const auditLogger = require('../utils/auditLogger');
 
 router.use(auditLogger);
@@ -27,9 +27,9 @@ const verifyToken = (req, res, next) => {
 
 // Admin check middleware
 const isAuthorized = (req, res, next) => {
-    const allowedRoles = ['admin', 'employee', 'engineer'];
+    const allowedRoles = ['admin', 'employee'];
     if (!allowedRoles.includes(req.user.role)) {
-        return res.status(403).json({ message: 'Access denied: Requires Admin, Employee, or Engineer role' });
+        return res.status(403).json({ message: 'Administrative access required' });
     }
     next();
 };
@@ -38,37 +38,37 @@ const isAuthorized = (req, res, next) => {
    PUBLIC ENDPOINTS
 ===================== */
 
-// GET: List all active services with filters (cached 5 min for unfiltered requests)
+// GET: List all active services with filters
 router.get('/', async (req, res) => {
     try {
         const { category, city, search, subcategory, isCurated } = req.query;
-        const hasFilters = category || city || search || subcategory || isCurated;
-
-        // Only cache unfiltered requests (the most common dashboard load)
-        if (!hasFilters) {
-            const cached = require('../middleware/cache').cache.get(CACHE_KEYS.SERVICES);
-            if (cached) {
-                res.setHeader('X-Cache', 'HIT');
-                return res.json(cached);
-            }
-        }
 
         let query = { isActive: true };
-        if (category) query.category = category;
-        if (subcategory) query.subcategory = subcategory;
-        if (city) query.availableCities = city;
-        if (search) query.$text = { $search: search };
-        if (isCurated !== undefined) query.isCurated = isCurated === 'true';
+
+        if (category) {
+            query.category = category;
+        }
+
+        if (subcategory) {
+            query.subcategory = subcategory;
+        }
+
+        if (city) {
+            query.availableCities = city;
+        }
+
+        if (search) {
+            query.$text = { $search: search };
+        }
+
+        if (isCurated !== undefined) {
+            query.isCurated = isCurated === 'true';
+        }
 
         const services = await Service.find(query)
             .populate('createdBy', 'name username')
             .sort({ createdAt: -1 })
             .lean();
-
-        if (!hasFilters) {
-            require('../middleware/cache').cache.set(CACHE_KEYS.SERVICES, services, 300);
-            res.setHeader('X-Cache', 'MISS');
-        }
 
         res.json(services);
     } catch (err) {
@@ -158,7 +158,7 @@ router.post('/', verifyToken, isAuthorized, async (req, res) => {
         });
 
         await service.save();
-        invalidateCache(CACHE_KEYS.SERVICES, CACHE_KEYS.CATEGORIES);
+        cache.del('dashboard_stats:role=admin&org=global');
 
         res.status(201).json({
             message: 'Service created successfully',
@@ -227,7 +227,7 @@ router.patch('/:id/toggle', verifyToken, isAuthorized, async (req, res) => {
 
         service.isActive = !service.isActive;
         await service.save();
-        invalidateCache(CACHE_KEYS.SERVICES);
+        cache.del('dashboard_stats:role=admin&org=global');
 
         res.json({
             message: `Service ${service.isActive ? 'activated' : 'deactivated'} successfully`,
@@ -250,7 +250,7 @@ router.patch('/:id/curate', verifyToken, isAuthorized, async (req, res) => {
 
         service.isCurated = !service.isCurated;
         await service.save();
-        invalidateCache(CACHE_KEYS.SERVICES, CACHE_KEYS.CURATIONS);
+        cache.del('dashboard_stats:role=admin&org=global');
 
         res.json({
             message: `Service ${service.isCurated ? 'curated' : 'removed from curations'} successfully`,

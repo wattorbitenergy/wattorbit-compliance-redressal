@@ -33,22 +33,6 @@ const orderSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
-    deliveryFee: {
-        type: Number,
-        default: 0
-    },
-    chargeableWeight: {
-        type: Number,
-        default: 0
-    },
-    baseDeliveryFee: {
-        type: Number,
-        default: 0
-    },
-    volumetricWeightFee: {
-        type: Number,
-        default: 0
-    },
     addressId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Address',
@@ -68,37 +52,22 @@ const orderSchema = new mongoose.Schema({
     razorpayPaymentId: String,
     status: {
         type: String,
-        enum: ['Pending', 'Confirmed', 'Packed', 'Dispatched', 'In Transit', 'Arrived at Hub', 'Out for Delivery', 'Delivered', 'Cancelled'],
-        default: 'Pending'
+        enum: ['Confirmed', 'Processing', 'Dispatched', 'Delivered', 'Cancelled'],
+        default: 'Confirmed'
     },
-    deliveryMode: {
-        type: String,
-        enum: ['Unassigned', 'Internal', 'External'],
-        default: 'Unassigned'
-    },
-    deliveryBoyId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
-    },
-    logisticsPartner: String,
-    pickupAddress: String,
-    externalTrackingId: String,
     deliveryPartner: String,
     trackingId: String,
-    notes: String,
-    trackingHistory: [{
-        status: String,
-        location: String,
-        message: String,
-        timestamp: { type: Date, default: Date.now }
-    }]
+    notes: String
 }, { timestamps: true });
 
 // Auto-generate Order ID
 orderSchema.pre('save', async function () {
     if (this.isNew && !this.orderId) {
-        const count = await this.constructor.countDocuments();
-        this.orderId = (6000001 + count).toString();
+        const date = new Date();
+        const year = date.getFullYear().toString().slice(-2);
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const count = await this.constructor.countDocuments() + 1001;
+        this.orderId = `ORD-${year}${month}-${count}`;
     }
 });
 

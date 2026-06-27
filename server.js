@@ -11,11 +11,6 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { getCacheStats } = require('./middleware/cache');
-
-// Ensure logs directory exists for PM2
-const fs = require('fs');
-if (!fs.existsSync('./logs')) fs.mkdirSync('./logs', { recursive: true });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -81,6 +76,10 @@ app.use((req, res, next) => {
    TRUST PROXY & PROD CHECK
 ===================== */
 app.set('trust proxy', 1);
+
+if (!process.env.MONGO_URI && process.env.NODE_ENV === 'production') {
+  console.error("⚠️ WARNING: MONGO_URI is missing in production environment!");
+}
 
 /* =====================
    CORS CONFIG
@@ -188,15 +187,8 @@ app.get('/', (req, res) => {
 app.get('/api/heartbeat', (req, res) => {
   res.json({
     status: 'ok',
-    version: '1.0.8-cached',
-    timestamp: new Date().toISOString(),
-    pid: process.pid,
-    uptime: Math.floor(process.uptime()) + 's',
-    cache: getCacheStats(),
-    memory: {
-      rss: (process.memoryUsage().rss / 1024 / 1024).toFixed(1) + 'MB',
-      heap: (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1) + 'MB',
-    }
+    version: '1.0.7-secure',
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -237,6 +229,7 @@ app.use('/api/coupons', require('./routes/couponRoutes'));
 app.use('/api/invoices', require('./routes/invoiceRoutes'));
 app.use('/api/feedback', require('./routes/feedbackRoutes'));
 app.use('/api/finance', require('./routes/technicianFinanceRoutes'));
+app.use('/api/technician-finance', require('./routes/technicianFinanceRoutes'));
 app.use('/api/automation', require('./routes/automationRoutes'));
 app.use('/api/promotions', require('./routes/promotionRoutes'));
 app.use('/api/curations', require('./routes/curationRoutes'));
@@ -249,7 +242,6 @@ app.use('/api/reviews', require('./routes/reviewRoutes'));
 app.use('/api/materials', require('./routes/materialRoutes'));
 app.use('/api/orders', require('./routes/orderRoutes'));
 app.use('/api/payouts', require('./routes/payoutRoutes'));
-app.use('/api/logistics', require('./routes/logisticsRoutes'));
 
 if (process.env.NODE_ENV !== 'production') {
   app.use('/api/test-notification', require('./routes/testNotificationRoutes'));
@@ -263,7 +255,8 @@ app.use((err, req, res, next) => {
   console.error(err.stack); // 🔍 Show stack trace for emergency debugging
 
   res.status(err.status || 500).json({
-    message: err.message || 'Internal server error'
+    message: err.message || 'Internal server error',
+    error: err.stack // 🔍 Send stack back to console during this test phase
   });
 });
 

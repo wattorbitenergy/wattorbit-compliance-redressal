@@ -56,10 +56,7 @@ async function recalculateBooking(booking) {
     booking.platformFees = totalPlatformFees;
     booking.taxes = totalTaxes;
     booking.lineItemDiscount = totalDiscount; 
-
-    const materialTotal = booking.materialTotal || 0;
-    const materialTaxTotal = booking.materialTaxTotal || 0;
-    booking.totalAmount = Math.max(0, basePrice + totalTaxes + materialTotal + materialTaxTotal - totalDiscount - otherDiscounts);
+    booking.totalAmount = Math.max(0, basePrice + totalTaxes - totalDiscount - otherDiscounts);
 
     return booking;
 }

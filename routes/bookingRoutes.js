@@ -11,7 +11,6 @@ const TechnicianEarning = require('../models/TechnicianEarning');
 const FinancialLedger = require('../models/FinancialLedger');
 const Invoice = require('../models/Invoice');
 const DeletedBooking = require('../models/DeletedBooking');
-const Material = require('../models/Material');
 const { generateBookingId } = require('../utils/idGenerator');
 const { round } = require('../utils/mathUtils');
 const { triggerAutomation } = require('../utils/automationEngine');
@@ -199,7 +198,7 @@ router.post('/', verifyToken, async (req, res) => {
         
         const netPlatformFees = round(platformFees - platformDiscountShare);
 
-        const taxRate = servicePackage.taxRate || 18; // 18% GST on platform fees only
+        const taxRate = 18; // 18% GST on platform fees only
         const taxes = Math.max(0, round((netPlatformFees * taxRate) / 100));
 
         const totalAmount = Math.max(0, round(basePrice + taxes - discount - pointsToUse));
@@ -781,7 +780,7 @@ router.patch('/:id/admin-apply-coupon', verifyToken, isAdmin, async (req, res) =
 
         // Recalculate Taxes and Total
         const netPlatformFees = round((booking.platformFees || 0) - (booking.platformDiscountShare || 0));
-        const taxRate = (booking.packageId && booking.packageId.taxRate) || 18;
+        const taxRate = 18;
         booking.taxes = Math.max(0, round((netPlatformFees * taxRate) / 100));
         booking.totalAmount = Math.max(0, round(booking.basePrice + booking.taxes - (booking.discount || 0) - (booking.pointsUsed || 0)));
 
@@ -1615,7 +1614,10 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
             await booking.save();
 
             // Auto-generate or update invoice on completion or payment receipt
-
+            if (paymentReceived === true) {
+                // To ensure transparency and reflect 'Paid' status, we delete the old invoice and let helper regenerate it
+                await Invoice.findOneAndDelete({ bookingId: booking._id });
+            }
             const invoice = await autoGenerateInvoice(booking._id);
 
             if (status === 'Completed' && !isAlreadyCompleted) {
@@ -2244,13 +2246,9 @@ router.post('/:id/add-service', verifyToken, async (req, res) => {
             return res.status(400).json({ message: 'Cannot add services to a paid booking' });
         }
 
-        // Access Check: Admin, Employee, Engineer, or Assigned Technician/Organisation, OR Booking Owner
-        const isAssignedTech = booking.assignedTechnician && booking.assignedTechnician.toString() === req.user.id;
-        const isAssignedOrg = booking.organisationId && booking.organisationId.toString() === req.user.id;
-        const isPrivileged = ['admin', 'employee', 'engineer'].includes(req.user.role);
-        const isOwner = booking.userId && booking.userId.toString() === req.user.id;
-
-        if (!isPrivileged && !isAssignedTech && !isAssignedOrg && !isOwner) {
+        // Access Check: Admin or Assigned Technician
+        const isAssigned = booking.assignedTechnician && booking.assignedTechnician.toString() === req.user.id;
+        if (req.user.role !== 'admin' && req.user.role !== 'employee' && !isAssigned) {
             return res.status(403).json({ message: 'Unauthorized to modify this booking' });
         }
 
@@ -2540,15 +2538,13 @@ router.patch('/:id/add-material', verifyToken, async (req, res) => {
             return res.status(400).json({ message: 'materialId and quantity are required' });
         }
 
+        const Material = require('../models/Material');
         const material = await Material.findById(materialId);
         if (!material || !material.isActive) {
             return res.status(404).json({ message: 'Material not found or inactive' });
         }
 
         const qty = Number(quantity);
-        if (isNaN(qty) || qty < 1 || !Number.isInteger(qty)) {
-            return res.status(400).json({ message: 'quantity must be a positive whole number' });
-        }
 
         // 🛡️ Stock check
         if (material.stockQuantity < qty) {
@@ -2560,13 +2556,11 @@ router.patch('/:id/add-material', verifyToken, async (req, res) => {
         const booking = await Booking.findById(req.params.id);
         if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
-        // Authorization: Only assigned tech/org or management roles, OR Booking Owner
-        const isAssignedTech = booking.assignedTechnician && booking.assignedTechnician.toString() === req.user.id;
-        const isAssignedOrg = booking.organisationId && booking.organisationId.toString() === req.user.id;
-        const isPrivileged = ['admin', 'employee', 'engineer'].includes(req.user.role);
-        const isOwner = booking.userId && booking.userId.toString() === req.user.id;
-
-        if (!isPrivileged && !isAssignedTech && !isAssignedOrg && !isOwner) return res.status(403).json({ message: 'Access denied' });
+        // Authorization: Only assigned tech or management roles
+        const canEdit = req.user.role === 'admin' || req.user.role === 'employee' || 
+                        (req.user.role === 'technician' && booking.assignedTechnician?.toString() === req.user.id);
+        
+        if (!canEdit) return res.status(403).json({ message: 'Access denied' });
         if (['Completed', 'Cancelled'].includes(booking.status)) {
             return res.status(400).json({ message: 'Cannot add materials to completed or cancelled bookings' });
         }
@@ -2611,7 +2605,7 @@ router.patch('/:id/add-material', verifyToken, async (req, res) => {
         booking.materialTaxTotal = materialTaxTotal;
         
         // Recalculate Grand Total
-        booking.totalAmount = Math.max(0, booking.basePrice + booking.taxes + materialTotal + materialTaxTotal - (booking.discount || 0) - (booking.lineItemDiscount || 0) - (booking.pointsUsed || 0));
+        booking.totalAmount = Math.max(0, booking.basePrice + booking.taxes + materialTotal + materialTaxTotal - (booking.discount || 0) - (booking.pointsUsed || 0));
 
         await booking.save();
         res.json({ message: 'Material added', booking });
@@ -2655,7 +2649,7 @@ router.delete('/:id/remove-material/:lineItemId', verifyToken, async (req, res) 
 
         booking.materialTotal = materialTotal;
         booking.materialTaxTotal = materialTaxTotal;
-        booking.totalAmount = Math.max(0, booking.basePrice + booking.taxes + materialTotal + materialTaxTotal - (booking.discount || 0) - (booking.lineItemDiscount || 0) - (booking.pointsUsed || 0));
+        booking.totalAmount = Math.max(0, booking.basePrice + booking.taxes + materialTotal + materialTaxTotal - (booking.discount || 0) - (booking.pointsUsed || 0));
 
         await booking.save();
         res.json({ message: 'Material removed', booking });

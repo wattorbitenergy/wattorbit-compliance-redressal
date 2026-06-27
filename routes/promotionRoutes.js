@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const Promotion = require('../models/Promotion');
 const jwt = require('jsonwebtoken');
-const { cacheMiddleware, invalidateCache, CACHE_KEYS } = require('../middleware/cache');
 
 // Verify token middleware
 const verifyToken = (req, res, next) => {
@@ -28,10 +27,10 @@ const isAuthorized = (req, res, next) => {
     next();
 };
 
-// @desc    Get all active promotions (cached 5 min)
+// @desc    Get all active promotions
 // @route   GET /api/promotions
 // @access  Public
-router.get('/', cacheMiddleware(CACHE_KEYS.PROMOTIONS, 300), async (req, res) => {
+router.get('/', async (req, res) => {
     try {
         const promotions = await Promotion.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
         res.json(promotions);
@@ -59,7 +58,6 @@ router.post('/', verifyToken, isAuthorized, async (req, res) => {
     try {
         const promotion = new Promotion(req.body);
         const savedPromotion = await promotion.save();
-        invalidateCache(CACHE_KEYS.PROMOTIONS);
         res.status(201).json(savedPromotion);
     } catch (err) {
         res.status(400).json({ message: err.message });
@@ -73,7 +71,6 @@ router.put('/:id', verifyToken, isAuthorized, async (req, res) => {
     try {
         const promotion = await Promotion.findByIdAndUpdate(req.params.id, req.body, { new: true });
         if (!promotion) return res.status(404).json({ message: 'Promotion not found' });
-        invalidateCache(CACHE_KEYS.PROMOTIONS);
         res.json(promotion);
     } catch (err) {
         res.status(400).json({ message: err.message });
@@ -87,7 +84,6 @@ router.delete('/:id', verifyToken, isAuthorized, async (req, res) => {
     try {
         const promotion = await Promotion.findByIdAndDelete(req.params.id);
         if (!promotion) return res.status(404).json({ message: 'Promotion not found' });
-        invalidateCache(CACHE_KEYS.PROMOTIONS);
         res.json({ message: 'Promotion removed' });
     } catch (err) {
         res.status(500).json({ message: err.message });

@@ -11,9 +11,9 @@ const { verifyToken } = require('../middleware/authMiddleware');
 
 // Admin/Employee check
 const canManageInventory = (req, res, next) => {
-    const allowedRoles = ['admin', 'employee', 'engineer'];
+    const allowedRoles = ['admin', 'employee'];
     if (!allowedRoles.includes(req.user.role)) {
-        return res.status(403).json({ message: 'Access denied: Requires Admin, Employee, or Engineer role' });
+        return res.status(403).json({ message: 'Access denied: Requires Admin or Employee role' });
     }
     next();
 };
@@ -34,7 +34,7 @@ const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 } }); // 2M
 // GET: List all materials (Public access)
 router.get('/', async (req, res) => {
     try {
-        let selectFields = 'name make description materialCode unit sellingPrice sellingTaxRate sellingTaxAmount images mrp isActive stockQuantity averageRating numReviews';
+        let selectFields = 'name make description materialCode unit sellingPrice images mrp isActive';
         
         // If logged in, we might provide more info
         const authHeader = req.headers.authorization;
@@ -43,7 +43,7 @@ router.get('/', async (req, res) => {
                 const token = authHeader.split(' ')[1];
                 const decoded = jwt.verify(token, process.env.JWT_SECRET);
                 if (['admin', 'employee', 'technician'].includes(decoded.role)) {
-                    selectFields = 'name make description hsnCode materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity images mrp isActive averageRating numReviews';
+                    selectFields = 'name make description hsnCode materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity images mrp isActive';
                 }
             } catch (e) {}
         }
@@ -146,7 +146,7 @@ router.get('/reports/usage', verifyToken, canManageInventory, async (req, res) =
 // GET: Single material (Public access)
 router.get('/:id', async (req, res) => {
     try {
-        let selectFields = 'name make description materialCode unit sellingPrice sellingTaxRate sellingTaxAmount images mrp isActive stockQuantity averageRating numReviews';
+        let selectFields = 'name make description materialCode unit sellingPrice images mrp isActive';
 
         const authHeader = req.headers.authorization;
         if (authHeader) {
@@ -154,7 +154,7 @@ router.get('/:id', async (req, res) => {
                 const token = authHeader.split(' ')[1];
                 const decoded = jwt.verify(token, process.env.JWT_SECRET);
                 if (['admin', 'employee', 'technician'].includes(decoded.role)) {
-                    selectFields = 'name make description hsnCode materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity images mrp isActive averageRating numReviews';
+                    selectFields = 'name make description hsnCode materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity images mrp isActive';
                 }
             } catch (e) {}
         }
@@ -228,11 +228,6 @@ router.post('/:id/upload-image', verifyToken, canManageInventory, upload.single(
         if (!material) {
             if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
             return res.status(404).json({ message: 'Material not found' });
-        }
-
-        if (material.images && material.images.length >= 4) {
-            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-            return res.status(400).json({ message: 'Maximum 4 photos allowed per material' });
         }
 
         // Upload to Cloudinary
@@ -313,18 +308,9 @@ router.put('/:id', verifyToken, canManageInventory, async (req, res) => {
 // DELETE: Deactivate material (Admin/Employee only)
 router.delete('/:id', verifyToken, canManageInventory, async (req, res) => {
     try {
-        const { remark } = req.body;
-        const material = await Material.findByIdAndUpdate(
-            req.params.id, 
-            { 
-                isActive: false, 
-                deactivationRemark: remark || 'No reason provided',
-                deactivatedAt: new Date()
-            }, 
-            { new: true }
-        );
+        const material = await Material.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
         if (!material) return res.status(404).json({ message: 'Material not found' });
-        res.json({ message: 'Material deactivated successfully', material });
+        res.json({ message: 'Material deactivated' });
     } catch (err) {
         res.status(500).json({ message: 'Error deactivating material', error: err.message });
     }

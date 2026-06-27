@@ -119,65 +119,39 @@ router.post('/generate', verifyToken, async (req, res) => {
             });
         }
 
-        // 1 & 2. Services (Technician and Platform Fees)
-        const servicesArray = booking.services && booking.services.length > 0
-            ? booking.services
-            : [{
-                name: `${booking.serviceId?.name || 'Service'} - ${booking.packageId?.name || ''}`,
-                technicianCharges: booking.technicianCharges || 0,
-                platformFees: booking.platformFees || 0
-            }];
+        // 2. Service (Tech Fee)
+        const sacCode = booking.packageId?.sacCode || booking.serviceId?.sacCode || '998700';
+        if (booking.technicianCharges > 0) {
+            const item = processItem({
+                description: `${booking.serviceId.name} - Technician Fee`,
+                hsnSac: sacCode,
+                quantity: 1,
+                unitPrice: booking.technicianCharges,
+                taxableValue: booking.technicianCharges,
+                taxRate: 0
+            });
+            invoiceItems.push(item);
+            totalTaxable += item.taxableValue;
+        }
 
-        // Calculate total fees across all services to proportionally distribute the discount shares
-        const totalTechFees = servicesArray.reduce((sum, s) => sum + (s.technicianCharges || 0), 0);
-        const totalPlatFees = servicesArray.reduce((sum, s) => sum + (s.platformFees || 0), 0);
+        // 3. Platform Fee
+        if (booking.platformFees > 0) {
+            const item = processItem({
+                description: `${booking.serviceId.name} - Platform Fee`,
+                hsnSac: sacCode,
+                quantity: 1,
+                unitPrice: booking.platformFees,
+                taxableValue: booking.platformFees,
+                taxRate: 18
+            });
+            invoiceItems.push(item);
+            totalTaxable += item.taxableValue;
+            totalCGST += item.cgstAmount;
+            totalSGST += item.sgstAmount;
+            totalIGST += item.igstAmount;
+        }
 
-        servicesArray.forEach(svc => {
-            const svcTechFee = svc.technicianCharges || 0;
-            const svcPlatFee = svc.platformFees || 0;
-            
-            // Proportional share of the overall tech/platform discount for this specific service
-            const techDiscount = totalTechFees > 0 
-                ? parseFloat(((booking.technicianDiscountShare || 0) * (svcTechFee / totalTechFees)).toFixed(2)) 
-                : 0;
-                
-            const platDiscount = totalPlatFees > 0 
-                ? parseFloat(((booking.platformDiscountShare || 0) * (svcPlatFee / totalPlatFees)).toFixed(2)) 
-                : 0;
-
-            if (svcTechFee > 0) {
-                const item = processItem({
-                    description: `${svc.name} (Technician Fee)`,
-                    hsnSac: sacCode,
-                    quantity: 1,
-                    unitPrice: svcTechFee,
-                    taxableValue: svcTechFee,
-                    taxRate: 0,
-                    discountShare: techDiscount
-                });
-                invoiceItems.push(item);
-                totalTaxable += item.taxableValue;
-            }
-
-            if (svcPlatFee > 0) {
-                const item = processItem({
-                    description: `${svc.name} (Platform Fee)`,
-                    hsnSac: sacCode,
-                    quantity: 1,
-                    unitPrice: svcPlatFee,
-                    taxableValue: svcPlatFee,
-                    taxRate: 18,
-                    discountShare: platDiscount
-                });
-                invoiceItems.push(item);
-                totalTaxable += item.taxableValue;
-                totalCGST += item.cgstAmount;
-                totalSGST += item.sgstAmount;
-                totalIGST += item.igstAmount;
-            }
-        });
-
-        const grandTotal = parseFloat((totalTaxable + totalCGST + totalSGST + totalIGST - (booking.discount || 0) - (booking.pointsUsed || 0)).toFixed(2));
+        const grandTotal = parseFloat((totalTaxable + totalCGST + totalSGST + totalIGST - booking.discount).toFixed(2));
         const amountWords = convertNumberToWords(grandTotal);
 
         // Format address
@@ -186,31 +160,26 @@ router.post('/generate', verifyToken, async (req, res) => {
 
         const invoice = new Invoice({
             invoiceId,
-            bookingRef: booking.bookingId, // human-readable booking reference e.g. WO-2026-032
             bookingId,
             userId: booking.userId._id,
             invoiceDate: new Date(),
             items: invoiceItems,
             subtotal: parseFloat(totalTaxable.toFixed(2)),
             taxAmount: parseFloat((totalCGST + totalSGST + totalIGST).toFixed(2)),
-            discount: booking.discount || 0,
-            platformDiscountShare: parseFloat((booking.platformDiscountShare || 0).toFixed(2)),
-            technicianDiscountShare: parseFloat((booking.technicianDiscountShare || 0).toFixed(2)),
-            couponCode: booking.couponCode || null,
-            pointsUsed: booking.pointsUsed || 0,
+            discount: booking.discount,
             totalAmount: grandTotal,
             amountInWords: amountWords,
             totalCGST: parseFloat(totalCGST.toFixed(2)),
             totalSGST: parseFloat(totalSGST.toFixed(2)),
             totalIGST: parseFloat(totalIGST.toFixed(2)),
             placeOfSupply: buyerState,
-            stateCode: isIntrastate ? sellerStateCode : '',
+            stateCode: isIntrastate ? sellerStateCode : '', // Simplified, could map all state codes
             paymentStatus: payment && payment.status === 'Paid' ? 'Paid' : 'Unpaid',
             paidAmount: payment && payment.status === 'Paid' ? payment.amount : 0,
             businessName: biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP',
             businessGST: biz.gstNumber || '09AAFFW4253N1ZL',
             businessPAN: biz.panNumber || 'AAFFW4253N',
-            businessAddress: biz.address || 'Shop No.3, INDAURABAG, BKT LUCKNOW - 226201',
+            businessAddress: biz.branchName || 'Shop No.3, INDAURABAG, BKT LUCKNOW - 226201',
             bankDetails: {
                 accountHolderName: biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP',
                 accountNumber: biz.accountNumber || '',
@@ -243,16 +212,11 @@ router.get('/:id', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Invoice not found' });
         }
 
-        // Check access: user themselves, admin, employee, engineer, or assigned technician/organisation
-        const isAssignedTech = invoice.bookingId?.assignedTechnician?.toString() === req.user.id;
-        const isAssignedOrg = invoice.bookingId?.organisationId?.toString() === req.user.id;
-        const isPrivileged = ['admin', 'employee', 'engineer'].includes(req.user.role);
-
+        // Check access: user themselves, admin, employee, engineer, or their organisation
         if (
             invoice.userId._id.toString() !== req.user.id &&
-            !isPrivileged &&
-            !isAssignedOrg &&
-            !isAssignedTech
+            !['admin', 'employee', 'engineer'].includes(req.user.role) &&
+            !(req.user.role === 'organisation' && invoice.bookingId?.organisationId?.toString() === req.user.id)
         ) {
             return res.status(403).json({ message: 'Access denied' });
         }
@@ -275,16 +239,11 @@ router.get('/booking/:bookingId', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Invoice not found for this booking' });
         }
 
-        // Check access: user themselves, admin, employee, engineer, or assigned technician/organisation
-        const isAssignedTech = invoice.bookingId?.assignedTechnician?.toString() === req.user.id;
-        const isAssignedOrg = invoice.bookingId?.organisationId?.toString() === req.user.id;
-        const isPrivileged = ['admin', 'employee', 'engineer'].includes(req.user.role);
-
+        // Check access: user themselves, admin, employee, engineer, or their organisation
         if (
             invoice.userId._id.toString() !== req.user.id &&
-            !isPrivileged &&
-            !isAssignedOrg &&
-            !isAssignedTech
+            !['admin', 'employee', 'engineer'].includes(req.user.role) &&
+            !(req.user.role === 'organisation' && invoice.bookingId?.organisationId?.toString() === req.user.id)
         ) {
             return res.status(403).json({ message: 'Access denied' });
         }
@@ -323,16 +282,11 @@ router.get('/:id/download', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Invoice not found' });
         }
 
-        // Check access: user themselves, admin, employee, engineer, or assigned technician/organisation
-        const isAssignedTech = invoice.bookingId?.assignedTechnician?.toString() === req.user.id;
-        const isAssignedOrg = invoice.bookingId?.organisationId?.toString() === req.user.id;
-        const isPrivileged = ['admin', 'employee', 'engineer'].includes(req.user.role);
-
+        // Check access: user themselves, admin, employee, engineer, or their organisation
         if (
             invoice.userId._id.toString() !== req.user.id &&
-            !isPrivileged &&
-            !isAssignedOrg &&
-            !isAssignedTech
+            !['admin', 'employee', 'engineer'].includes(req.user.role) &&
+            !(req.user.role === 'organisation' && invoice.bookingId?.organisationId?.toString() === req.user.id)
         ) {
             return res.status(403).json({ message: 'Access denied' });
         }

@@ -794,18 +794,25 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
 });
 
 /* =========================
-   SEND RESET OTP (Phone-based password reset fallback)
+   SEND RESET OTP (Unified Email/Phone)
 ========================= */
 router.post('/send-reset-otp', authLimiter, async (req, res) => {
   try {
-    const { phone } = req.body;
-    if (!phone) return res.status(400).json({ message: 'Phone number is required' });
+    const { identity } = req.body;
+    if (!identity) return res.status(400).json({ message: 'Email or Phone number is required' });
 
-    const cleanPhone = String(phone).replace(/\D/g, '').trim();
-    if (cleanPhone.length < 10) return res.status(400).json({ message: 'Invalid phone number' });
+    const identifier = String(identity).toLowerCase().trim();
+    const isEmail = identifier.includes('@');
+    const cleanPhone = !isEmail ? identifier.replace(/\D/g, '') : null;
 
-    const user = await User.findOne({ phone: cleanPhone });
-    if (!user) return res.status(404).json({ message: 'No account found with this phone number' });
+    if (!isEmail && cleanPhone.length < 10) {
+      return res.status(400).json({ message: 'Invalid phone number or email' });
+    }
+
+    const query = isEmail ? { email: identifier } : { phone: cleanPhone };
+    const user = await User.findOne(query);
+
+    if (!user) return res.status(404).json({ message: 'No account found with this information' });
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpHash = await bcrypt.hash(otp, 8);
@@ -814,16 +821,51 @@ router.post('/send-reset-otp', authLimiter, async (req, res) => {
     await user.save();
 
     let delivered = false;
-    try { await sendOTPSms(cleanPhone, otp); delivered = true; } catch (e) { console.error('[send-reset-otp] SMS:', e.message); }
-    if (!delivered && user.email) {
-      try {
-        await mailer.sendMail({ to: user.email, subject: 'WattOrbit Password Reset OTP', html: `<p>Your OTP: <strong>${otp}</strong> (expires in 10 min)</p>` });
-        delivered = true;
-      } catch (e) { console.error('[send-reset-otp] Email fallback:', e.message); }
-    }
-    if (!delivered) console.log(`[DEV RESET OTP] ${cleanPhone} → ${otp}`);
+    let methodUsed = '';
 
-    res.json({ message: 'OTP sent to your registered mobile number' });
+    if (isEmail) {
+      try {
+        await mailer.sendMail({
+          to: user.email,
+          subject: 'WattOrbit Password Reset OTP',
+          html: `<h2>Password Reset Request</h2><p>Your OTP to reset your password is: <strong style="font-size:24px;">${otp}</strong></p><p>This code expires in 10 minutes.</p>`,
+          from: "otp@wattorbit.in"
+        });
+        delivered = true;
+        methodUsed = 'email';
+      } catch (e) {
+        console.error('[send-reset-otp] Email error:', e.message);
+      }
+    } else {
+      try {
+        await sendOTPSms(cleanPhone, otp);
+        delivered = true;
+        methodUsed = 'SMS';
+      } catch (e) {
+        console.error('[send-reset-otp] SMS error:', e.message);
+      }
+    }
+
+    // Fallbacks
+    if (!delivered) {
+      if (!isEmail && user.email) {
+        try {
+          await mailer.sendMail({ to: user.email, subject: 'WattOrbit Password Reset OTP', html: `<p>Your OTP: <strong>${otp}</strong></p>` });
+          delivered = true;
+          methodUsed = 'email (fallback)';
+        } catch (e) { console.error('[send-reset-otp] Email fallback error:', e.message); }
+      } else if (isEmail && user.phone) {
+        try {
+          await sendOTPSms(user.phone, otp);
+          delivered = true;
+          methodUsed = 'SMS (fallback)';
+        } catch (e) { console.error('[send-reset-otp] SMS fallback error:', e.message); }
+      }
+    }
+
+    if (!delivered) console.log(`[DEV RESET OTP] ${identifier} → ${otp}`);
+
+    res.json({ message: `OTP sent successfully via ${delivered ? methodUsed : 'development console'}` });
   } catch (err) {
     console.error('[send-reset-otp]', err);
     res.status(500).json({ message: 'Failed to send OTP. Please try again.' });
@@ -835,12 +877,16 @@ router.post('/send-reset-otp', authLimiter, async (req, res) => {
 ========================= */
 router.post('/verify-reset-otp-password', authLimiter, async (req, res) => {
   try {
-    const { phone, otp, newPassword } = req.body;
-    if (!phone || !otp || !newPassword) return res.status(400).json({ message: 'Phone, OTP and new password are required' });
+    const { identity, otp, newPassword } = req.body;
+    if (!identity || !otp || !newPassword) return res.status(400).json({ message: 'Email or Phone, OTP and new password are required' });
     if (newPassword.length < 6) return res.status(400).json({ message: 'Password must be at least 6 characters' });
 
-    const cleanPhone = String(phone).replace(/\D/g, '').trim();
-    const user = await User.findOne({ phone: cleanPhone });
+    const identifier = String(identity).toLowerCase().trim();
+    const isEmail = identifier.includes('@');
+    const cleanPhone = !isEmail ? identifier.replace(/\D/g, '') : null;
+
+    const query = isEmail ? { email: identifier } : { phone: cleanPhone };
+    const user = await User.findOne(query);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     const otpMatch = await bcrypt.compare(otp, user.loginOTP || '');

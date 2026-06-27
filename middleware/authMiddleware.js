@@ -8,16 +8,11 @@ const User = require('../models/User');
  */
 const verifyToken = async (req, res, next) => {
     const authHeader = req.headers.authorization;
-    let token = '';
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-        token = authHeader.split(' ')[1];
-    } else if (req.query.token) {
-        token = req.query.token;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ message: 'Authorization header missing or invalid' });
     }
 
-    if (!token) {
-        return res.status(401).json({ message: 'Authorization token missing' });
-    }
+    const token = authHeader.split(' ')[1];
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         

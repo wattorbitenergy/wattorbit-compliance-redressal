@@ -72,7 +72,6 @@ const materialSchema = new mongoose.Schema({
     images: {
         type: [String],
         default: [],
-        validate: [function (val) { return val.length <= 4; }, 'Maximum 4 photos allowed per material'],
         comment: "Product/packaging photo URLs"
     },
     
@@ -92,13 +91,6 @@ const materialSchema = new mongoose.Schema({
     purchaseTaxAmount: {
         type: Number,
         default: 0
-    },
-    purchaseDiscount: {
-        type: Number,
-        default: 0,
-        min: 0,
-        max: 100,
-        comment: "Percentage discount on MRP to calculate purchase price"
     },
 
     // Financials - Selling
@@ -132,78 +124,9 @@ const materialSchema = new mongoose.Schema({
         comment: "Output Tax - Input Tax"
     },
 
-    // Logistics Dimensions & Weight
-    weight: {
-        type: Number,
-        default: 0,
-        min: 0,
-        comment: "Actual weight in KG"
-    },
-    length: {
-        type: Number,
-        default: 0,
-        min: 0,
-        comment: "Length in cm"
-    },
-    width: {
-        type: Number,
-        default: 0,
-        min: 0,
-        comment: "Width in cm"
-    },
-    height: {
-        type: Number,
-        default: 0,
-        min: 0,
-        comment: "Height in cm"
-    },
-
     isActive: {
         type: Boolean,
         default: true
-    },
-    deactivationRemark: {
-        type: String,
-        trim: true,
-        default: ''
-    },
-    deactivatedAt: {
-        type: Date
-    },
-
-    // Reviews & Ratings
-    reviews: [{
-        user: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'User',
-            required: true
-        },
-        name: {
-            type: String,
-            required: true
-        },
-        rating: {
-            type: Number,
-            required: true,
-            min: 1,
-            max: 5
-        },
-        comment: {
-            type: String,
-            trim: true
-        },
-        createdAt: {
-            type: Date,
-            default: Date.now
-        }
-    }],
-    averageRating: {
-        type: Number,
-        default: 0
-    },
-    numReviews: {
-        type: Number,
-        default: 0
     }
 }, { timestamps: true });
 
@@ -239,15 +162,6 @@ materialSchema.pre('save', async function () {
             this.materialCode = nextCode.toString();
         } catch (err) {
             console.error('[MaterialCode] Error generating code:', err);
-        }
-    }
-
-    // Pre-save hook to calculate prices and tax amounts
-    if (this.mrp > 0) {
-        if (this.purchaseDiscount > 0 && (!this.purchasePrice || this.purchasePrice === 0)) {
-            this.purchasePrice = round(this.mrp * (1 - this.purchaseDiscount / 100));
-        } else if (this.purchasePrice > 0 && (!this.purchaseDiscount || this.purchaseDiscount === 0)) {
-            this.purchaseDiscount = round(((this.mrp - this.purchasePrice) / this.mrp) * 100);
         }
     }
 

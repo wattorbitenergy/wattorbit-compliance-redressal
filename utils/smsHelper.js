@@ -231,74 +231,6 @@ async function sendBookingCancelledSms(userId, customerName, bookingId) {
     return sendSMS(user.phone, templateId, vars, 'WATORB');
 }
 
-/**
- * 8. Material Order Confirmed — to Customer
- */
-async function sendMaterialOrderConfirmedSms(userId, customerName, orderId) {
-    const templateId = process.env.FAST2SMS_ORDER_CONFIRMED_TEMPLATE_ID;
-    if (!templateId) return false;
-
-    const enabled = await userHasSmsEnabled(userId);
-    if (!enabled) return false;
-    const user = await User.findById(userId).select('phone');
-    if (!user?.phone) return false;
-
-    // Variables: CustomerName|OrderID
-    const vars = `${customerName}|${orderId}`;
-    return sendSMS(user.phone, templateId, vars, 'WATORB');
-}
-
-/**
- * 9. Material Order Dispatched — to Customer
- */
-async function sendMaterialOrderDispatchedSms(userId, customerName, orderId, trackingId) {
-    const templateId = process.env.FAST2SMS_ORDER_DISPATCHED_TEMPLATE_ID;
-    if (!templateId) return false;
-
-    const enabled = await userHasSmsEnabled(userId);
-    if (!enabled) return false;
-    const user = await User.findById(userId).select('phone');
-    if (!user?.phone) return false;
-
-    // Variables: CustomerName|OrderID|TrackingID
-    const vars = `${customerName}|${orderId}|${trackingId}`;
-    return sendSMS(user.phone, templateId, vars, 'WATORB');
-}
-
-/**
- * 10. Material Order Out for Delivery — to Customer
- */
-async function sendMaterialOrderOutForDeliverySms(userId, customerName, orderId) {
-    const templateId = process.env.FAST2SMS_ORDER_OUT_FOR_DELIVERY_TEMPLATE_ID;
-    if (!templateId) return false;
-
-    const enabled = await userHasSmsEnabled(userId);
-    if (!enabled) return false;
-    const user = await User.findById(userId).select('phone');
-    if (!user?.phone) return false;
-
-    // Variables: CustomerName|OrderID
-    const vars = `${customerName}|${orderId}`;
-    return sendSMS(user.phone, templateId, vars, 'WATORB');
-}
-
-/**
- * 11. Material Order Cancelled — to Customer
- */
-async function sendMaterialOrderCancelledSms(userId, customerName, orderId) {
-    const templateId = process.env.FAST2SMS_ORDER_CANCELLED_TEMPLATE_ID;
-    if (!templateId) return false;
-
-    const enabled = await userHasSmsEnabled(userId);
-    if (!enabled) return false;
-    const user = await User.findById(userId).select('phone');
-    if (!user?.phone) return false;
-
-    // Variables: CustomerName|OrderID
-    const vars = `${customerName}|${orderId}`;
-    return sendSMS(user.phone, templateId, vars, 'WATORB');
-}
-
 module.exports = {
     sendSMS,
     sendOTPSms,
@@ -307,9 +239,5 @@ module.exports = {
     sendBookingCreatedSms,
     sendJobAssignedToTechnicianSms,
     sendServiceRequestOTPSms,
-    sendBookingCancelledSms,
-    sendMaterialOrderConfirmedSms,
-    sendMaterialOrderDispatchedSms,
-    sendMaterialOrderOutForDeliverySms,
-    sendMaterialOrderCancelledSms
+    sendBookingCancelledSms
 };
