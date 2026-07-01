@@ -9,12 +9,19 @@ const invoiceSchema = new mongoose.Schema({
     bookingId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Booking',
-        required: true
+        required: function() { return !this.isManual; }
     },
     userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        required: function() { return !this.isManual; }
+    },
+    isManual: {
+        type: Boolean,
+        default: false
+    },
+    invoiceUrl: {
+        type: String // Cloudinary URL for the PDF
     },
 
     // Invoice details

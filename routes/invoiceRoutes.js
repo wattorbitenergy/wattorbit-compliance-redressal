@@ -9,8 +9,24 @@ const Config = require('../models/Config');
 const { generateInvoiceId } = require('../utils/idGenerator');
 const { convertNumberToWords } = require('../utils/numberToWords');
 const jwt = require('jsonwebtoken');
+const fs = require('fs');
+const multer = require('multer');
+const { uploadToCloudinary } = require('../utils/cloudinaryHelper');
 
 const { verifyToken } = require('../middleware/authMiddleware');
+
+const upload = multer({ dest: 'uploads/' });
+
+// GET: Fetch the next auto-generated Invoice ID
+router.get('/next-id', verifyToken, async (req, res) => {
+    try {
+        const nextId = await generateInvoiceId();
+        res.json({ invoiceId: nextId });
+    } catch (error) {
+        console.error('Error fetching next invoice ID:', error);
+        res.status(500).json({ message: 'Internal Server Error' });
+    }
+});
 
 // POST: Generate invoice for booking (auto-triggered or manual)
 router.post('/generate', verifyToken, async (req, res) => {
@@ -306,3 +322,54 @@ router.get('/:id/download', verifyToken, async (req, res) => {
 });
 
 module.exports = router;
+
+// POST: Save manual invoice and upload to Cloudinary
+router.post('/manual', verifyToken, upload.single('invoicePdf'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: 'Invoice PDF file is required' });
+        }
+
+        const invoiceData = JSON.parse(req.body.invoiceData);
+        
+        // Upload PDF to Cloudinary
+        const uploadResult = await uploadToCloudinary(req.file.path, 'wattorbit/invoices', 'image');
+        
+        // Remove temp file
+        fs.unlinkSync(req.file.path);
+
+        // Save to DB
+        const invoice = new Invoice({
+            invoiceId: invoiceData.invoiceNo,
+            isManual: true,
+            invoiceUrl: uploadResult.url,
+            customerName: invoiceData.customerName || 'Walk-in Customer',
+            customerPhone: invoiceData.customerPhone,
+            customerEmail: invoiceData.customerEmail,
+            customerAddress: invoiceData.customerAddress,
+            customerGST: invoiceData.customerGST,
+            subtotal: invoiceData.subtotal,
+            taxAmount: invoiceData.taxAmount,
+            totalAmount: invoiceData.totalAmount,
+            discount: invoiceData.discount,
+            items: invoiceData.items || [],
+            invoiceDate: invoiceData.invoiceDate,
+            dueDate: invoiceData.dueDate,
+            placeOfSupply: invoiceData.placeOfSupply
+        });
+
+        await invoice.save();
+
+        res.status(201).json({ 
+            message: 'Manual invoice saved successfully', 
+            invoiceId: invoice.invoiceId,
+            url: uploadResult.url
+        });
+    } catch (error) {
+        console.error('Error saving manual invoice:', error);
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        res.status(500).json({ message: 'Error saving manual invoice', error: error.message });
+    }
+});
