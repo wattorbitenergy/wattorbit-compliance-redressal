@@ -217,6 +217,185 @@ router.post('/generate', verifyToken, async (req, res) => {
     }
 });
 
+// POST: Generate invoice for Material Order
+router.post('/generate-order', verifyToken, async (req, res) => {
+    try {
+        const { orderId } = req.body; // This is the _id of the Order model
+
+        if (!orderId) {
+            return res.status(400).json({ message: 'Order ID required' });
+        }
+
+        // Check if invoice already exists
+        const existingInvoice = await Invoice.findOne({ orderRefId: orderId });
+        if (existingInvoice) {
+            return res.status(400).json({
+                message: 'Invoice already exists for this order',
+                invoice: existingInvoice
+            });
+        }
+
+        // Get order details
+        const Order = require('../models/Order'); // ensure it's loaded
+        const order = await Order.findById(orderId)
+            .populate('userId')
+            .populate('addressId');
+
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+
+        // Check access
+        if (
+            order.userId._id.toString() !== req.user.id &&
+            !['admin', 'employee', 'engineer'].includes(req.user.role)
+        ) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        // Fetch Business & Bank Details (GST, etc.)
+        const bankConfig = await Config.findOne({ key: 'bank_details' });
+        const biz = bankConfig?.value || {};
+        const sellerState = 'Uttar Pradesh'; 
+        const sellerStateCode = '09';
+
+        const buyerState = order.addressId.state || '';
+        const isIntrastate = buyerState.toLowerCase().includes(sellerState.toLowerCase()) || 
+                             buyerState.toLowerCase().includes('u.p') || 
+                             buyerState.toLowerCase().includes('up');
+
+        const generatedInvoiceId = await generateInvoiceId();
+
+        const invoiceItems = [];
+        let totalTaxable = 0;
+        let totalCGST = 0;
+        let totalSGST = 0;
+        let totalIGST = 0;
+
+        if (order.items && order.items.length > 0) {
+            order.items.forEach(m => {
+                const taxableValue = m.sellingPrice * m.quantity;
+                const rate = m.sellingTaxRate || 0;
+                let cgst = 0, sgst = 0, igst = 0;
+
+                if (rate > 0) {
+                    if (isIntrastate) {
+                        cgst = parseFloat((taxableValue * (rate / 2) / 100).toFixed(2));
+                        sgst = parseFloat((taxableValue * (rate / 2) / 100).toFixed(2));
+                    } else {
+                        igst = parseFloat((taxableValue * rate / 100).toFixed(2));
+                    }
+                }
+
+                invoiceItems.push({
+                    description: `${m.name} (${m.make})`,
+                    hsnSac: '', // Optional: fetch HSN from material model if needed
+                    quantity: m.quantity,
+                    unitPrice: m.sellingPrice,
+                    taxableValue: taxableValue,
+                    taxRate: rate,
+                    cgstRate: isIntrastate ? rate / 2 : 0,
+                    cgstAmount: cgst,
+                    sgstRate: isIntrastate ? rate / 2 : 0,
+                    sgstAmount: sgst,
+                    igstRate: isIntrastate ? 0 : rate,
+                    igstAmount: igst,
+                    taxAmount: cgst + sgst + igst,
+                    total: taxableValue + cgst + sgst + igst
+                });
+                totalTaxable += taxableValue;
+                totalCGST += cgst;
+                totalSGST += sgst;
+                totalIGST += igst;
+            });
+        }
+
+        let codChargeObj = null;
+        if (order.codCharge > 0) {
+            const taxRate = 18;
+            const preTaxCod = parseFloat((order.codCharge / 1.18).toFixed(2));
+            const codTax = order.codCharge - preTaxCod;
+            
+            let cgst = 0, sgst = 0, igst = 0;
+            if (isIntrastate) {
+                cgst = parseFloat((codTax / 2).toFixed(2));
+                sgst = parseFloat((codTax / 2).toFixed(2));
+            } else {
+                igst = parseFloat(codTax.toFixed(2));
+            }
+
+            codChargeObj = {
+                description: 'COD Handling Charge',
+                hsnSac: '999999',
+                quantity: 1,
+                unitPrice: preTaxCod,
+                taxableValue: preTaxCod,
+                taxRate: taxRate,
+                cgstRate: isIntrastate ? taxRate / 2 : 0,
+                cgstAmount: cgst,
+                sgstRate: isIntrastate ? taxRate / 2 : 0,
+                sgstAmount: sgst,
+                igstRate: isIntrastate ? 0 : taxRate,
+                igstAmount: igst,
+                taxAmount: cgst + sgst + igst,
+                total: preTaxCod + cgst + sgst + igst
+            };
+            invoiceItems.push(codChargeObj);
+            totalTaxable += preTaxCod;
+            totalCGST += cgst;
+            totalSGST += sgst;
+            totalIGST += igst;
+        }
+
+        const grandTotal = parseFloat((totalTaxable + totalCGST + totalSGST + totalIGST).toFixed(2));
+        const amountWords = convertNumberToWords(grandTotal);
+
+        const addr = order.addressId;
+        const customerAddress = `${addr.flatNo ? addr.flatNo + ', ' : ''}${addr.building ? addr.building + ', ' : ''}${addr.street}, ${addr.landmark ? addr.landmark + ', ' : ''}${addr.city}, ${addr.state} - ${addr.pincode}`;
+
+        const invoice = new Invoice({
+            invoiceId: generatedInvoiceId,
+            orderRefId: orderId, // using a separate field for material orders
+            userId: order.userId._id,
+            invoiceDate: new Date(),
+            items: invoiceItems,
+            subtotal: parseFloat(totalTaxable.toFixed(2)),
+            taxAmount: parseFloat((totalCGST + totalSGST + totalIGST).toFixed(2)),
+            discount: 0,
+            totalAmount: grandTotal,
+            amountInWords: amountWords,
+            totalCGST: parseFloat(totalCGST.toFixed(2)),
+            totalSGST: parseFloat(totalSGST.toFixed(2)),
+            totalIGST: parseFloat(totalIGST.toFixed(2)),
+            placeOfSupply: buyerState,
+            stateCode: isIntrastate ? sellerStateCode : '',
+            paymentStatus: order.paymentStatus === 'Paid' ? 'Paid' : 'Unpaid',
+            paidAmount: order.paymentStatus === 'Paid' ? grandTotal : 0,
+            businessName: biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP',
+            businessGST: biz.gstNumber || '09AAFFW4253N1ZL',
+            businessPAN: biz.panNumber || 'AAFFW4253N',
+            businessAddress: biz.branchName || 'Shop No.3, INDAURABAG, BKT LUCKNOW - 226201',
+            bankDetails: {
+                accountHolderName: biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP',
+                accountNumber: biz.accountNumber || '',
+                ifscCode: biz.ifscCode || '',
+                bankName: biz.bankName || '',
+                branchName: biz.branchName || ''
+            },
+            customerName: order.userId.name,
+            customerPhone: order.userId.phone,
+            customerEmail: order.userId.email,
+            customerAddress
+        });
+
+        await invoice.save();
+        res.status(201).json({ message: 'Invoice generated successfully', invoice });
+    } catch (err) {
+        console.error('Error generating invoice:', err);
+        res.status(500).json({ message: 'Failed to generate invoice' });
+    }
+});
+
 // GET: Get invoice details
 router.get('/:id', verifyToken, async (req, res) => {
     try {
@@ -260,6 +439,30 @@ router.get('/booking/:bookingId', verifyToken, async (req, res) => {
             invoice.userId._id.toString() !== req.user.id &&
             !['admin', 'employee', 'engineer'].includes(req.user.role) &&
             !(req.user.role === 'organisation' && invoice.bookingId?.organisationId?.toString() === req.user.id)
+        ) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        res.json(invoice);
+    } catch (err) {
+        console.error('Error fetching invoice:', err);
+        res.status(500).json({ message: 'Failed to fetch invoice' });
+    }
+});
+
+// GET: Get invoice by order ID
+router.get('/order/:orderId', verifyToken, async (req, res) => {
+    try {
+        const invoice = await Invoice.findOne({ orderRefId: req.params.orderId })
+            .populate('userId', 'name phone email');
+
+        if (!invoice) {
+            return res.status(404).json({ message: 'Invoice not found for this order' });
+        }
+
+        if (
+            invoice.userId._id.toString() !== req.user.id &&
+            !['admin', 'employee'].includes(req.user.role)
         ) {
             return res.status(403).json({ message: 'Access denied' });
         }

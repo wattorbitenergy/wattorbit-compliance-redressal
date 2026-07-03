@@ -41,7 +41,11 @@ const orderSchema = new mongoose.Schema({
     paymentMethod: {
         type: String,
         default: 'Online',
-        enum: ['Online'] // Standalone orders are prepaid only
+        enum: ['Online', 'COD'] // Standalone orders can be prepaid or Cash on Delivery
+    },
+    codCharge: {
+        type: Number,
+        default: 0
     },
     paymentStatus: {
         type: String,

@@ -1,6 +1,20 @@
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
+
+const fetchImage = (url) => {
+    return new Promise((resolve, reject) => {
+        https.get(url, (response) => {
+            if (response.statusCode !== 200) {
+                return resolve(null); // Silent fail if QR fails
+            }
+            const chunks = [];
+            response.on('data', (chunk) => chunks.push(chunk));
+            response.on('end', () => resolve(Buffer.concat(chunks)));
+        }).on('error', (err) => resolve(null));
+    });
+};
 
 /**
  * Generate Professional & Audit-Ready Invoice PDF
@@ -8,8 +22,8 @@ const path = require('path');
  * @param {Object} options - Options like { buffer: true }
  * @returns {Promise<PDFDocument|Buffer>}
  */
-const generateInvoicePDF = (invoice, options = {}) => {
-    return new Promise((resolve, reject) => {
+const generateInvoicePDF = async (invoice, options = {}) => {
+    return new Promise(async (resolve, reject) => {
         try {
             const doc = new PDFDocument({
                 margin: 30,
@@ -82,13 +96,14 @@ const generateInvoicePDF = (invoice, options = {}) => {
             // --- TABLE ---
             let y = Math.max(doc.y, gridY + 80);
             const tableHeaders = [
-                { label: 'Description of Services/Goods', x: 30, w: 160 },
-                { label: 'HSN/SAC', x: 190, w: 50 },
-                { label: 'Qty', x: 240, w: 25 },
-                { label: 'Rate', x: 265, w: 50 },
-                { label: 'Taxable Val', x: 315, w: 60 },
-                { label: 'GST', x: 375, w: 110 }, // Combined for nested info
-                { label: 'Total', x: 485, w: 80 }
+                { label: 'Description of Services/Goods', x: 30, w: 140 },
+                { label: 'HSN/SAC', x: 170, w: 40 },
+                { label: 'Qty', x: 210, w: 25 },
+                { label: 'Rate', x: 235, w: 40 },
+                { label: 'Disc', x: 275, w: 35 },
+                { label: 'Taxable Val', x: 310, w: 50 },
+                { label: 'GST', x: 360, w: 120 }, // Combined for nested info
+                { label: 'Total', x: 480, w: 85 }
             ];
 
             // Header Background
@@ -98,7 +113,7 @@ const generateInvoicePDF = (invoice, options = {}) => {
             tableHeaders.forEach(h => {
                 if (h.label === 'GST') {
                     doc.text('GST Rate', h.x + 5, y + 5, { width: 50, align: 'center' });
-                    doc.text('GST Amount', h.x + 55, y + 5, { width: 50, align: 'center' });
+                    doc.text('GST Amount', h.x + 60, y + 5, { width: 50, align: 'center' });
                 } else {
                     doc.text(h.label, h.x + 5, y + 8, { width: h.w - 10, align: h.label === 'Description of Services/Goods' ? 'left' : 'right' });
                 }
@@ -108,23 +123,24 @@ const generateInvoicePDF = (invoice, options = {}) => {
             doc.fillColor('#000000').font('Helvetica').fontSize(7);
 
             invoice.items.forEach((item, index) => {
-                const rowHeight = Math.max(25, doc.heightOfString(item.description, { width: 150 }) + 10);
+                const rowHeight = Math.max(25, doc.heightOfString(item.description, { width: 130 }) + 10);
                 
                 if (index % 2 === 1) doc.rect(30, y, 535, rowHeight).fill('#f8fafc');
                 doc.fillColor('#000000');
 
-                doc.text(item.description, 35, y + 7, { width: 150 });
-                doc.text(item.hsnSac || '', 190, y + 7, { width: 50, align: 'center' });
-                doc.text(item.quantity, 240, y + 7, { width: 25, align: 'center' });
-                doc.text(item.unitPrice.toFixed(2), 265, y + 7, { width: 50, align: 'right' });
-                doc.text(item.taxableValue.toFixed(2), 315, y + 7, { width: 60, align: 'right' });
+                doc.text(item.description, 35, y + 7, { width: 130 });
+                doc.text(item.hsnSac || '', 170, y + 7, { width: 40, align: 'center' });
+                doc.text(item.quantity, 210, y + 7, { width: 25, align: 'center' });
+                doc.text(item.unitPrice.toFixed(2), 235, y + 7, { width: 40, align: 'right' });
+                doc.text((item.discount || 0).toFixed(2), 275, y + 7, { width: 35, align: 'right' });
+                doc.text(item.taxableValue.toFixed(2), 310, y + 7, { width: 50, align: 'right' });
 
                 // GST Detail
                 const taxRateText = item.igstRate > 0 ? `IGST ${item.igstRate}%` : `C+S ${item.cgstRate + item.sgstRate}%`;
-                doc.text(taxRateText, 380, y + 7, { width: 50, align: 'center' });
-                doc.text(item.taxAmount.toFixed(2), 430, y + 7, { width: 50, align: 'right' });
+                doc.text(taxRateText, 365, y + 7, { width: 50, align: 'center' });
+                doc.text(item.taxAmount.toFixed(2), 420, y + 7, { width: 50, align: 'right' });
 
-                doc.text(item.total.toFixed(2), 490, y + 7, { width: 70, align: 'right' });
+                doc.text(item.total.toFixed(2), 485, y + 7, { width: 75, align: 'right' });
 
                 y += rowHeight;
 
@@ -171,7 +187,7 @@ const generateInvoicePDF = (invoice, options = {}) => {
 
             // --- BANK & FOOTER ---
             y += 40;
-            doc.rect(30, y, 250, 70).strokeColor(borderColor).stroke();
+            doc.rect(30, y, 220, 70).strokeColor(borderColor).stroke();
             doc.font('Helvetica-Bold').fontSize(8).text('BANK DETAILS', 35, y + 5);
             doc.font('Helvetica').fontSize(7).fillColor(secondaryColor);
             const bank = invoice.bankDetails || {};
@@ -180,6 +196,18 @@ const generateInvoicePDF = (invoice, options = {}) => {
             doc.text(`Bank: ${bank.bankName || 'N/A'}`, 35, y + 38);
             doc.text(`IFSC: ${bank.ifscCode || 'N/A'}`, 35, y + 48);
             doc.text(`Branch: ${bank.branchName || 'N/A'}`, 35, y + 58);
+
+            // Fetch and render UPI QR
+            if (bank.upiId) {
+                const upiString = `upi://pay?pa=${encodeURIComponent(bank.upiId)}&pn=${encodeURIComponent(bank.accountHolderName || invoice.businessName)}&am=${invoice.totalAmount.toFixed(2)}&cu=INR`;
+                const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(upiString)}`;
+                const qrBuffer = await fetchImage(qrUrl);
+                if (qrBuffer) {
+                    doc.image(qrBuffer, 260, y, { width: 50 });
+                    doc.fontSize(6).fillColor(secondaryColor).text(`Scan to pay ₹${invoice.totalAmount.toFixed(2)}`, 260, y + 55, { width: 50, align: 'center' });
+                    doc.fontSize(5).text(bank.upiId, 260, y + 63, { width: 50, align: 'center' });
+                }
+            }
 
             // Certification
             doc.fontSize(7).fillColor(secondaryColor).text('CERTIFICATION:', 320, y);

@@ -18,7 +18,7 @@ const razorpay = new Razorpay({
 // POST: Create Pending Order (Razorpay ID Generation)
 router.post('/create', verifyToken, async (req, res) => {
     try {
-        const { items, addressId, notes } = req.body; // items: [{ id, quantity }]
+        const { items, addressId, notes, paymentMethod = 'Online' } = req.body; // items: [{ id, quantity }]
         
         if (!items || !items.length || !addressId) {
             return res.status(400).json({ message: 'Items and delivery address are required' });
@@ -56,38 +56,90 @@ router.post('/create', verifyToken, async (req, res) => {
             totalAmount += lineAmount;
         }
 
-        // Create Razorpay Order
-        const options = {
-            amount: Math.round(totalAmount * 100),
-            currency: 'INR',
-            receipt: `order_${Date.now()}`,
-            notes: {
+        let codCharge = 0;
+        if (paymentMethod === 'COD') {
+            codCharge = 20;
+            totalAmount += codCharge;
+        }
+
+        if (paymentMethod === 'Online') {
+            // Create Razorpay Order
+            const options = {
+                amount: Math.round(totalAmount * 100),
+                currency: 'INR',
+                receipt: `order_${Date.now()}`,
+                notes: {
+                    userId: req.user.id,
+                    type: 'MATERIAL_PURCHASE'
+                }
+            };
+
+            const rzpOrder = await razorpay.orders.create(options);
+
+            // Save Local Pending Order
+            const order = new Order({
                 userId: req.user.id,
-                type: 'MATERIAL_PURCHASE'
+                items: orderItems,
+                totalAmount,
+                addressId,
+                notes,
+                paymentMethod,
+                codCharge,
+                razorpayOrderId: rzpOrder.id,
+                paymentStatus: 'Pending'
+            });
+
+            await order.save();
+
+            return res.status(201).json({
+                order,
+                razorpayOrderId: rzpOrder.id,
+                amount: options.amount,
+                key_id: process.env.RAZORPAY_KEY_ID
+            });
+        } else {
+            // COD Logic: Order is confirmed immediately, stock deducted
+            const order = new Order({
+                userId: req.user.id,
+                items: orderItems,
+                totalAmount,
+                addressId,
+                notes,
+                paymentMethod,
+                codCharge,
+                paymentStatus: 'Pending', // pending until delivered
+                status: 'Confirmed'
+            });
+
+            await order.save();
+
+            // Deduct Stock
+            for (const item of order.items) {
+                await Material.findByIdAndUpdate(item.materialId, {
+                    $inc: { stockQuantity: -item.quantity }
+                });
             }
-        };
 
-        const rzpOrder = await razorpay.orders.create(options);
+            // Notifications
+            await sendUserNotification(
+                order.userId,
+                'Order Confirmed!',
+                `Your COD material order #${order.orderId} has been successfully placed.`,
+                { type: 'ORDER_CONFIRMED', orderId: order._id.toString() }
+            );
 
-        // Save Local Pending Order
-        const order = new Order({
-            userId: req.user.id,
-            items: orderItems,
-            totalAmount,
-            addressId,
-            notes,
-            razorpayOrderId: rzpOrder.id,
-            paymentStatus: 'Pending'
-        });
+            await sendTopicNotification(
+                'admin',
+                'New Material Order (COD)',
+                `New COD material order #${order.orderId} received.`,
+                { orderId: order._id.toString() }
+            );
 
-        await order.save();
-
-        res.status(201).json({
-            order,
-            razorpayOrderId: rzpOrder.id,
-            amount: options.amount,
-            key_id: process.env.RAZORPAY_KEY_ID
-        });
+            return res.status(201).json({
+                order,
+                message: 'Order Confirmed!'
+            });
+        }
 
     } catch (err) {
         console.error('[Order Create] Error:', err);

@@ -9,7 +9,11 @@ const invoiceSchema = new mongoose.Schema({
     bookingId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Booking',
-        required: function() { return !this.isManual; }
+        required: function() { return !this.isManual && !this.orderRefId; }
+    },
+    orderRefId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Order'
     },
     userId: {
         type: mongoose.Schema.Types.ObjectId,
