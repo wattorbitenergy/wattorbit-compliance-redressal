@@ -1,59 +1,49 @@
-const axios = require('axios');
-const https = require('https');
+const nodemailer = require('nodemailer');
 
-// Create a custom agent to force IPv4 and disable keep-alive 
-// to prevent ECONNRESET on environments like Render
-const httpsAgent = new https.Agent({
-  keepAlive: false,
-  family: 4
+// Configure Nodemailer to use Mailjet's SMTP server
+const transporter = nodemailer.createTransport({
+  host: 'in-v3.mailjet.com',
+  port: 587,
+  secure: false, // true for 465, false for other ports
+  auth: {
+    user: process.env.MAILJET_API_KEY,
+    pass: process.env.MAILJET_SECRET_KEY,
+  },
+  // Adding connection options to prevent drops
+  connectionTimeout: 15000,
+  greetingTimeout: 15000,
+  socketTimeout: 15000,
 });
 
 /**
- * Attempts to send a mail via Mailjet with retry logic using Axios directly.
+ * Attempts to send a mail via Mailjet SMTP with retry logic.
  * Retries up to `maxRetries` times on transient network errors (ECONNRESET, ETIMEDOUT, etc.)
  */
 async function sendWithRetry({ to, subject, html, attachments, from }, retries = 3) {
   const fromEmail = from?.email || from || "support@wattorbit.in";
   const fromName  = from?.name  || "WattOrbit Support";
   
-  const auth = Buffer.from(`${process.env.MAILJET_API_KEY}:${process.env.MAILJET_SECRET_KEY}`).toString('base64');
+  const mailOptions = {
+    from: `"${fromName}" <${fromEmail}>`,
+    to: to,
+    subject: subject,
+    html: html,
+    attachments: attachments || []
+  };
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      await axios.post(
-        'https://api.mailjet.com/v3.1/send',
-        {
-          Messages: [
-            {
-              From: { Email: fromEmail, Name: fromName },
-              To: [{ Email: to }],
-              Subject: subject,
-              HTMLPart: html,
-              Attachments: attachments || []
-            }
-          ]
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Basic ${auth}`
-          },
-          httpsAgent,
-          timeout: 15000 // 15 seconds timeout
-        }
-      );
-
-      // Success
-      return true;
+      await transporter.sendMail(mailOptions);
+      return true; // Success
 
     } catch (err) {
       const isTransient = [
         "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT",
-        "EPIPE", "EHOSTUNREACH", "EAI_AGAIN"
+        "EPIPE", "EHOSTUNREACH", "EAI_AGAIN", "ESOCKETTIMEDOUT"
       ].includes(err.code) || err.message?.includes("ECONNRESET") || err.message?.includes("timeout");
 
       console.error(
-        `❌ Mailjet API Error (attempt ${attempt}/${retries}):`,
+        `❌ Mailjet SMTP Error (attempt ${attempt}/${retries}):`,
         err.code || err.message
       );
 
@@ -71,11 +61,9 @@ async function sendWithRetry({ to, subject, html, attachments, from }, retries =
   }
 }
 
-// Mimics Nodemailer transporter interface
-const transporter = {
+// Mimics our previous custom transporter interface
+module.exports = {
   async sendMail(options) {
     return sendWithRetry(options);
   }
 };
-
-module.exports = transporter;
