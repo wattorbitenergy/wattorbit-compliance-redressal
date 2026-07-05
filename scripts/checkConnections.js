@@ -33,9 +33,23 @@ async function runDiagnostics() {
         console.error('   ❌ MAILJET_API_KEY or MAILJET_SECRET_KEY is missing.\n');
     } else {
         try {
-            const mailjet = require('node-mailjet').apiConnect(mailjetKey, mailjetSecret);
+            const auth = Buffer.from(`${mailjetKey}:${mailjetSecret}`).toString('base64');
+            const axios = require('axios');
+            const https = require('https');
+            
+            const httpsAgent = new https.Agent({
+              keepAlive: false,
+              family: 4
+            });
+
             // Simple request to list account info to verify keys
-            await mailjet.get("user").request();
+            await axios.get('https://api.mailjet.com/v3/REST/user', {
+              headers: {
+                'Authorization': `Basic ${auth}`
+              },
+              httpsAgent,
+              timeout: 10000
+            });
             console.log('   ✅ Mailjet API Keys verified successfully!\n');
         } catch (err) {
             console.error(`   ❌ Mailjet API Verification Failed: ${err.message}\n`);
