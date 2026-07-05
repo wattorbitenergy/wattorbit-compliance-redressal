@@ -1,117 +1,118 @@
-const https = require('https');
 const dns = require('dns');
 
-// Force IPv4-first globally for this module — fixes ECONNRESET on Render/Railway
-// where IPv6 routes to Mailjet are broken
+// Force IPv4-first globally — helps on PaaS environments
 dns.setDefaultResultOrder('ipv4first');
 
 /**
- * Low-level HTTPS POST using Node built-in `https` module.
- * Forces IPv4 via a custom `lookup` function to avoid Render IPv6 issues.
+ * Send email via Mailjet REST API using Node's built-in fetch (undici engine).
+ * Undici uses a completely different TCP/TLS implementation from Node's https module.
  */
-function httpsPost(url, body, headers) {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-
-    const options = {
-      hostname: parsed.hostname,
-      port: 443,
-      path: parsed.pathname,
-      method: 'POST',
-      headers: {
-        ...headers,
-        'Content-Type': 'application/json',
-      },
-      // Force IPv4 lookup explicitly
-      family: 4,
-      lookup: (hostname, opts, cb) => {
-        dns.resolve4(hostname, (err, addresses) => {
-          if (err) return cb(err);
-          cb(null, addresses[0], 4);
-        });
-      },
-      timeout: 20000,
-    };
-
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => (data += chunk));
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve({ status: res.statusCode, data });
-        } else {
-          const err = new Error(`Mailjet responded with ${res.statusCode}: ${data}`);
-          err.statusCode = res.statusCode;
-          reject(err);
-        }
-      });
-    });
-
-    req.on('timeout', () => {
-      req.destroy();
-      const err = new Error('Request timed out');
-      err.code = 'ETIMEDOUT';
-      reject(err);
-    });
-
-    req.on('error', reject);
-
-    req.write(JSON.stringify(body));
-    req.end();
-  });
-}
-
-/**
- * Attempts to send a mail via Mailjet REST API with retry logic.
- * Uses Node native https + forced IPv4 to avoid ECONNRESET on PaaS.
- */
-async function sendWithRetry({ to, subject, html, attachments, from }, retries = 3) {
-  const fromEmail = from?.email || from || "support@wattorbit.in";
-  const fromName  = from?.name  || "WattOrbit Support";
-
+async function sendViaMailjet({ fromEmail, fromName, to, subject, html, attachments }) {
   const auth = Buffer.from(
     `${process.env.MAILJET_API_KEY}:${process.env.MAILJET_SECRET_KEY}`
   ).toString('base64');
 
-  const payload = {
-    Messages: [
-      {
+  const res = await fetch('https://api.mailjet.com/v3.1/send', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Basic ${auth}`,
+    },
+    body: JSON.stringify({
+      Messages: [{
         From: { Email: fromEmail, Name: fromName },
         To: [{ Email: to }],
         Subject: subject,
         HTMLPart: html,
         Attachments: attachments || [],
-      },
-    ],
-  };
+      }],
+    }),
+    signal: AbortSignal.timeout(20000), // 20s timeout
+  });
 
-  const headers = {
-    Authorization: `Basic ${auth}`,
-  };
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Mailjet ${res.status}: ${text}`);
+  }
+  return true;
+}
+
+/**
+ * Send email via Brevo (formerly Sendinblue) REST API.
+ * Fallback provider — set BREVO_API_KEY in your environment to enable.
+ */
+async function sendViaBrevo({ fromEmail, fromName, to, subject, html }) {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'api-key': process.env.BREVO_API_KEY,
+    },
+    body: JSON.stringify({
+      sender: { email: fromEmail, name: fromName },
+      to: [{ email: to }],
+      subject: subject,
+      htmlContent: html,
+    }),
+    signal: AbortSignal.timeout(20000),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Brevo ${res.status}: ${text}`);
+  }
+  return true;
+}
+
+/**
+ * Determine which provider to use.
+ * Priority: BREVO_API_KEY (if set) > Mailjet
+ */
+function getProvider() {
+  if (process.env.BREVO_API_KEY) return 'brevo';
+  return 'mailjet';
+}
+
+/**
+ * Send email with retry logic. Automatically picks the configured provider.
+ */
+async function sendWithRetry({ to, subject, html, attachments, from }, retries = 3) {
+  const fromEmail = from?.email || from || 'support@wattorbit.in';
+  const fromName  = from?.name  || 'WattOrbit Support';
+  const provider  = getProvider();
+
+  console.log(`📧 Sending email to ${to} via ${provider.toUpperCase()}...`);
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      await httpsPost('https://api.mailjet.com/v3.1/send', payload, headers);
-      console.log(`✅ Mailjet email sent successfully to ${to}`);
+      if (provider === 'brevo') {
+        await sendViaBrevo({ fromEmail, fromName, to, subject, html });
+      } else {
+        await sendViaMailjet({ fromEmail, fromName, to, subject, html, attachments });
+      }
+
+      console.log(`✅ Email sent successfully to ${to} via ${provider}`);
       return true;
 
     } catch (err) {
       const code = err.code || '';
       const msg  = err.message || '';
       const isTransient =
-        ["ECONNRESET","ECONNREFUSED","ETIMEDOUT","EPIPE","EHOSTUNREACH","EAI_AGAIN"]
+        ['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EPIPE','EHOSTUNREACH','EAI_AGAIN','UND_ERR_CONNECT_TIMEOUT']
           .includes(code) ||
-        msg.includes("ECONNRESET") ||
-        msg.includes("timed out") ||
-        msg.includes("timeout");
+        msg.includes('ECONNRESET') ||
+        msg.includes('timed out') ||
+        msg.includes('timeout') ||
+        msg.includes('abort') ||
+        msg.includes('network');
 
       console.error(
-        `❌ Mailjet API Error (attempt ${attempt}/${retries}):`,
+        `❌ ${provider.toUpperCase()} Error (attempt ${attempt}/${retries}):`,
         code || msg
       );
 
       if (isTransient && attempt < retries) {
-        const delay = attempt * 2000; // 2s, 4s
+        const delay = attempt * 2000;
         console.log(`🔄 Retrying in ${delay}ms...`);
         await new Promise((r) => setTimeout(r, delay));
         continue;
@@ -122,9 +123,9 @@ async function sendWithRetry({ to, subject, html, attachments, from }, retries =
   }
 }
 
-// Mimics Nodemailer transporter interface
 module.exports = {
   async sendMail(options) {
     return sendWithRetry(options);
   },
 };
+
