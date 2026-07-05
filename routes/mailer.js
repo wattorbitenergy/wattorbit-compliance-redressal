@@ -77,34 +77,63 @@ function getProvider() {
  * Send email with retry logic. Automatically picks the configured provider.
  */
 async function sendWithRetry({ to, subject, html, attachments, from }, retries = 3) {
-  const fromEmail = from?.email || from || 'support@wattorbit.in';
-  const fromName  = from?.name  || 'WattOrbit Support';
-  const provider  = getProvider();
+  const fromEmail = from?.email || from || "support@wattorbit.in";
+  const fromName = from?.name || "WattOrbit Support";
+  const provider = getProvider();
 
   console.log(`📧 Sending email to ${to} via ${provider.toUpperCase()}...`);
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      if (provider === 'brevo') {
+      if (provider === "brevo") {
         await sendViaBrevo({ fromEmail, fromName, to, subject, html });
       } else {
-        await sendViaMailjet({ fromEmail, fromName, to, subject, html, attachments });
+        await sendViaMailjet({
+          fromEmail,
+          fromName,
+          to,
+          subject,
+          html,
+          attachments,
+        });
       }
 
       console.log(`✅ Email sent successfully to ${to} via ${provider}`);
       return true;
 
     } catch (err) {
-      const code = err.code || '';
-      const msg  = err.message || '';
+      console.error("========== FULL ERROR ==========");
+      console.error(err);
+      console.error("Name:", err.name);
+      console.error("Message:", err.message);
+      console.error("Code:", err.code);
+      console.error("Cause:", err.cause);
+
+      if (err.cause) {
+        console.error("Cause code:", err.cause.code);
+        console.error("Cause errno:", err.cause.errno);
+        console.error("Cause message:", err.cause.message);
+        console.error("Cause stack:", err.cause.stack);
+      }
+
+      const code = err.code || "";
+      const msg = err.message || "";
+
       const isTransient =
-        ['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EPIPE','EHOSTUNREACH','EAI_AGAIN','UND_ERR_CONNECT_TIMEOUT']
-          .includes(code) ||
-        msg.includes('ECONNRESET') ||
-        msg.includes('timed out') ||
-        msg.includes('timeout') ||
-        msg.includes('abort') ||
-        msg.includes('network');
+        [
+          "ECONNRESET",
+          "ECONNREFUSED",
+          "ETIMEDOUT",
+          "EPIPE",
+          "EHOSTUNREACH",
+          "EAI_AGAIN",
+          "UND_ERR_CONNECT_TIMEOUT",
+        ].includes(code) ||
+        msg.includes("ECONNRESET") ||
+        msg.includes("timed out") ||
+        msg.includes("timeout") ||
+        msg.includes("abort") ||
+        msg.includes("network");
 
       console.error(
         `❌ ${provider.toUpperCase()} Error (attempt ${attempt}/${retries}):`,
@@ -128,4 +157,3 @@ module.exports = {
     return sendWithRetry(options);
   },
 };
-
