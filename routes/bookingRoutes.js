@@ -680,6 +680,17 @@ router.patch('/:id/cancel', verifyToken, async (req, res) => {
             }
         })();
 
+        // 📧 Admin Alert Email: Booking Cancelled
+        sendAdminAlertEmail(
+            `❌ Booking Cancelled ${booking.bookingId}`,
+            `<div style="font-family:Arial,sans-serif;max-width:500px;padding:20px;border:1px solid #ddd;border-radius:8px;">
+                <h3 style="color:#dc3545;">Booking Cancelled</h3>
+                <p>Booking ID: <strong>${booking.bookingId}</strong> has been cancelled.</p>
+                <p>Reason: ${cancellationReason || 'Not specified'}</p>
+                <p><a href="https://wattorbit.in/admin/bookings" style="background:#dc3545;color:#fff;padding:8px 16px;text-decoration:none;border-radius:6px;">View in Admin Panel</a></p>
+            </div>`
+        ).catch(e => console.error('[Email] Admin booking cancel alert error:', e));
+
         res.json({ message: 'Booking cancelled successfully', booking });
     } catch (err) {
         console.error('Error cancelling booking:', err);
@@ -1039,6 +1050,17 @@ router.patch('/:id/assign', verifyToken, canManageBookings, async (req, res) => 
             `Technician ${technician.name} has been assigned to your booking ${booking.bookingId}.`,
             { bookingId: booking._id.toString(), type: 'assignment' }
         );
+
+        // 📧 Admin Alert Email: Technician Assigned
+        sendAdminAlertEmail(
+            `👨‍🔧 Technician Assigned: Booking ${booking.bookingId}`,
+            `<div style="font-family:Arial,sans-serif;max-width:500px;padding:20px;border:1px solid #ddd;border-radius:8px;">
+                <h3 style="color:#007bff;">Technician Assigned</h3>
+                <p>Booking ID: <strong>${booking.bookingId}</strong></p>
+                <p>Technician: <strong>${technician.name}</strong></p>
+                <p><a href="https://wattorbit.in/admin/bookings" style="background:#007bff;color:#fff;padding:8px 16px;text-decoration:none;border-radius:6px;">View in Admin Panel</a></p>
+            </div>`
+        ).catch(e => console.error('[Email] Admin tech assignment alert error:', e));
 
         // SMS: Technician Assigned — to Customer
         sendTechnicianAssignedSms(
@@ -1448,8 +1470,19 @@ router.patch('/:id/complete', verifyToken, async (req, res) => {
             'admin',
             'Service Completed',
             `Service ${booking.bookingId} marked as Completed by technician.`,
-            { bookingId: booking._id.toString(), type: 'completion' }
+            { bookingId: booking._id.toString(), type: 'status_update' }
         );
+
+        // 📧 Admin Alert Email: Booking Completed
+        sendAdminAlertEmail(
+            `✅ Booking Completed ${booking.bookingId}`,
+            `<div style="font-family:Arial,sans-serif;max-width:500px;padding:20px;border:1px solid #ddd;border-radius:8px;">
+                <h3 style="color:#28a745;">Service Completed</h3>
+                <p>Booking ID: <strong>${booking.bookingId}</strong> has been marked as Completed.</p>
+                <p>Notes: ${technicianNotes || 'None'}</p>
+                <p><a href="https://wattorbit.in/admin/bookings" style="background:#28a745;color:#fff;padding:8px 16px;text-decoration:none;border-radius:6px;">View in Admin Panel</a></p>
+            </div>`
+        ).catch(e => console.error('[Email] Admin booking complete alert error:', e));
 
         // Auto-generate Invoice (will be Unpaid if COD not yet collected; stays open for payment marking)
         const invoice = await autoGenerateInvoice(booking._id);
@@ -1631,6 +1664,16 @@ router.patch('/:id/tech-update', verifyToken, async (req, res) => {
                         sendJobCompletedEmail(completedUser, booking, invoice).catch(e => console.error('[Email] Dashboard complete email error:', e));
                     }
                 })();
+
+                // 📧 Admin Alert Email: Booking Completed
+                sendAdminAlertEmail(
+                    `✅ Booking Completed ${booking.bookingId}`,
+                    `<div style="font-family:Arial,sans-serif;max-width:500px;padding:20px;border:1px solid #ddd;border-radius:8px;">
+                        <h3 style="color:#28a745;">Service Completed</h3>
+                        <p>Booking ID: <strong>${booking.bookingId}</strong> has been marked as Completed via Tech Update.</p>
+                        <p><a href="https://wattorbit.in/admin/bookings" style="background:#28a745;color:#fff;padding:8px 16px;text-decoration:none;border-radius:6px;">View in Admin Panel</a></p>
+                    </div>`
+                ).catch(e => console.error('[Email] Admin tech update complete alert error:', e));
             }
 
             // Record Technician Earning when payment is confirmed

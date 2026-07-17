@@ -229,7 +229,7 @@ router.post('/check-user', async (req, res) => {
 ========================= */
 router.post('/login', authLimiter, async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, fcmToken } = req.body;
 
     if (!username || !password) {
       return res.status(400).json({ message: 'Username/Email/Phone and password are required' });
@@ -265,6 +265,11 @@ router.post('/login', authLimiter, async (req, res) => {
 
     if (!user.isApproved && user.role !== 'admin') {
       return res.status(403).json({ message: 'Pending approval' });
+    }
+
+    if (fcmToken) {
+      user.fcmToken = fcmToken;
+      await user.save();
     }
 
     const isWeb = req.body.platform === 'web';

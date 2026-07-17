@@ -10,7 +10,7 @@ const Config = require('../models/Config');
 const { generateBookingId } = require('../utils/idGenerator');
 const { sendUserNotification, sendTopicNotification } = require('../utils/notificationHelper');
 const { sendBookingCreatedSms } = require('../utils/smsHelper');
-const { sendBookingCreatedEmail } = require('../utils/emailHelper');
+const { sendBookingCreatedEmail, sendAdminAlertEmail } = require('../utils/emailHelper');
 const { updateUniversalLedger } = require('../utils/technicianFinanceHelper');
 
 // Verify token middleware
@@ -159,6 +159,18 @@ router.post('/verify-payment', verifyToken, async (req, res) => {
                 `Payment confirmed for booking ${booking.bookingId}. Status updated to Confirmed.`,
                 { bookingId: booking._id.toString(), type: 'payment_confirmed' }
             );
+
+            // 📧 Admin Alert Email: New Booking (Online Payment)
+            sendAdminAlertEmail(
+                `💳 Online Payment Confirmed: Booking ${booking.bookingId}`,
+                `<div style="font-family:Arial,sans-serif;max-width:500px;padding:20px;border:1px solid #ddd;border-radius:8px;">
+                    <h3 style="color:#28a745;">Payment Confirmed</h3>
+                    <p>Booking ID: <strong>${booking.bookingId}</strong></p>
+                    <p>Amount Paid: <strong>₹${booking.totalAmount}</strong></p>
+                    <p>Payment ID: <strong>${razorpay_payment_id}</strong></p>
+                    <p><a href="https://wattorbit.in/admin/bookings" style="background:#1e3a8a;color:#fff;padding:8px 16px;text-decoration:none;border-radius:6px;">View in Admin Panel</a></p>
+                </div>`
+            ).catch(e => console.error('[Email] Admin online payment alert error:', e));
 
             // 2. SMS & Email: Notify Customer (deferred from booking creation)
             try {

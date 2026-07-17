@@ -148,7 +148,7 @@ router.get('/config/:key', async (req, res) => {
     const publicKeys = [
         'social_wa', 'social_fb', 'social_insta', 'social_yt', 'social_x', 'social_li', 'social_email',
         'enable_social_links', 'enable_mobile_work_permit', 'enable_curations', 'enable_onboarding', 'new_home_hero',
-        'app_version', 'enable_version_check', 'newuserdasboard', 'category_card_style', 'enable_google_maps_booking'
+        'app_version', 'enable_version_check', 'newuserdasboard', 'category_card_style', 'enable_google_maps_booking', 'enable_live_tracking'
     ];
 
     // If key is not in whitelist, require verification
