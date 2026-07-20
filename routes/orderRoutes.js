@@ -18,8 +18,11 @@ const razorpay = new Razorpay({
 // POST: Create Pending Order (Razorpay ID Generation)
 router.post('/create', verifyToken, async (req, res) => {
     try {
-        const { items, addressId, notes, paymentMethod = 'Online' } = req.body; // items: [{ id, quantity }]
+        let { items, addressId, notes, paymentMethod = 'Online' } = req.body; // items: [{ id, quantity }]
         
+        if (paymentMethod && paymentMethod.toLowerCase() === 'online') paymentMethod = 'Online';
+        if (paymentMethod && paymentMethod.toLowerCase() === 'cod') paymentMethod = 'COD';
+
         if (!items || !items.length || !addressId) {
             return res.status(400).json({ message: 'Items and delivery address are required' });
         }
