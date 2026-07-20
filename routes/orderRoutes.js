@@ -242,6 +242,31 @@ router.get('/my-orders', verifyToken, async (req, res) => {
     }
 });
 
+
+// GET: Fetch Single Order by ID
+router.get('/:id', verifyToken, async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.id)
+            .populate('items.materialId', 'imageUrl unit name make')
+            .populate('userId', 'name phone email')
+            .populate('addressId');
+            
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+
+        // Check if the user is authorized to view this order
+        if (order.userId._id.toString() !== req.user.id && !['admin', 'employee'].includes(req.user.role)) {
+            return res.status(403).json({ message: 'Unauthorized' });
+        }
+
+        res.json(order);
+    } catch (err) {
+        console.error('[Get Order By ID] Error:', err);
+        res.status(500).json({ message: 'Error fetching order', error: err.message });
+    }
+});
+
 // PATCH: Update Order Status (Admin/Employee Only)
 router.patch('/:id/status', verifyToken, async (req, res) => {
     try {
