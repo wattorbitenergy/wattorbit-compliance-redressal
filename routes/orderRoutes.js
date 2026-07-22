@@ -9,6 +9,7 @@ const Address = require('../models/Address');
 const { verifyToken } = require('../middleware/authMiddleware');
 const { updateUniversalLedger } = require('../utils/technicianFinanceHelper');
 const { sendUserNotification, sendTopicNotification } = require('../utils/notificationHelper');
+const { sendMail } = require('./mailer');
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
@@ -144,6 +145,32 @@ router.post('/create', verifyToken, async (req, res) => {
                 { orderId: order._id.toString() }
             );
 
+            // Send Emails
+            const adminEmail = process.env.ADMIN_EMAIL || 'support@wattorbit.in';
+            const user = await User.findById(order.userId);
+            const emailHtml = `
+                <h2>New Order Received (COD)</h2>
+                <p>Order ID: ${order.orderId}</p>
+                <p>Total Amount: ₹${order.totalAmount}</p>
+                <p>Payment Method: COD</p>
+                <p>Items: ${order.items.length}</p>
+            `;
+            sendMail({
+                to: adminEmail,
+                subject: \`New COD Order #\${order.orderId}\`,
+                html: emailHtml
+            }).catch(console.error);
+            
+            if (user?.email) {
+                sendMail({
+                    to: user.email,
+                    subject: \`Order Confirmed #\${order.orderId}\`,
+                    html: \`<h2>Your WattOrbit Order is Confirmed!</h2>
+                           <p>Thank you for your order! Your Order ID is <b>\${order.orderId}</b>.</p>
+                           <p>Total Amount to be paid on delivery: ₹\${order.totalAmount}</p>\`
+                }).catch(console.error);
+            }
+
             return res.status(201).json({
                 order,
                 message: 'Order Confirmed!'
@@ -219,6 +246,34 @@ router.post('/verify', verifyToken, async (req, res) => {
             { orderId: order._id.toString() }
         );
 
+        // Send Emails
+        const adminEmail = process.env.ADMIN_EMAIL || 'support@wattorbit.in';
+        const user = await User.findById(order.userId);
+        const emailHtml = `
+            <h2>New Order Received (Paid Online)</h2>
+            <p>Order ID: ${order.orderId}</p>
+            <p>Total Amount: ₹${order.totalAmount}</p>
+            <p>Payment Method: Online</p>
+            <p>Payment ID: ${razorpay_payment_id}</p>
+            <p>Items: ${order.items.length}</p>
+        `;
+        sendMail({
+            to: adminEmail,
+            subject: \`New Paid Order #\${order.orderId}\`,
+            html: emailHtml
+        }).catch(console.error);
+        
+        if (user?.email) {
+            sendMail({
+                to: user.email,
+                subject: \`Payment Successful & Order Confirmed #\${order.orderId}\`,
+                html: \`<h2>Your WattOrbit Order is Confirmed!</h2>
+                       <p>Thank you for your order! Your payment was successful.</p>
+                       <p>Order ID: <b>\${order.orderId}</b></p>
+                       <p>Amount Paid: ₹\${order.totalAmount}</p>\`
+            }).catch(console.error);
+        }
+
         res.json({ message: 'Payment verified and order confirmed!', order });
 
     } catch (err) {
@@ -270,6 +325,66 @@ router.get('/:id', verifyToken, async (req, res) => {
     } catch (err) {
         console.error('[Get Order By ID] Error:', err);
         res.status(500).json({ message: 'Error fetching order', error: err.message });
+    }
+});
+
+// PATCH: Cancel Order (User or Admin)
+router.patch('/:id/cancel', verifyToken, async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.id);
+        if (!order) return res.status(404).json({ message: 'Order not found' });
+
+        // Authorization: Must be the order owner, or admin/employee
+        if (order.userId.toString() !== req.user.id && !['admin', 'employee'].includes(req.user.role)) {
+            return res.status(403).json({ message: 'Unauthorized to cancel this order' });
+        }
+
+        // Check if order can be cancelled
+        if (['Cancelled', 'Dispatched', 'Delivered'].includes(order.status)) {
+            return res.status(400).json({ message: `Cannot cancel an order that is ${order.status}` });
+        }
+
+        order.status = 'Cancelled';
+        order.notes = req.body.message ? `${order.notes || ''}\n${req.body.message}`.trim() : order.notes;
+
+        if (order.paymentStatus === 'Paid') {
+            order.paymentStatus = 'Refunded';
+            
+            // Revert ledger entry
+            await updateUniversalLedger(
+                order.userId,
+                'MATERIAL_PURCHASE_REFUND',
+                order.totalAmount, // Give back the money
+                order.orderId,
+                `Refund for cancelled order #${order.orderId}`,
+                { 
+                    orderId: order._id,
+                    razorpayPaymentId: order.razorpayPaymentId
+                }
+            ).catch(e => console.error('[Order Ledger Refund] Error:', e));
+        }
+
+        await order.save();
+
+        // Revert Stock
+        for (const item of order.items) {
+            await Material.findByIdAndUpdate(item.materialId, {
+                $inc: { stockQuantity: item.quantity }
+            });
+        }
+
+        // Notify user
+        await sendUserNotification(
+            order.userId,
+            'Order Cancelled',
+            `Your order #${order.orderId} has been cancelled successfully.`,
+            { type: 'ORDER_CANCELLED', orderId: order._id.toString() }
+        );
+
+        res.json({ message: 'Order cancelled successfully', order });
+    } catch (err) {
+        console.error('[Cancel Order] Error:', err);
+        res.status(500).json({ message: 'Error cancelling order', error: err.message });
     }
 });
 
