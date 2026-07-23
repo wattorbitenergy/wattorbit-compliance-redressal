@@ -19,8 +19,9 @@ const razorpay = new Razorpay({
 // POST: Create Pending Order (Razorpay ID Generation)
 router.post('/create', verifyToken, async (req, res) => {
     try {
-        let { items, addressId, notes, paymentMethod = 'Online', deliveryFee = 0 } = req.body; // items: [{ id, quantity }]
+        let { items, addressId, notes, paymentMethod = 'Online', deliveryFee = 0, couponDiscount = 0 } = req.body; // items: [{ id, quantity }]
         deliveryFee = Number(deliveryFee) || 0;
+        couponDiscount = Number(couponDiscount) || 0;
         
         if (paymentMethod && paymentMethod.toLowerCase() === 'online') paymentMethod = 'Online';
         if (paymentMethod && paymentMethod.toLowerCase() === 'cod') paymentMethod = 'COD';
@@ -64,6 +65,11 @@ router.post('/create', verifyToken, async (req, res) => {
         // Add delivery fee to total
         totalAmount += deliveryFee;
 
+        // Subtract cart coupon discount
+        if (couponDiscount > 0) {
+            totalAmount = Math.max(0, totalAmount - couponDiscount);
+        }
+
         let codCharge = 0;
         if (paymentMethod === 'COD') {
             codCharge = 20;
@@ -90,6 +96,7 @@ router.post('/create', verifyToken, async (req, res) => {
                 items: orderItems,
                 totalAmount,
                 deliveryFee,
+                couponDiscount,
                 addressId,
                 notes,
                 paymentMethod,
@@ -113,6 +120,7 @@ router.post('/create', verifyToken, async (req, res) => {
                 items: orderItems,
                 totalAmount,
                 deliveryFee,
+                couponDiscount,
                 addressId,
                 notes,
                 paymentMethod,

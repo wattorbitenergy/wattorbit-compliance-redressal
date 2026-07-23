@@ -1225,6 +1225,23 @@ router.patch('/availability', verifyToken, async (req, res) => {
   }
 });
 
+router.patch('/set-vip/:id', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Administrative access required' });
+    }
+    const { isVip } = req.body;
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    
+    user.isVip = !!isVip;
+    await user.save();
+    res.json({ message: 'VIP status updated', isVip: user.isVip });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 /* =========================
    ADMIN: SET ROLE & SPECIALIZATION
    ========================= */

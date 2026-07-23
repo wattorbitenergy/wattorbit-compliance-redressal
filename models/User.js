@@ -98,6 +98,14 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    verified: {
+        type: Boolean,
+        default: false
+    },
+    isVip: {
+        type: Boolean,
+        default: false
+    },
     backupCodes: {
         type: [String],
         select: false

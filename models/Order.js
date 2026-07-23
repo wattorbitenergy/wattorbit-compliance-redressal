@@ -65,7 +65,15 @@ const orderSchema = new mongoose.Schema({
     },
     deliveryPartner: String,
     trackingId: String,
-    notes: String
+    notes: String,
+    couponDiscount: {
+        type: Number,
+        default: 0
+    },
+    deliveryDiscountReason: {
+        type: String,
+        default: ''
+    }
 }, { timestamps: true });
 
 // Auto-generate Order ID

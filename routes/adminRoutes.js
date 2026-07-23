@@ -148,7 +148,10 @@ router.get('/config/:key', async (req, res) => {
     const publicKeys = [
         'social_wa', 'social_fb', 'social_insta', 'social_yt', 'social_x', 'social_li', 'social_email',
         'enable_social_links', 'enable_mobile_work_permit', 'enable_curations', 'enable_onboarding', 'new_home_hero',
-        'app_version', 'enable_version_check', 'newuserdasboard', 'category_card_style', 'enable_google_maps_booking', 'enable_live_tracking'
+        'app_version', 'enable_version_check', 'newuserdasboard', 'category_card_style', 'enable_google_maps_booking', 'enable_live_tracking',
+        'shipping_rate_per_kg', 'volumetric_divisor', 'base_delivery_charge', 'free_delivery_threshold',
+        'enable_delivery_promo_codes', 'enable_tiered_delivery', 'tiered_delivery_threshold', 'tiered_delivery_discount_percent',
+        'enable_vip_delivery', 'vip_delivery_discount_percent'
     ];
 
     // If key is not in whitelist, require verification

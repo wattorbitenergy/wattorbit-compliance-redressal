@@ -13,6 +13,11 @@ const couponSchema = new mongoose.Schema({
         enum: ['percentage', 'flat'],
         required: true
     },
+    applicableOn: {
+        type: String,
+        enum: ['cart', 'delivery', 'service'],
+        default: 'cart'
+    },
     technicianAbsorbsPercent: {
         type: Number,
         min: 0,

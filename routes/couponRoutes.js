@@ -84,8 +84,10 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
 // POST: Validate coupon
 router.post('/validate', verifyToken, async (req, res) => {
     try {
-        const { code, amount } = req.body;
-        if (!code || !amount) {
+        const { code, amount, cartAmount, deliveryAmount } = req.body;
+        const fallbackAmount = cartAmount !== undefined ? cartAmount : amount;
+        
+        if (!code || fallbackAmount === undefined) {
             return res.status(400).json({ message: 'Code and amount are required' });
         }
 
@@ -94,21 +96,30 @@ router.post('/validate', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Invalid coupon code' });
         }
 
-        if (!coupon.isValid(amount)) {
+        let targetAmount = fallbackAmount;
+        if (coupon.applicableOn === 'delivery') {
+            targetAmount = deliveryAmount || 0;
+            if (targetAmount <= 0) {
+                return res.status(400).json({ message: 'Delivery is already free or no delivery charge to discount' });
+            }
+        }
+
+        if (!coupon.isValid(targetAmount)) {
             let reason = 'Coupon is invalid';
             const now = new Date();
             if (!coupon.isActive) reason = 'Coupon is inactive';
             else if (coupon.expiryDate < now) reason = 'Coupon has expired';
             else if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) reason = 'Coupon has expired';
-            else if (amount < coupon.minOrderAmount) reason = `Minimum order amount of ₹${coupon.minOrderAmount} required`;
+            else if (targetAmount < coupon.minOrderAmount) reason = `Minimum order amount of ₹${coupon.minOrderAmount} required`;
 
             return res.status(400).json({ message: reason });
         }
 
-        const discountAmount = coupon.calculateDiscount(amount);
+        const discountAmount = coupon.calculateDiscount(targetAmount);
         res.json({
             message: 'Coupon applied successfully',
             discountAmount,
+            applicableOn: coupon.applicableOn || 'cart',
             couponId: coupon._id,
             code: coupon.code
         });
