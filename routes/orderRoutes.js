@@ -157,17 +157,17 @@ router.post('/create', verifyToken, async (req, res) => {
             `;
             sendMail({
                 to: adminEmail,
-                subject: \`New COD Order #\${order.orderId}\`,
+                subject: `New COD Order #${order.orderId}`,
                 html: emailHtml
             }).catch(console.error);
             
             if (user?.email) {
                 sendMail({
                     to: user.email,
-                    subject: \`Order Confirmed #\${order.orderId}\`,
-                    html: \`<h2>Your WattOrbit Order is Confirmed!</h2>
-                           <p>Thank you for your order! Your Order ID is <b>\${order.orderId}</b>.</p>
-                           <p>Total Amount to be paid on delivery: ₹\${order.totalAmount}</p>\`
+                    subject: `Order Confirmed #${order.orderId}`,
+                    html: `<h2>Your WattOrbit Order is Confirmed!</h2>
+                           <p>Thank you for your order! Your Order ID is <b>${order.orderId}</b>.</p>
+                           <p>Total Amount to be paid on delivery: ₹${order.totalAmount}</p>`
                 }).catch(console.error);
             }
 
@@ -259,18 +259,18 @@ router.post('/verify', verifyToken, async (req, res) => {
         `;
         sendMail({
             to: adminEmail,
-            subject: \`New Paid Order #\${order.orderId}\`,
+            subject: `New Paid Order #${order.orderId}`,
             html: emailHtml
         }).catch(console.error);
         
         if (user?.email) {
             sendMail({
                 to: user.email,
-                subject: \`Payment Successful & Order Confirmed #\${order.orderId}\`,
-                html: \`<h2>Your WattOrbit Order is Confirmed!</h2>
+                subject: `Payment Successful & Order Confirmed #${order.orderId}`,
+                html: `<h2>Your WattOrbit Order is Confirmed!</h2>
                        <p>Thank you for your order! Your payment was successful.</p>
-                       <p>Order ID: <b>\${order.orderId}</b></p>
-                       <p>Amount Paid: ₹\${order.totalAmount}</p>\`
+                       <p>Order ID: <b>${order.orderId}</b></p>
+                       <p>Amount Paid: ₹${order.totalAmount}</p>`
             }).catch(console.error);
         }
 
