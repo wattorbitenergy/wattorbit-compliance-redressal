@@ -1560,6 +1560,32 @@ router.get('/:id/whatsapp/technician', verifyToken, async (req, res) => {
     }
 });
 
+// PATCH: Update technician live tracking location
+router.patch('/:id/location', verifyToken, async (req, res) => {
+    try {
+        const { latitude, longitude } = req.body;
+        const booking = await Booking.findById(req.params.id);
+        
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
+        
+        if (req.user.role !== 'admin' && booking.assignedTechnician?.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Not authorized to update this booking location' });
+        }
+
+        booking.technicianLocation = {
+            latitude,
+            longitude,
+            updatedAt: new Date()
+        };
+        await booking.save();
+        
+        res.json({ message: 'Location updated', location: booking.technicianLocation });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
 // PATCH: Generic update for technicians/admin/engineer (Web Dashboard compatibility)
 router.patch('/:id/tech-update', verifyToken, async (req, res) => {
     try {

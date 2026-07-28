@@ -261,6 +261,13 @@ const bookingSchema = new mongoose.Schema({
             trim: true
         }
     }],
+    
+    // Live Tracking
+    technicianLocation: {
+        latitude: Number,
+        longitude: Number,
+        updatedAt: Date
+    },
 
     // Multi-Service Support (Line Items)
     services: [{
