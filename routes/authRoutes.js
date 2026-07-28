@@ -273,7 +273,7 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 
     const isWeb = req.body.platform === 'web';
-    const expiresIn = isWeb ? '1h' : '30d';
+    const expiresIn = '30d';
 
     const token = jwt.sign(
       {
