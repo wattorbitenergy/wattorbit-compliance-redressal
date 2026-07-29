@@ -37,13 +37,15 @@ router.get('/', async (req, res) => {
         let selectFields = 'name make description materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity images mrp isActive';
         
         // If logged in, we might provide more info
+        // Use ignoreExpiration so that admin/employee tokens still reveal purchase fields
+        // even after session expiry — this is safe as it only controls read-field selection
         const authHeader = req.headers.authorization;
         if (authHeader) {
             try {
                 const token = authHeader.split(' ')[1];
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                const decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
                 if (['admin', 'employee', 'technician'].includes(decoded.role)) {
-                    selectFields = 'name make description hsnCode materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity images mrp isActive';
+                    selectFields = 'name make description hsnCode materialCode unit purchasePrice purchaseTaxRate purchaseTaxAmount sellingPrice sellingTaxRate sellingTaxAmount stockQuantity reorderLevel warrantyMonths manufacturerCode images mrp isActive';
                 }
             } catch (e) {}
         }
@@ -148,13 +150,14 @@ router.get('/:id', async (req, res) => {
     try {
         let selectFields = 'name make description materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity images mrp isActive';
 
+        // Use ignoreExpiration so admin/employee tokens still reveal purchase fields
         const authHeader = req.headers.authorization;
         if (authHeader) {
             try {
                 const token = authHeader.split(' ')[1];
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                const decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
                 if (['admin', 'employee', 'technician'].includes(decoded.role)) {
-                    selectFields = 'name make description hsnCode materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity images mrp isActive';
+                    selectFields = 'name make description hsnCode materialCode unit purchasePrice purchaseTaxRate purchaseTaxAmount sellingPrice sellingTaxRate sellingTaxAmount stockQuantity reorderLevel warrantyMonths manufacturerCode images mrp isActive';
                 }
             } catch (e) {}
         }
