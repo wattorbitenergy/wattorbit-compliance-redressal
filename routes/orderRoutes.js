@@ -422,6 +422,25 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
                 `Your order #${order.orderId} status has been updated to ${status}.`,
                 { type: 'ORDER_STATUS_UPDATE', orderId: order._id.toString(), status }
             );
+
+            const user = await User.findById(order.userId);
+            if (user?.email) {
+                let html = `<h2>Order Status Update</h2>
+                            <p>Hello,</p>
+                            <p>Your order <b>#${order.orderId}</b> is now <b>${status}</b>.</p>`;
+                if (trackingId) {
+                    html += `<p>Tracking ID: <b>${trackingId}</b></p>`;
+                }
+                if (deliveryPartner) {
+                    html += `<p>Delivery Partner: <b>${deliveryPartner}</b></p>`;
+                }
+                
+                sendMail({
+                    to: user.email,
+                    subject: `Order Update #${order.orderId}: ${status}`,
+                    html
+                }).catch(console.error);
+            }
         }
 
         res.json({ message: 'Order updated successfully', order });

@@ -345,7 +345,7 @@ router.post('/admin-login', authLimiter, async (req, res) => {
               <p style="color: #999; font-size: 11px;">— WattOrbit Security</p>
             </div>
           `,
-          from: "otp@wattorbit.in"
+          from: "support@wattorbit.in"
         });
         deliveryChannels.push('email');
       } catch (e) {
@@ -559,7 +559,7 @@ router.post('/send-otp-phone', authLimiter, async (req, res) => {
           to: user.email,
           subject: 'WattOrbit Login OTP',
           html: `<h2>Login Verification</h2><p>Your OTP for login is: <strong>${otp}</strong></p><p>This code expires in 10 minutes.</p>`,
-          from: "otp@wattorbit.in"
+          from: "support@wattorbit.in"
         });
         emailSent = true;
       } catch (e) {
@@ -659,7 +659,7 @@ router.post('/send-otp', authLimiter, async (req, res) => {
             <p>Your OTP for login is: <strong>${otp}</strong></p>
             <p>This code expires in 10 minutes.</p>
           `,
-          from: "otp@wattorbit.in"
+          from: "support@wattorbit.in"
         });
         emailSent = true;
       } catch (e) {
@@ -834,7 +834,7 @@ router.post('/send-reset-otp', authLimiter, async (req, res) => {
           to: user.email,
           subject: 'WattOrbit Password Reset OTP',
           html: `<h2>Password Reset Request</h2><p>Your OTP to reset your password is: <strong style="font-size:24px;">${otp}</strong></p><p>This code expires in 10 minutes.</p>`,
-          from: "otp@wattorbit.in"
+          from: "support@wattorbit.in"
         });
         delivered = true;
         methodUsed = 'email';
@@ -1352,7 +1352,14 @@ router.patch('/profile/:userId', verifyToken, async (req, res) => {
     const user = await User.findById(req.params.userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    if (name !== undefined && name.trim()) user.name = name.trim();
+    if (name !== undefined && name.trim()) {
+      user.name = name.trim();
+      // If username is still the auto-generated phone pattern (user_9876543210),
+      // update it to the real name so it displays properly everywhere
+      if (user.username && user.username.startsWith('user_') && /^user_\d+$/.test(user.username)) {
+        user.username = name.trim();
+      }
+    }
     if (city !== undefined) user.city = city.trim();
     if (email !== undefined && email.trim()) user.email = email.toLowerCase().trim();
     if (password !== undefined && password.trim().length >= 6) {
@@ -1364,6 +1371,27 @@ router.patch('/profile/:userId', verifyToken, async (req, res) => {
   } catch (err) {
     console.error('[PATCH /profile] Error:', err);
     res.status(500).json({ message: 'Failed to update profile' });
+  }
+});
+
+/* =========================
+   UPDATE FCM TOKEN
+   Mobile app sends the Firebase Cloud Messaging token after login
+========================= */
+router.patch('/update-fcm', verifyToken, async (req, res) => {
+  try {
+    const { fcmToken } = req.body;
+    if (!fcmToken) {
+      return res.status(400).json({ message: 'fcmToken is required' });
+    }
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    user.fcmToken = fcmToken;
+    await user.save();
+    res.json({ message: 'FCM token updated' });
+  } catch (err) {
+    console.error('[update-fcm] Error:', err);
+    res.status(500).json({ message: 'Failed to update FCM token' });
   }
 });
 

@@ -95,7 +95,7 @@ async function sendWelcomeEmail(user) {
             to: user.email,
             subject: 'Welcome to WattOrbit! 🚀',
             html,
-            from: "Welcome@wattorbit.in"
+            from: "support@wattorbit.in"
         });
         console.log(`[Email] Welcome email sent to ${user.email}`);
     } catch (err) {
@@ -140,7 +140,7 @@ async function sendBookingCreatedEmail(user, booking, serviceName) {
             to: user.email,
             subject: `Service Booking Confirmed: ${booking.bookingId}`,
             html,
-            from: "booking@wattorbit.in"
+            from: "support@wattorbit.in"
         });
         console.log(`[Email] Booking confirmation sent to ${user.email}`);
     } catch (err) {
@@ -184,7 +184,7 @@ async function sendTechnicianAssignedEmail(user, technician, booking) {
             to: user.email,
             subject: `Technician Assigned for Booking: ${booking.bookingId}`,
             html,
-            from: "booking@wattorbit.in"
+            from: "support@wattorbit.in"
         });
         console.log(`[Email] Tech assignment email sent to ${user.email}`);
     } catch (err) {
@@ -243,7 +243,7 @@ async function sendJobCompletedEmail(user, booking, invoice) {
             ];
         }
 
-        mailOptions.from = "booking@wattorbit.in";
+        mailOptions.from = "support@wattorbit.in";
         await mailer.sendMail(mailOptions);
         console.log(`[Email] Completion email sent to ${user.email} (Attached: ${!!invoice})`);
     } catch (err) {
@@ -277,7 +277,7 @@ async function sendServiceRequestOTPEmail(user, otp) {
             to: user.email,
             subject: 'Verify your WattOrbit Service Request ⚡',
             html,
-            from: "otp@wattorbit.in"
+            from: "support@wattorbit.in"
         });
         console.log(`[Email] Service OTP sent to ${user.email}`);
     } catch (err) {
@@ -322,7 +322,7 @@ async function sendBookingCancelledEmail(user, booking) {
             to: user.email,
             subject: `Booking Cancelled: ${booking.bookingId}`,
             html,
-            from: "booking@wattorbit.in"
+            from: "support@wattorbit.in"
         });
         console.log(`[Email] Cancellation email sent to ${user.email}`);
     } catch (err) {
@@ -348,7 +348,7 @@ async function sendAdminAlertEmail(subject, html) {
             to: adminEmail,
             subject,
             html,
-            from: 'alerts@wattorbit.in'
+            from: 'support@wattorbit.in'
         });
         console.log(`[Email] Admin alert sent → ${adminEmail} | ${subject}`);
     } catch (err) {

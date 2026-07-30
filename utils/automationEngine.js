@@ -212,7 +212,7 @@ async function sendEmail(config, data) {
             to,
             subject,
             html: body || `<p>${subject}</p>`,
-            from: "booking@wattorbit.in"
+            from: "support@wattorbit.in"
         });
 
         console.log(`Email sent to ${to}`);
