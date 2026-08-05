@@ -569,7 +569,7 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
                     const tmpPath = path.join(tmpDir, `invoice-${invoice.invoiceId}.pdf`);
                     fs.writeFileSync(tmpPath, pdfBuffer);
 
-                    const uploadResult = await uploadToCloudinary(tmpPath, 'wattorbit/invoices', 'raw');
+                    const uploadResult = await uploadToCloudinary(tmpPath, 'wattorbit/invoices', 'image');
                     fs.unlinkSync(tmpPath); // cleanup
 
                     if (uploadResult?.url) {
@@ -891,7 +891,7 @@ router.post('/:id/regenerate-invoice', verifyToken, async (req, res) => {
         const tmpPath = path.join(tmpDir, `invoice-${invoice.invoiceId}.pdf`);
         fs.writeFileSync(tmpPath, pdfBuffer);
 
-        const uploadResult = await uploadToCloudinary(tmpPath, 'wattorbit/invoices', 'raw');
+        const uploadResult = await uploadToCloudinary(tmpPath, 'wattorbit/invoices', 'image');
         fs.unlinkSync(tmpPath);
 
         if (uploadResult?.url) {
