@@ -73,7 +73,27 @@ const orderSchema = new mongoose.Schema({
     deliveryDiscountReason: {
         type: String,
         default: ''
-    }
+    },
+    invoiceUrl: { 
+        type: String 
+    },
+    deliveryType: {
+        type: String,
+        enum: ['internal', 'delhivery', 'manual'],
+        default: 'manual'
+    },
+    assignedTo: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    awbNumber: String,
+    shipmentId: String,
+    trackingHistory: [{
+        status: String,
+        location: String,
+        message: String,
+        timestamp: { type: Date, default: Date.now }
+    }]
 }, { timestamps: true });
 
 // Auto-generate Order ID
