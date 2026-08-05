@@ -795,4 +795,117 @@ router.get('/:id/track', verifyToken, async (req, res) => {
     }
 });
 
+// POST: Force Regenerate Invoice for Delivered Order
+router.post('/:id/regenerate-invoice', verifyToken, async (req, res) => {
+    try {
+        if (!['admin', 'employee'].includes(req.user.role)) return res.status(403).json({ message: 'Unauthorized' });
+        
+        const order = await Order.findOne({ orderId: req.params.id }).populate('userId').populate('addressId');
+        if (!order) return res.status(404).json({ message: 'Order not found' });
+        
+        if (order.status !== 'Delivered') {
+            return res.status(400).json({ message: 'Order must be delivered to generate invoice' });
+        }
+
+        const bankConfig = await Config.findOne({ key: 'bank_details' });
+        const biz = bankConfig?.value || {};
+        const sellerState = 'Uttar Pradesh';
+        const sellerStateCode = '09';
+        const buyerState = order.addressId?.state || '';
+        const isIntrastate = buyerState.toLowerCase().includes(sellerState.toLowerCase()) ||
+                             buyerState.toLowerCase().includes('u.p') ||
+                             buyerState.toLowerCase().includes('up');
+
+        const existingInvoice = await Invoice.findOne({ orderRefId: order._id });
+        const invoiceIdToUse = existingInvoice ? existingInvoice.invoiceId : await generateInvoiceId();
+        
+        if (existingInvoice) {
+            await Invoice.deleteOne({ _id: existingInvoice._id });
+        }
+
+        const invoiceItems = [];
+        let totalTaxable = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0;
+
+        if (order.items && order.items.length > 0) {
+            order.items.forEach(m => {
+                const taxableValue = m.sellingPrice * m.quantity;
+                const rate = m.sellingTaxRate || 0;
+                let cgst = 0, sgst = 0, igst = 0;
+                if (rate > 0) {
+                    if (isIntrastate) {
+                        cgst = parseFloat((taxableValue * (rate / 2) / 100).toFixed(2));
+                        sgst = parseFloat((taxableValue * (rate / 2) / 100).toFixed(2));
+                    } else {
+                        igst = parseFloat((taxableValue * rate / 100).toFixed(2));
+                    }
+                }
+                invoiceItems.push({
+                    description: `${m.name} (${m.make})`, hsnSac: '', quantity: m.quantity, unitPrice: m.sellingPrice,
+                    taxableValue, taxRate: rate, cgstRate: isIntrastate ? rate / 2 : 0, cgstAmount: cgst,
+                    sgstRate: isIntrastate ? rate / 2 : 0, sgstAmount: sgst, igstRate: isIntrastate ? 0 : rate, igstAmount: igst,
+                    taxAmount: cgst + sgst + igst, total: taxableValue + cgst + sgst + igst
+                });
+                totalTaxable += taxableValue; totalCGST += cgst; totalSGST += sgst; totalIGST += igst;
+            });
+        }
+
+        if (order.codCharge > 0) {
+            const preTaxCod = parseFloat((order.codCharge / 1.18).toFixed(2));
+            const codTax = order.codCharge - preTaxCod;
+            let cgst = 0, sgst = 0, igst = 0;
+            if (isIntrastate) { cgst = parseFloat((codTax / 2).toFixed(2)); sgst = parseFloat((codTax / 2).toFixed(2)); }
+            else { igst = parseFloat(codTax.toFixed(2)); }
+            invoiceItems.push({
+                description: 'COD Handling Charge', hsnSac: '999999', quantity: 1,
+                unitPrice: preTaxCod, taxableValue: preTaxCod, taxRate: 18,
+                cgstRate: isIntrastate ? 9 : 0, cgstAmount: cgst, sgstRate: isIntrastate ? 9 : 0, sgstAmount: sgst,
+                igstRate: isIntrastate ? 0 : 18, igstAmount: igst, taxAmount: cgst + sgst + igst, total: preTaxCod + cgst + sgst + igst
+            });
+            totalTaxable += preTaxCod; totalCGST += cgst; totalSGST += sgst; totalIGST += igst;
+        }
+
+        const grandTotal = parseFloat((totalTaxable + totalCGST + totalSGST + totalIGST).toFixed(2));
+        const amountWords = convertNumberToWords(grandTotal);
+        const addr = order.addressId;
+        const customerAddress = `${addr?.flatNo ? addr.flatNo + ', ' : ''}${addr?.building ? addr.building + ', ' : ''}${addr?.street || ''}, ${addr?.landmark ? addr.landmark + ', ' : ''}${addr?.city || ''}, ${addr?.state || ''} - ${addr?.pincode || ''}`;
+
+        const invoice = new Invoice({
+            invoiceId: invoiceIdToUse, orderRefId: order._id, userId: order.userId._id, invoiceDate: new Date(),
+            items: invoiceItems, subtotal: parseFloat(totalTaxable.toFixed(2)), taxAmount: parseFloat((totalCGST + totalSGST + totalIGST).toFixed(2)),
+            discount: 0, totalAmount: grandTotal, amountInWords: amountWords, totalCGST: parseFloat(totalCGST.toFixed(2)),
+            totalSGST: parseFloat(totalSGST.toFixed(2)), totalIGST: parseFloat(totalIGST.toFixed(2)), placeOfSupply: buyerState, stateCode: isIntrastate ? sellerStateCode : '',
+            paymentStatus: order.paymentStatus === 'Paid' ? 'Paid' : 'Unpaid', paidAmount: order.paymentStatus === 'Paid' ? grandTotal : 0,
+            businessName: biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP', businessGST: biz.gstNumber || '09AAFFW4253N1ZL', businessPAN: biz.panNumber || 'AAFFW4253N',
+            businessAddress: biz.branchName || 'Shop No.3, INDAURABAG, BKT LUCKNOW - 226201',
+            bankDetails: {
+                accountHolderName: biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP', accountNumber: biz.accountNumber || '',
+                ifscCode: biz.ifscCode || '', bankName: biz.bankName || '', branchName: biz.branchName || ''
+            },
+            customerName: order.userId.name, customerPhone: order.userId.phone, customerEmail: order.userId.email, customerAddress
+        });
+        await invoice.save();
+
+        const pdfBuffer = await generateInvoicePDF(invoice, { buffer: true });
+        const tmpDir = path.join(__dirname, '..', 'uploads');
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+        const tmpPath = path.join(tmpDir, `invoice-${invoice.invoiceId}.pdf`);
+        fs.writeFileSync(tmpPath, pdfBuffer);
+
+        const uploadResult = await uploadToCloudinary(tmpPath, 'wattorbit/invoices', 'raw');
+        fs.unlinkSync(tmpPath);
+
+        if (uploadResult?.url) {
+            order.invoiceUrl = uploadResult.url;
+            invoice.invoiceUrl = uploadResult.url;
+            await order.save();
+            await invoice.save();
+        }
+
+        res.json({ message: 'Invoice regenerated successfully', order });
+    } catch (err) {
+        console.error('[Regenerate Invoice] Error:', err);
+        res.status(500).json({ message: 'Error regenerating invoice', error: err.message });
+    }
+});
+
 module.exports = router;

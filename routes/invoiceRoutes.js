@@ -535,6 +535,11 @@ router.post('/manual', verifyToken, upload.single('invoicePdf'), async (req, res
 
         const invoiceData = JSON.parse(req.body.invoiceData);
         
+        console.log("=== UPLOAD DEBUG ===");
+        console.log("File size:", req.file.size);
+        console.log("Mimetype:", req.file.mimetype);
+        console.log("====================");
+        
         // Rename temp file to include .pdf so Cloudinary recognizes it
         const tempPath = req.file.path + '.pdf';
         fs.renameSync(req.file.path, tempPath);
