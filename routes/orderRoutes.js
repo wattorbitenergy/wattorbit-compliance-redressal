@@ -817,7 +817,7 @@ router.post('/:id/regenerate-invoice', verifyToken, async (req, res) => {
                              buyerState.toLowerCase().includes('up');
 
         const existingInvoice = await Invoice.findOne({ orderRefId: order._id });
-        const invoiceIdToUse = existingInvoice ? existingInvoice.invoiceId : await generateInvoiceId();
+        const invoiceIdToUse = await generateInvoiceId();
         
         if (existingInvoice) {
             await Invoice.deleteOne({ _id: existingInvoice._id });
@@ -888,7 +888,7 @@ router.post('/:id/regenerate-invoice', verifyToken, async (req, res) => {
         const pdfBuffer = await generateInvoicePDF(invoice, { buffer: true });
         const tmpDir = path.join(__dirname, '..', 'uploads');
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-        const tmpPath = path.join(tmpDir, `invoice-${invoice.invoiceId}.pdf`);
+        const tmpPath = path.join(tmpDir, `invoice-${invoice.invoiceId}-${Date.now()}.pdf`);
         fs.writeFileSync(tmpPath, pdfBuffer);
 
         const uploadResult = await uploadToCloudinary(tmpPath, 'wattorbit/invoices', 'image');
