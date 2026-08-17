@@ -796,4 +796,140 @@ router.get('/:id/track', verifyToken, async (req, res) => {
     }
 });
 
+
+// POST: Regenerate invoice for an order
+router.post('/:id/regenerate-invoice', verifyToken, async (req, res) => {
+    try {
+        const Order = require('../models/Order');
+        const order = await Order.findOne({ orderId: req.params.id }).populate('userId').populate('addressId');
+        if (!order) return res.status(404).json({ message: 'Order not found' });
+        
+        // Find existing invoice and delete it
+        const Invoice = require('../models/Invoice');
+        await Invoice.findOneAndDelete({ orderRefId: order._id });
+
+        // Build new invoice
+        const { generateInvoiceId } = require('../utils/idGenerator');
+        const invoiceIdToUse = await generateInvoiceId();
+        
+        const { convertNumberToWords } = require('../utils/numberToWords');
+        const Config = require('../models/LogisticsConfig');
+        const bizConfig = await Config.findOne({ key: 'bank_details' });
+        const biz = bizConfig && bizConfig.value ? (typeof bizConfig.value === 'string' ? JSON.parse(bizConfig.value) : bizConfig.value) : {};
+
+        let invoiceItems = [];
+        let totalTaxable = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0;
+        
+        const sellerStateCode = '09';
+        const buyerState = order.addressId?.state || '';
+        const buyerStateCode = buyerState.substring(0, 2);
+        const isIntrastate = sellerStateCode === buyerStateCode || !buyerStateCode;
+
+        order.items.forEach(item => {
+            const qty = item.quantity || 1;
+            const sp = item.sellingPrice || 0;
+            const taxRate = item.taxRate || 18;
+            
+            const preTax = sp;
+            const totalPreTax = preTax * qty;
+            const totalTax = totalPreTax * (taxRate / 100);
+            
+            let cgst = 0, sgst = 0, igst = 0;
+            if (isIntrastate) {
+                cgst = totalTax / 2;
+                sgst = totalTax / 2;
+            } else {
+                igst = totalTax;
+            }
+
+            invoiceItems.push({
+                description: `${item.name} [${item.make || 'N/A'}]`,
+                quantity: qty,
+                unitPrice: preTax,
+                taxableValue: totalPreTax,
+                taxRate,
+                cgstRate: isIntrastate ? taxRate / 2 : 0,
+                cgstAmount: parseFloat(cgst.toFixed(2)),
+                sgstRate: isIntrastate ? taxRate / 2 : 0,
+                sgstAmount: parseFloat(sgst.toFixed(2)),
+                igstRate: !isIntrastate ? taxRate : 0,
+                igstAmount: parseFloat(igst.toFixed(2)),
+                taxAmount: parseFloat(totalTax.toFixed(2)),
+                total: parseFloat((sp * qty + totalTax).toFixed(2))
+            });
+
+            totalTaxable += totalPreTax;
+            totalCGST += cgst;
+            totalSGST += sgst;
+            totalIGST += igst;
+        });
+
+        // Add Delivery Charge as an item if present
+        if (order.deliveryCharge > 0) {
+            const preTaxDel = parseFloat((order.deliveryCharge / 1.18).toFixed(2));
+            const taxDel = order.deliveryCharge - preTaxDel;
+            let cgst = 0, sgst = 0, igst = 0;
+            if (isIntrastate) { cgst = taxDel/2; sgst = taxDel/2; } else { igst = taxDel; }
+            
+            invoiceItems.push({
+                description: 'Delivery Charge', quantity: 1, unitPrice: preTaxDel, taxableValue: preTaxDel,
+                taxRate: 18, cgstRate: isIntrastate ? 9 : 0, cgstAmount: parseFloat(cgst.toFixed(2)),
+                sgstRate: isIntrastate ? 9 : 0, sgstAmount: parseFloat(sgst.toFixed(2)),
+                igstRate: isIntrastate ? 0 : 18, igstAmount: parseFloat(igst.toFixed(2)),
+                taxAmount: parseFloat(taxDel.toFixed(2)), total: order.deliveryCharge
+            });
+            totalTaxable += preTaxDel; totalCGST += cgst; totalSGST += sgst; totalIGST += igst;
+        }
+
+        // Add COD Handling if present
+        if (order.paymentMethod === 'COD') {
+            const codCharge = 20;
+            const preTaxCod = parseFloat((codCharge / 1.18).toFixed(2));
+            const taxCod = codCharge - preTaxCod;
+            let cgst = 0, sgst = 0, igst = 0;
+            if (isIntrastate) { cgst = taxCod/2; sgst = taxCod/2; } else { igst = taxCod; }
+            
+            invoiceItems.push({
+                description: 'COD Handling Charge', quantity: 1, unitPrice: preTaxCod, taxableValue: preTaxCod,
+                taxRate: 18, cgstRate: isIntrastate ? 9 : 0, cgstAmount: parseFloat(cgst.toFixed(2)),
+                sgstRate: isIntrastate ? 9 : 0, sgstAmount: parseFloat(sgst.toFixed(2)),
+                igstRate: isIntrastate ? 0 : 18, igstAmount: parseFloat(igst.toFixed(2)),
+                taxAmount: parseFloat(taxCod.toFixed(2)), total: codCharge
+            });
+            totalTaxable += preTaxCod; totalCGST += cgst; totalSGST += sgst; totalIGST += igst;
+        }
+
+        const grandTotal = parseFloat((totalTaxable + totalCGST + totalSGST + totalIGST).toFixed(2));
+        const amountWords = convertNumberToWords(grandTotal);
+        const addr = order.addressId;
+        const customerAddress = `${addr?.flatNo ? addr.flatNo + ', ' : ''}${addr?.building ? addr.building + ', ' : ''}${addr?.street || ''}, ${addr?.landmark ? addr.landmark + ', ' : ''}${addr?.city || ''}, ${addr?.state || ''} - ${addr?.pincode || ''}`;
+
+        const invoice = new Invoice({
+            invoiceId: invoiceIdToUse, orderRefId: order._id, userId: order.userId._id, invoiceDate: order.createdAt || new Date(),
+            items: invoiceItems, subtotal: parseFloat(totalTaxable.toFixed(2)), taxAmount: parseFloat((totalCGST + totalSGST + totalIGST).toFixed(2)),
+            discount: 0, totalAmount: grandTotal, amountInWords: amountWords, totalCGST: parseFloat(totalCGST.toFixed(2)),
+            totalSGST: parseFloat(totalSGST.toFixed(2)), totalIGST: parseFloat(totalIGST.toFixed(2)), placeOfSupply: buyerState, stateCode: isIntrastate ? sellerStateCode : '',
+            paymentStatus: order.paymentStatus === 'Paid' ? 'Paid' : 'Unpaid', 
+            paidAmount: order.paymentStatus === 'Paid' ? grandTotal : 0,
+            paymentReference: order.razorpayPaymentId || order.razorpayOrderId || '',
+            businessName: biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP', businessGST: biz.gstNumber || '09AAFFW4253N1ZL', businessPAN: biz.panNumber || 'AAFFW4253N',
+            businessAddress: biz.branchName || 'Shop No.3, INDAURABAG, BKT LUCKNOW - 226201',
+            bankDetails: {
+                accountHolderName: biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP', accountNumber: biz.accountNumber || '',
+                ifscCode: biz.ifscCode || '', bankName: biz.bankName || '', branchName: biz.branchName || ''
+            },
+            customerName: order.userId.name, customerPhone: order.userId.phone, customerEmail: order.userId.email, customerAddress
+        });
+        await invoice.save();
+
+        order.invoiceUrl = 'system';
+        await order.save();
+
+        res.json({ message: 'Invoice regenerated successfully', order, invoice });
+    } catch (err) {
+        console.error('[Regenerate Invoice] Error:', err);
+        res.status(500).json({ message: 'Error regenerating invoice', error: err.message });
+    }
+});
+
 module.exports = router;
