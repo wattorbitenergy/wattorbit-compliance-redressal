@@ -93,7 +93,8 @@ const invoiceSchema = new mongoose.Schema({
         accountNumber: String,
         ifscCode: String,
         bankName: String,
-        branchName: String
+        branchName: String,
+        upiId: String
     },
 
     // Customer details (snapshot at time of invoice)

@@ -554,7 +554,8 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
                             accountNumber: biz.accountNumber || '',
                             ifscCode: biz.ifscCode || '',
                             bankName: biz.bankName || '',
-                            branchName: biz.branchName || ''
+                            branchName: biz.branchName || '',
+                            upiId: biz.upiId || ''
                         },
                         customerName: fullOrder.userId.name,
                         customerPhone: fullOrder.userId.phone,
@@ -813,7 +814,7 @@ router.post('/:id/regenerate-invoice', verifyToken, async (req, res) => {
         const invoiceIdToUse = await generateInvoiceId();
         
         const { convertNumberToWords } = require('../utils/numberToWords');
-        const Config = require('../models/LogisticsConfig');
+        const Config = require('../models/Config');
         const bizConfig = await Config.findOne({ key: 'bank_details' });
         const biz = bizConfig && bizConfig.value ? (typeof bizConfig.value === 'string' ? JSON.parse(bizConfig.value) : bizConfig.value) : {};
 
@@ -916,7 +917,8 @@ router.post('/:id/regenerate-invoice', verifyToken, async (req, res) => {
             businessAddress: biz.branchName || 'Shop No.3, INDAURABAG, BKT LUCKNOW - 226201',
             bankDetails: {
                 accountHolderName: biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP', accountNumber: biz.accountNumber || '',
-                ifscCode: biz.ifscCode || '', bankName: biz.bankName || '', branchName: biz.branchName || ''
+                ifscCode: biz.ifscCode || '', bankName: biz.bankName || '', branchName: biz.branchName || '',
+                upiId: biz.upiId || ''
             },
             customerName: order.userId.name, customerPhone: order.userId.phone, customerEmail: order.userId.email, customerAddress
         });
