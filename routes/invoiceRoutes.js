@@ -28,6 +28,59 @@ router.get('/next-id', verifyToken, async (req, res) => {
     }
 });
 
+// GET: Fetch all invoices
+router.get('/all', verifyToken, async (req, res) => {
+    try {
+        if (!['admin', 'employee'].includes(req.user.role)) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+        const invoices = await Invoice.find().sort({ invoiceDate: -1 });
+        res.json(invoices);
+    } catch (error) {
+        console.error('Error fetching invoices:', error);
+        res.status(500).json({ message: 'Internal Server Error' });
+    }
+});
+
+// PUT: Update an existing invoice
+router.put('/:id', verifyToken, async (req, res) => {
+    try {
+        if (!['admin', 'employee'].includes(req.user.role)) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+        const invoiceData = req.body;
+        const updatedInvoice = await Invoice.findOneAndUpdate(
+            { invoiceId: req.params.id },
+            invoiceData,
+            { new: true }
+        );
+        if (!updatedInvoice) {
+            return res.status(404).json({ message: 'Invoice not found' });
+        }
+        res.json({ message: 'Invoice updated successfully', invoice: updatedInvoice });
+    } catch (error) {
+        console.error('Error updating invoice:', error);
+        res.status(500).json({ message: 'Failed to update invoice' });
+    }
+});
+
+// DELETE: Delete an invoice
+router.delete('/:id', verifyToken, async (req, res) => {
+    try {
+        if (!['admin', 'employee'].includes(req.user.role)) {
+            return res.status(403).json({ message: 'Access denied.' });
+        }
+        const deletedInvoice = await Invoice.findOneAndDelete({ invoiceId: req.params.id });
+        if (!deletedInvoice) {
+            return res.status(404).json({ message: 'Invoice not found' });
+        }
+        res.json({ message: 'Invoice deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting invoice:', error);
+        res.status(500).json({ message: 'Failed to delete invoice' });
+    }
+});
+
 // POST: Generate invoice for booking (auto-triggered or manual)
 router.post('/generate', verifyToken, async (req, res) => {
     try {
@@ -527,35 +580,15 @@ router.get('/:id/download', verifyToken, async (req, res) => {
 });
 
 
-// POST: Save manual invoice and upload to Cloudinary
-router.post('/manual', verifyToken, upload.single('invoicePdf'), async (req, res) => {
+// POST: Save manual invoice (JSON only, no Cloudinary upload)
+router.post('/manual', verifyToken, async (req, res) => {
     try {
-        if (!req.file) {
-            return res.status(400).json({ message: 'Invoice PDF file is required' });
-        }
-
-        const invoiceData = JSON.parse(req.body.invoiceData);
+        const invoiceData = req.body;
         
-        console.log("=== UPLOAD DEBUG ===");
-        console.log("File size:", req.file.size);
-        console.log("Mimetype:", req.file.mimetype);
-        console.log("====================");
-        
-        // Rename temp file to include .pdf so Cloudinary recognizes it
-        const tempPath = req.file.path + '.pdf';
-        fs.renameSync(req.file.path, tempPath);
-        
-        // Upload PDF to Cloudinary
-        const uploadResult = await uploadToCloudinary(tempPath, 'wattorbit/invoices', 'raw');
-        
-        // Remove temp file
-        fs.unlinkSync(tempPath);
-
         // Save to DB
         const invoice = new Invoice({
             invoiceId: invoiceData.invoiceNo,
             isManual: true,
-            invoiceUrl: uploadResult.url,
             customerName: invoiceData.customerName || 'Walk-in Customer',
             customerPhone: invoiceData.customerPhone,
             customerEmail: invoiceData.customerEmail,
@@ -575,14 +608,10 @@ router.post('/manual', verifyToken, upload.single('invoicePdf'), async (req, res
 
         res.status(201).json({ 
             message: 'Manual invoice saved successfully', 
-            invoiceId: invoice.invoiceId,
-            url: uploadResult.url
+            invoiceId: invoice.invoiceId
         });
     } catch (error) {
         console.error('Error saving manual invoice:', error);
-        if (req.file && fs.existsSync(req.file.path)) {
-            fs.unlinkSync(req.file.path);
-        }
         res.status(500).json({ message: 'Error saving manual invoice', error: error.message });
     }
 });
