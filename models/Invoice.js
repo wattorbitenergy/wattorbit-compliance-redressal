@@ -79,6 +79,7 @@ const invoiceSchema = new mongoose.Schema({
         default: 'Unpaid'
     },
     paidAmount: { type: Number, default: 0 },
+    paymentReference: { type: String },
 
     // Business details (Snapshot for audit)
     businessName: { type: String, default: 'WATTORBIT ENERGY SOLUTIONS LLP' },
