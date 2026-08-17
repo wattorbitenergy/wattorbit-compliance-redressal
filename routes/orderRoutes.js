@@ -805,13 +805,17 @@ router.post('/:id/regenerate-invoice', verifyToken, async (req, res) => {
         const order = await Order.findOne({ orderId: req.params.id }).populate('userId').populate('addressId');
         if (!order) return res.status(404).json({ message: 'Order not found' });
         
-        // Find existing invoice and delete it
+        // Find existing invoice and preserve its ID
         const Invoice = require('../models/Invoice');
-        await Invoice.findOneAndDelete({ orderRefId: order._id });
-
-        // Build new invoice
-        const { generateInvoiceId } = require('../utils/idGenerator');
-        const invoiceIdToUse = await generateInvoiceId();
+        const existingInvoice = await Invoice.findOne({ orderRefId: order._id });
+        let invoiceIdToUse;
+        if (existingInvoice) {
+            invoiceIdToUse = existingInvoice.invoiceId;
+            await Invoice.findOneAndDelete({ orderRefId: order._id });
+        } else {
+            const { generateInvoiceId } = require('../utils/idGenerator');
+            invoiceIdToUse = await generateInvoiceId();
+        }
         
         const { convertNumberToWords } = require('../utils/numberToWords');
         const Config = require('../models/Config');
@@ -822,9 +826,12 @@ router.post('/:id/regenerate-invoice', verifyToken, async (req, res) => {
         let totalTaxable = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0;
         
         const sellerStateCode = '09';
+        const sellerState = 'Uttar Pradesh';
         const buyerState = order.addressId?.state || '';
-        const buyerStateCode = buyerState.substring(0, 2);
-        const isIntrastate = sellerStateCode === buyerStateCode || !buyerStateCode;
+        const isIntrastate = buyerState.toLowerCase().includes(sellerState.toLowerCase()) || 
+                             buyerState.toLowerCase().includes('u.p') || 
+                             buyerState.toLowerCase().includes('up') || 
+                             !buyerState;
 
         order.items.forEach(item => {
             const qty = item.quantity || 1;

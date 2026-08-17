@@ -547,7 +547,7 @@ router.post('/manual', verifyToken, upload.single('invoicePdf'), async (req, res
         fs.renameSync(req.file.path, tempPath);
         
         // Upload PDF to Cloudinary
-        const uploadResult = await uploadToCloudinary(tempPath, 'wattorbit/invoices', 'image');
+        const uploadResult = await uploadToCloudinary(tempPath, 'wattorbit/invoices', 'raw');
         
         // Remove temp file
         fs.unlinkSync(tempPath);
