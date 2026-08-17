@@ -187,8 +187,17 @@ const generateInvoicePDF = async (invoice, options = {}) => {
 
             // --- BANK & FOOTER ---
             y += 40;
+
+            // Payment Reference (for online payments)
+            if (invoice.paymentStatus === 'Paid' && invoice.paymentReference) {
+                doc.rect(30, y, 535, 20).fill('#f0fdf4').strokeColor('#bbf7d0').stroke();
+                doc.fillColor('#15803d').font('Helvetica-Bold').fontSize(9).text('PAID', 35, y + 5);
+                doc.fillColor('#166534').font('Helvetica').fontSize(7).text(`Transaction Ref: ${invoice.paymentReference}`, 65, y + 6);
+                y += 30;
+            }
+
             doc.rect(30, y, 220, 70).strokeColor(borderColor).stroke();
-            doc.font('Helvetica-Bold').fontSize(8).text('BANK DETAILS', 35, y + 5);
+            doc.font('Helvetica-Bold').fontSize(8).fillColor('#000000').text('BANK DETAILS', 35, y + 5);
             doc.font('Helvetica').fontSize(7).fillColor(secondaryColor);
             const bank = invoice.bankDetails || {};
             doc.text(`A/c Name: ${bank.accountHolderName || invoice.businessName}`, 35, y + 18);
@@ -203,9 +212,8 @@ const generateInvoicePDF = async (invoice, options = {}) => {
                 const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(upiString)}`;
                 const qrBuffer = await fetchImage(qrUrl);
                 if (qrBuffer) {
-                    doc.image(qrBuffer, 260, y, { width: 50 });
-                    doc.fontSize(6).fillColor(secondaryColor).text(`Scan to pay ₹${invoice.totalAmount.toFixed(2)}`, 260, y + 55, { width: 50, align: 'center' });
-                    doc.fontSize(5).text(bank.upiId, 260, y + 63, { width: 50, align: 'center' });
+                    doc.image(qrBuffer, 260, y, { width: 55 });
+                    doc.font('Helvetica-Bold').fontSize(7).fillColor('#1e40af').text('Scan to Pay', 260, y + 58, { width: 55, align: 'center' });
                 }
             }
 

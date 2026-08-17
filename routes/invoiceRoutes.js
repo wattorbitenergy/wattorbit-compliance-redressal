@@ -201,7 +201,8 @@ router.post('/generate', verifyToken, async (req, res) => {
                 accountNumber: biz.accountNumber || '',
                 ifscCode: biz.ifscCode || '',
                 bankName: biz.bankName || '',
-                branchName: biz.branchName || ''
+                branchName: biz.branchName || '',
+                upiId: biz.upiId || ''
             },
             customerName: booking.userId.name,
             customerPhone: booking.userId.phone,
@@ -380,7 +381,8 @@ router.post('/generate-order', verifyToken, async (req, res) => {
                 accountNumber: biz.accountNumber || '',
                 ifscCode: biz.ifscCode || '',
                 bankName: biz.bankName || '',
-                branchName: biz.branchName || ''
+                branchName: biz.branchName || '',
+                upiId: biz.upiId || ''
             },
             customerName: order.userId.name,
             customerPhone: order.userId.phone,

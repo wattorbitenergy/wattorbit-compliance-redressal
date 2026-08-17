@@ -1,6 +1,7 @@
 const Invoice = require('../models/Invoice');
 const Booking = require('../models/Booking');
 const Payment = require('../models/Payment');
+const Config = require('../models/Config');
 const { generateInvoiceId } = require('./idGenerator');
 
 /**
@@ -119,6 +120,9 @@ async function autoGenerateInvoice(bookingId) {
         const addr = booking.addressId;
         const customerAddress = `${addr.flatNo ? addr.flatNo + ', ' : ''}${addr.building ? addr.building + ', ' : ''}${addr.street}, ${addr.landmark ? addr.landmark + ', ' : ''}${addr.city}, ${addr.state} - ${addr.pincode}`;
 
+        const bankConfig = await Config.findOne({ key: 'bank_details' });
+        const biz = bankConfig?.value || {};
+
         const invoice = new Invoice({
             invoiceId,
             bookingId,
@@ -133,6 +137,19 @@ async function autoGenerateInvoice(bookingId) {
             totalAmount: booking.totalAmount,
             paymentStatus: (payment && payment.status === 'Paid') || booking.paymentReceived ? 'Paid' : 'Unpaid',
             paidAmount: (payment && payment.status === 'Paid') || booking.paymentReceived ? booking.totalAmount : 0,
+            paymentReference: (payment && payment.razorpayPaymentId) || booking.razorpayPaymentId || '',
+            businessName: biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP',
+            businessGST: biz.gstNumber || '09AAFFW4253N1ZL',
+            businessPAN: biz.panNumber || 'AAFFW4253N',
+            businessAddress: biz.branchName || 'Shop No.3, INDAURABAG, BKT LUCKNOW - 226201',
+            bankDetails: {
+                accountHolderName: biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP',
+                accountNumber: biz.accountNumber || '',
+                ifscCode: biz.ifscCode || '',
+                bankName: biz.bankName || '',
+                branchName: biz.branchName || '',
+                upiId: biz.upiId || ''
+            },
             customerName: booking.userId.name,
             customerPhone: booking.userId.phone,
             customerEmail: booking.userId.email,
