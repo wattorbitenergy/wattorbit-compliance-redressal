@@ -798,7 +798,7 @@ router.post('/:id/regenerate-invoice', verifyToken, async (req, res) => {
         const { generateInvoiceId } = require('../utils/idGenerator');
         const invoiceIdToUse = await generateInvoiceId();
         
-        const convertNumberToWords = require('../utils/numberToWords');
+        const { convertNumberToWords } = require('../utils/numberToWords');
         const Config = require('../models/LogisticsConfig');
         const bizConfig = await Config.findOne({ key: 'business_details' });
         const biz = bizConfig && bizConfig.value ? JSON.parse(bizConfig.value) : {};
