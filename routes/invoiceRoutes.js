@@ -526,7 +526,6 @@ router.get('/:id/download', verifyToken, async (req, res) => {
     }
 });
 
-module.exports = router;
 
 // POST: Save manual invoice and upload to Cloudinary
 router.post('/manual', verifyToken, upload.single('invoicePdf'), async (req, res) => {
@@ -587,3 +586,5 @@ router.post('/manual', verifyToken, upload.single('invoicePdf'), async (req, res
         res.status(500).json({ message: 'Error saving manual invoice', error: error.message });
     }
 });
+
+module.exports = router;
