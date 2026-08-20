@@ -6,7 +6,7 @@ const Payment = require('../models/Payment');
 const Address = require('../models/Address');
 const User = require('../models/User');
 const Config = require('../models/Config');
-const { generateInvoiceId } = require('../utils/idGenerator');
+const { generateInvoiceId, peekNextInvoiceId } = require('../utils/idGenerator');
 const { convertNumberToWords } = require('../utils/numberToWords');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
@@ -20,7 +20,7 @@ const upload = multer({ dest: 'uploads/' });
 // GET: Fetch the next auto-generated Invoice ID
 router.get('/next-id', verifyToken, async (req, res) => {
     try {
-        const nextId = await generateInvoiceId();
+        const nextId = await peekNextInvoiceId();
         res.json({ invoiceId: nextId });
     } catch (error) {
         console.error('Error fetching next invoice ID:', error);
@@ -585,9 +585,12 @@ router.post('/manual', verifyToken, async (req, res) => {
     try {
         const invoiceData = req.body;
         
+        // Generate real invoice ID securely on the server
+        const generatedInvoiceId = await generateInvoiceId();
+
         // Save to DB
         const invoice = new Invoice({
-            invoiceId: invoiceData.invoiceNo,
+            invoiceId: generatedInvoiceId,
             isManual: true,
             customerName: invoiceData.customerName || 'Walk-in Customer',
             customerPhone: invoiceData.customerPhone,

@@ -52,12 +52,25 @@ async function generatePaymentId() {
 }
 
 /**
- * Generate invoice ID
+ * Generate invoice ID (increments counter - use only when actually saving)
  */
 async function generateInvoiceId() {
     const year = new Date().getFullYear();
     const seq = await getNextSequence('invoice', '');
     return `INV-${year}-${seq}`;
+}
+
+/**
+ * Peek at next invoice ID without incrementing the counter.
+ * Used for previewing the next invoice number on the frontend.
+ */
+async function peekNextInvoiceId() {
+    const year = new Date().getFullYear();
+    const counterId = `invoice-${year}`;
+    const counter = await Counter.findById(counterId);
+    const nextSeq = (counter ? counter.seq : 0) + 1;
+    const padded = String(nextSeq).padStart(3, '0');
+    return `INV-${year}-${padded}`;
 }
 
 /**
@@ -77,5 +90,6 @@ module.exports = {
     generateBookingId,
     generatePaymentId,
     generateInvoiceId,
+    peekNextInvoiceId,
     generateWorkPermitId
 };
