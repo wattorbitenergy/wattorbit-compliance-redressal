@@ -126,7 +126,7 @@ router.post('/', verifyToken, async (req, res) => {
 
         const addressData = {
             userId,
-            addressType: addressType || 'Home',
+            addressType: addressType ? (addressType.charAt(0).toUpperCase() + addressType.slice(1).toLowerCase()) : 'Home',
             label: label || 'My Address',
             flatNo, building, street, landmark,
             city, state, pincode,
@@ -270,7 +270,7 @@ router.put('/:id', verifyToken, async (req, res) => {
         }
 
         // Update fields
-        if (addressType) address.addressType = addressType;
+        if (addressType) address.addressType = addressType.charAt(0).toUpperCase() + addressType.slice(1).toLowerCase();
         if (label) address.label = label;
         if (flatNo !== undefined) address.flatNo = flatNo;
         if (building !== undefined) address.building = building;
