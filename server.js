@@ -241,6 +241,7 @@ app.use('/api/blogs', require('./routes/blogRoutes'));
 app.use('/api/reviews', require('./routes/reviewRoutes'));
 app.use('/api/materials', require('./routes/materialRoutes'));
 app.use('/api/orders', require('./routes/orderRoutes'));
+app.use('/api/logistics', require('./routes/logisticsRoutes'));
 app.use('/api/payouts', require('./routes/payoutRoutes'));
 
 if (process.env.NODE_ENV !== 'production') {
