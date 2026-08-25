@@ -346,6 +346,246 @@ router.get('/delivery/my-assignments', verifyToken, async (req, res) => {
     }
 });
 
+// GET: Check Pincode Serviceability
+router.get('/check-pincode', async (req, res) => {
+    try {
+        const { pincode } = req.query;
+        if (!pincode || pincode.length !== 6 || !/^\d{6}$/.test(pincode)) {
+            return res.status(400).json({ available: false, message: 'Invalid PIN code. Must be a 6-digit number.' });
+        }
+
+        const config = await Config.findOne({ key: 'serviceable_pincodes' });
+        if (!config || !config.value) {
+            return res.json({ available: false, message: 'Delivery service is currently unavailable.' });
+        }
+
+        let pincodeList = [];
+        try {
+            pincodeList = typeof config.value === 'string' ? JSON.parse(config.value) : config.value;
+        } catch (e) {
+            // Fallback for comma-separated old format
+            pincodeList = config.value.split(',').map(p => ({ code: p.trim(), isActive: true }));
+        }
+
+        const match = pincodeList.find(p => p.code === pincode && p.isActive !== false);
+        if (match) {
+            return res.json({ available: true, message: `Delivery available to ${match.desc || pincode}` });
+        }
+        return res.json({ available: false, message: 'Delivery is not available to this PIN code yet.' });
+    } catch (err) {
+        console.error('[Check Pincode] Error:', err);
+        res.status(500).json({ available: false, message: 'Error checking PIN code' });
+    }
+});
+
+
+// POST: Assign Delivery
+router.post('/:id/assign-delivery', verifyToken, async (req, res) => {
+    try {
+        if (!['admin', 'employee'].includes(req.user.role)) {
+            return res.status(403).json({ message: 'Unauthorized' });
+        }
+
+        const { deliveryType, assignedTo } = req.body;
+        const order = await Order.findById(req.params.id).populate('addressId').populate('userId');
+        if (!order) return res.status(404).json({ message: 'Order not found' });
+
+        if (deliveryType === 'internal') {
+            if (!assignedTo) return res.status(400).json({ message: 'assignedTo is required for internal delivery' });
+            const assignedUser = await User.findById(assignedTo);
+            if (!assignedUser) return res.status(404).json({ message: 'Assigned user not found' });
+
+            order.deliveryType = 'internal';
+            order.assignedTo = assignedTo;
+            order.status = 'Processing';
+            order.deliveryPartner = assignedUser.name;
+            order.trackingHistory.push({
+                status: 'Assigned',
+                message: `Assigned to ${assignedUser.name}`,
+                location: 'Warehouse',
+                timestamp: new Date()
+            });
+            await order.save();
+
+            // Notify delivery person
+            await sendUserNotification(
+                assignedTo,
+                'New Delivery Assigned',
+                `Order #${order.orderId} has been assigned to you.`,
+                { type: 'DELIVERY_ASSIGNED', orderId: order._id.toString() }
+            );
+
+            return res.json({ message: 'Delivery assigned to internal partner', order });
+        } 
+        else if (deliveryType === 'delhivery') {
+            const config = await Config.findOne({ key: 'warehouse_details' });
+            let warehouseDetails = {};
+            if (config && config.value) {
+                try { warehouseDetails = JSON.parse(config.value); } catch(e){}
+            }
+
+            const itemDesc = order.items.map(i => i.name).join(', ');
+            const totalQty = order.items.reduce((sum, i) => sum + i.quantity, 0);
+
+            try {
+                const result = await createShipment({
+                    orderId: order.orderId,
+                    pickupDetails: warehouseDetails,
+                    deliveryDetails: {
+                        name: order.userId.name,
+                        phone: order.addressId.contactPhone || order.userId.phone,
+                        address: `${order.addressId.flatNo || ''} ${order.addressId.building || ''} ${order.addressId.street || ''}`,
+                        city: order.addressId.city,
+                        state: order.addressId.state,
+                        pincode: order.addressId.pincode
+                    },
+                    packageDetails: {
+                        name: itemDesc,
+                        quantity: totalQty,
+                        weight: 500, // Default weight
+                        payment_mode: order.paymentMethod === 'COD' ? 'COD' : 'Prepaid',
+                        cod_amount: order.paymentMethod === 'COD' ? order.totalAmount : 0
+                    }
+                });
+
+                if (result.success) {
+                    order.deliveryType = 'delhivery';
+                    order.awbNumber = result.awb;
+                    order.shipmentId = result.shipment_id;
+                    order.trackingId = result.awb;
+                    order.deliveryPartner = 'Delhivery';
+                    order.status = 'Dispatched';
+                    order.trackingHistory.push({
+                        status: 'Shipment Created',
+                        message: `AWB: ${result.awb}`,
+                        location: 'Warehouse',
+                        timestamp: new Date()
+                    });
+                    await order.save();
+
+                    // Notify customer
+                    await sendUserNotification(
+                        order.userId._id,
+                        'Order Dispatched!',
+                        `Your order #${order.orderId} has been dispatched via Delhivery. AWB: ${result.awb}`,
+                        { type: 'ORDER_DISPATCHED', orderId: order._id.toString() }
+                    );
+
+                    return res.json({ message: 'Shipment booked on Delhivery', order, awb: result.awb });
+                } else {
+                    return res.status(400).json({ message: result.message || 'Failed to book Delhivery' });
+                }
+            } catch (apiError) {
+                return res.status(500).json({ message: apiError.message });
+            }
+        }
+        else {
+            return res.status(400).json({ message: 'Invalid delivery type' });
+        }
+    } catch (err) {
+        console.error('[Assign Delivery] Error:', err);
+        res.status(500).json({ message: 'Error assigning delivery', error: err.message });
+    }
+});
+
+// GET: Track Order
+router.get('/:id/track', verifyToken, async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.id);
+        if (!order) return res.status(404).json({ message: 'Order not found' });
+
+        // Auth check: owner, admin, employee, or assigned delivery person
+        if (order.userId.toString() !== req.user.id && !['admin', 'employee'].includes(req.user.role) && order.assignedTo?.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Unauthorized' });
+        }
+
+        if (order.deliveryType === 'delhivery' && order.awbNumber) {
+            try {
+                const liveData = await trackShipment(order.awbNumber);
+                return res.json({ trackingHistory: order.trackingHistory, liveData });
+            } catch (e) {
+                // Return local history if API fails
+                return res.json({ trackingHistory: order.trackingHistory, error: 'Could not fetch live Delhivery tracking' });
+            }
+        }
+
+        return res.json({ trackingHistory: order.trackingHistory });
+    } catch (err) {
+        console.error('[Track Order] Error:', err);
+        res.status(500).json({ message: 'Error fetching tracking', error: err.message });
+    }
+});
+
+
+// POST: Regenerate invoice for an order
+router.post('/:id/regenerate-invoice', verifyToken, async (req, res) => {
+    try {
+        const Order = require('../models/Order');
+        const order = await Order.findOne({ orderId: req.params.id }).populate('userId').populate('addressId');
+        if (!order) return res.status(404).json({ message: 'Order not found' });
+        
+        // Find existing invoice and preserve its ID
+        const Invoice = require('../models/Invoice');
+        const existingInvoice = await Invoice.findOne({ orderRefId: order._id });
+        let invoiceIdToUse;
+        if (existingInvoice) {
+            invoiceIdToUse = existingInvoice.invoiceId;
+            await Invoice.findOneAndDelete({ orderRefId: order._id });
+        } else {
+            const { generateInvoiceId } = require('../utils/idGenerator');
+            invoiceIdToUse = await generateInvoiceId();
+        }
+        
+        const { convertNumberToWords } = require('../utils/numberToWords');
+        const Config = require('../models/Config');
+        const bizConfig = await Config.findOne({ key: 'bank_details' });
+        const biz = bizConfig && bizConfig.value ? (typeof bizConfig.value === 'string' ? JSON.parse(bizConfig.value) : bizConfig.value) : {};
+
+        let invoiceItems = [];
+        let totalTaxable = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0;
+        
+        const sellerStateCode = '09';
+        const sellerState = 'Uttar Pradesh';
+        const buyerState = order.addressId?.state || '';
+        const isIntrastate = buyerState.toLowerCase().includes(sellerState.toLowerCase()) || 
+                             buyerState.toLowerCase().includes('u.p') || 
+                             buyerState.toLowerCase().includes('up') || 
+                             !buyerState;
+
+        order.items.forEach(item => {
+            const qty = item.quantity || 1;
+            const sp = item.sellingPrice || 0;
+            const taxRate = item.taxRate || 18;
+            
+            const preTax = sp;
+            const totalPreTax = preTax * qty;
+            const totalTax = totalPreTax * (taxRate / 100);
+            
+            let cgst = 0, sgst = 0, igst = 0;
+            if (isIntrastate) {
+                cgst = totalTax / 2;
+                sgst = totalTax / 2;
+            } else {
+                igst = totalTax;
+            }
+
+            invoiceItems.push({
+                description: `${item.name} [${item.make || 'N/A'}]`,
+                quantity: qty,
+                unitPrice: preTax,
+                taxableValue: totalPreTax,
+                taxRate,
+                cgstRate: isIntrastate ? taxRate / 2 : 0,
+                cgstAmount: parseFloat(cgst.toFixed(2)),
+                sgstRate: isIntrastate ? taxRate / 2 : 0,
+                sgstAmount: parseFloat(sgst.toFixed(2)),
+                igstRate: !isIntrastate ? taxRate : 0,
+                igstAmount: parseFloat(igst.toFixed(2)),
+                taxAmount: parseFloat(totalTax.toFixed(2)),
+                total: parseFloat((sp * qty + totalTax).toFixed(2))
+            });
+
+
 // GET: Fetch Single Order by ID
 router.get('/:id', verifyToken, async (req, res) => {
     try {
@@ -626,245 +866,6 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
         res.status(500).json({ message: 'Error updating order', error: err.message });
     }
 });
-
-// GET: Check Pincode Serviceability
-router.get('/check-pincode', async (req, res) => {
-    try {
-        const { pincode } = req.query;
-        if (!pincode || pincode.length !== 6 || !/^\d{6}$/.test(pincode)) {
-            return res.status(400).json({ available: false, message: 'Invalid PIN code. Must be a 6-digit number.' });
-        }
-
-        const config = await Config.findOne({ key: 'serviceable_pincodes' });
-        if (!config || !config.value) {
-            return res.json({ available: false, message: 'Delivery service is currently unavailable.' });
-        }
-
-        let pincodeList = [];
-        try {
-            pincodeList = typeof config.value === 'string' ? JSON.parse(config.value) : config.value;
-        } catch (e) {
-            // Fallback for comma-separated old format
-            pincodeList = config.value.split(',').map(p => ({ code: p.trim(), isActive: true }));
-        }
-
-        const match = pincodeList.find(p => p.code === pincode && p.isActive !== false);
-        if (match) {
-            return res.json({ available: true, message: `Delivery available to ${match.desc || pincode}` });
-        }
-        return res.json({ available: false, message: 'Delivery is not available to this PIN code yet.' });
-    } catch (err) {
-        console.error('[Check Pincode] Error:', err);
-        res.status(500).json({ available: false, message: 'Error checking PIN code' });
-    }
-});
-
-
-// POST: Assign Delivery
-router.post('/:id/assign-delivery', verifyToken, async (req, res) => {
-    try {
-        if (!['admin', 'employee'].includes(req.user.role)) {
-            return res.status(403).json({ message: 'Unauthorized' });
-        }
-
-        const { deliveryType, assignedTo } = req.body;
-        const order = await Order.findById(req.params.id).populate('addressId').populate('userId');
-        if (!order) return res.status(404).json({ message: 'Order not found' });
-
-        if (deliveryType === 'internal') {
-            if (!assignedTo) return res.status(400).json({ message: 'assignedTo is required for internal delivery' });
-            const assignedUser = await User.findById(assignedTo);
-            if (!assignedUser) return res.status(404).json({ message: 'Assigned user not found' });
-
-            order.deliveryType = 'internal';
-            order.assignedTo = assignedTo;
-            order.status = 'Processing';
-            order.deliveryPartner = assignedUser.name;
-            order.trackingHistory.push({
-                status: 'Assigned',
-                message: `Assigned to ${assignedUser.name}`,
-                location: 'Warehouse',
-                timestamp: new Date()
-            });
-            await order.save();
-
-            // Notify delivery person
-            await sendUserNotification(
-                assignedTo,
-                'New Delivery Assigned',
-                `Order #${order.orderId} has been assigned to you.`,
-                { type: 'DELIVERY_ASSIGNED', orderId: order._id.toString() }
-            );
-
-            return res.json({ message: 'Delivery assigned to internal partner', order });
-        } 
-        else if (deliveryType === 'delhivery') {
-            const config = await Config.findOne({ key: 'warehouse_details' });
-            let warehouseDetails = {};
-            if (config && config.value) {
-                try { warehouseDetails = JSON.parse(config.value); } catch(e){}
-            }
-
-            const itemDesc = order.items.map(i => i.name).join(', ');
-            const totalQty = order.items.reduce((sum, i) => sum + i.quantity, 0);
-
-            try {
-                const result = await createShipment({
-                    orderId: order.orderId,
-                    pickupDetails: warehouseDetails,
-                    deliveryDetails: {
-                        name: order.userId.name,
-                        phone: order.addressId.contactPhone || order.userId.phone,
-                        address: `${order.addressId.flatNo || ''} ${order.addressId.building || ''} ${order.addressId.street || ''}`,
-                        city: order.addressId.city,
-                        state: order.addressId.state,
-                        pincode: order.addressId.pincode
-                    },
-                    packageDetails: {
-                        name: itemDesc,
-                        quantity: totalQty,
-                        weight: 500, // Default weight
-                        payment_mode: order.paymentMethod === 'COD' ? 'COD' : 'Prepaid',
-                        cod_amount: order.paymentMethod === 'COD' ? order.totalAmount : 0
-                    }
-                });
-
-                if (result.success) {
-                    order.deliveryType = 'delhivery';
-                    order.awbNumber = result.awb;
-                    order.shipmentId = result.shipment_id;
-                    order.trackingId = result.awb;
-                    order.deliveryPartner = 'Delhivery';
-                    order.status = 'Dispatched';
-                    order.trackingHistory.push({
-                        status: 'Shipment Created',
-                        message: `AWB: ${result.awb}`,
-                        location: 'Warehouse',
-                        timestamp: new Date()
-                    });
-                    await order.save();
-
-                    // Notify customer
-                    await sendUserNotification(
-                        order.userId._id,
-                        'Order Dispatched!',
-                        `Your order #${order.orderId} has been dispatched via Delhivery. AWB: ${result.awb}`,
-                        { type: 'ORDER_DISPATCHED', orderId: order._id.toString() }
-                    );
-
-                    return res.json({ message: 'Shipment booked on Delhivery', order, awb: result.awb });
-                } else {
-                    return res.status(400).json({ message: result.message || 'Failed to book Delhivery' });
-                }
-            } catch (apiError) {
-                return res.status(500).json({ message: apiError.message });
-            }
-        }
-        else {
-            return res.status(400).json({ message: 'Invalid delivery type' });
-        }
-    } catch (err) {
-        console.error('[Assign Delivery] Error:', err);
-        res.status(500).json({ message: 'Error assigning delivery', error: err.message });
-    }
-});
-
-// GET: Track Order
-router.get('/:id/track', verifyToken, async (req, res) => {
-    try {
-        const order = await Order.findById(req.params.id);
-        if (!order) return res.status(404).json({ message: 'Order not found' });
-
-        // Auth check: owner, admin, employee, or assigned delivery person
-        if (order.userId.toString() !== req.user.id && !['admin', 'employee'].includes(req.user.role) && order.assignedTo?.toString() !== req.user.id) {
-            return res.status(403).json({ message: 'Unauthorized' });
-        }
-
-        if (order.deliveryType === 'delhivery' && order.awbNumber) {
-            try {
-                const liveData = await trackShipment(order.awbNumber);
-                return res.json({ trackingHistory: order.trackingHistory, liveData });
-            } catch (e) {
-                // Return local history if API fails
-                return res.json({ trackingHistory: order.trackingHistory, error: 'Could not fetch live Delhivery tracking' });
-            }
-        }
-
-        return res.json({ trackingHistory: order.trackingHistory });
-    } catch (err) {
-        console.error('[Track Order] Error:', err);
-        res.status(500).json({ message: 'Error fetching tracking', error: err.message });
-    }
-});
-
-
-// POST: Regenerate invoice for an order
-router.post('/:id/regenerate-invoice', verifyToken, async (req, res) => {
-    try {
-        const Order = require('../models/Order');
-        const order = await Order.findOne({ orderId: req.params.id }).populate('userId').populate('addressId');
-        if (!order) return res.status(404).json({ message: 'Order not found' });
-        
-        // Find existing invoice and preserve its ID
-        const Invoice = require('../models/Invoice');
-        const existingInvoice = await Invoice.findOne({ orderRefId: order._id });
-        let invoiceIdToUse;
-        if (existingInvoice) {
-            invoiceIdToUse = existingInvoice.invoiceId;
-            await Invoice.findOneAndDelete({ orderRefId: order._id });
-        } else {
-            const { generateInvoiceId } = require('../utils/idGenerator');
-            invoiceIdToUse = await generateInvoiceId();
-        }
-        
-        const { convertNumberToWords } = require('../utils/numberToWords');
-        const Config = require('../models/Config');
-        const bizConfig = await Config.findOne({ key: 'bank_details' });
-        const biz = bizConfig && bizConfig.value ? (typeof bizConfig.value === 'string' ? JSON.parse(bizConfig.value) : bizConfig.value) : {};
-
-        let invoiceItems = [];
-        let totalTaxable = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0;
-        
-        const sellerStateCode = '09';
-        const sellerState = 'Uttar Pradesh';
-        const buyerState = order.addressId?.state || '';
-        const isIntrastate = buyerState.toLowerCase().includes(sellerState.toLowerCase()) || 
-                             buyerState.toLowerCase().includes('u.p') || 
-                             buyerState.toLowerCase().includes('up') || 
-                             !buyerState;
-
-        order.items.forEach(item => {
-            const qty = item.quantity || 1;
-            const sp = item.sellingPrice || 0;
-            const taxRate = item.taxRate || 18;
-            
-            const preTax = sp;
-            const totalPreTax = preTax * qty;
-            const totalTax = totalPreTax * (taxRate / 100);
-            
-            let cgst = 0, sgst = 0, igst = 0;
-            if (isIntrastate) {
-                cgst = totalTax / 2;
-                sgst = totalTax / 2;
-            } else {
-                igst = totalTax;
-            }
-
-            invoiceItems.push({
-                description: `${item.name} [${item.make || 'N/A'}]`,
-                quantity: qty,
-                unitPrice: preTax,
-                taxableValue: totalPreTax,
-                taxRate,
-                cgstRate: isIntrastate ? taxRate / 2 : 0,
-                cgstAmount: parseFloat(cgst.toFixed(2)),
-                sgstRate: isIntrastate ? taxRate / 2 : 0,
-                sgstAmount: parseFloat(sgst.toFixed(2)),
-                igstRate: !isIntrastate ? taxRate : 0,
-                igstAmount: parseFloat(igst.toFixed(2)),
-                taxAmount: parseFloat(totalTax.toFixed(2)),
-                total: parseFloat((sp * qty + totalTax).toFixed(2))
-            });
 
             totalTaxable += totalPreTax;
             totalCGST += cgst;
