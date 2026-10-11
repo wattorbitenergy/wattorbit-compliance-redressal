@@ -43,6 +43,108 @@ router.get('/all', verifyToken, async (req, res) => {
     }
 });
 
+async function prepareManualInvoiceData(invoiceData) {
+    const bankConfig = await Config.findOne({ key: 'bank_details' });
+    const biz = bankConfig?.value || {};
+    const sellerStateCode = '09';
+
+    const placeOfSupplyRaw = (invoiceData.placeOfSupply || 'Uttar Pradesh').trim();
+    const isIntrastate = placeOfSupplyRaw.toLowerCase().includes('uttar pradesh') || 
+                         placeOfSupplyRaw.toLowerCase().includes('u.p') || 
+                         placeOfSupplyRaw.toLowerCase().includes('up') || 
+                         placeOfSupplyRaw.includes('09') ||
+                         invoiceData.stateCode === '09';
+
+    let totalTaxable = 0;
+    let totalCGST = 0;
+    let totalSGST = 0;
+    let totalIGST = 0;
+
+    const normalizedItems = (invoiceData.items || []).map(item => {
+        const qty = parseFloat(item.quantity) || 1;
+        const unitPrice = parseFloat(item.unitPrice) || 0;
+        const discount = parseFloat(item.discount) || 0;
+        const taxableVal = item.taxableValue !== undefined ? parseFloat(item.taxableValue) : (qty * unitPrice - discount);
+        const taxRate = parseFloat(item.taxRate) || 0;
+
+        let cgstRate = item.cgstRate !== undefined ? parseFloat(item.cgstRate) : (isIntrastate ? taxRate / 2 : 0);
+        let sgstRate = item.sgstRate !== undefined ? parseFloat(item.sgstRate) : (isIntrastate ? taxRate / 2 : 0);
+        let igstRate = item.igstRate !== undefined ? parseFloat(item.igstRate) : (isIntrastate ? 0 : taxRate);
+
+        let cgstAmount = item.cgstAmount !== undefined ? parseFloat(item.cgstAmount) : (item.cgst !== undefined ? parseFloat(item.cgst) : (taxableVal * cgstRate / 100));
+        let sgstAmount = item.sgstAmount !== undefined ? parseFloat(item.sgstAmount) : (item.sgst !== undefined ? parseFloat(item.sgst) : (taxableVal * sgstRate / 100));
+        let igstAmount = item.igstAmount !== undefined ? parseFloat(item.igstAmount) : (item.igst !== undefined ? parseFloat(item.igst) : (taxableVal * igstRate / 100));
+
+        let taxAmount = item.taxAmount !== undefined ? parseFloat(item.taxAmount) : (cgstAmount + sgstAmount + igstAmount);
+        let total = item.total !== undefined ? parseFloat(item.total) : (taxableVal + taxAmount);
+
+        totalTaxable += taxableVal;
+        totalCGST += cgstAmount;
+        totalSGST += sgstAmount;
+        totalIGST += igstAmount;
+
+        return {
+            description: item.description,
+            hsnSac: item.hsnSac || '',
+            quantity: qty,
+            unitPrice: unitPrice,
+            discount: discount,
+            taxableValue: parseFloat(taxableVal.toFixed(2)),
+            taxRate: taxRate,
+            taxAmount: parseFloat(taxAmount.toFixed(2)),
+            cgstRate: cgstRate,
+            cgstAmount: parseFloat(cgstAmount.toFixed(2)),
+            sgstRate: sgstRate,
+            sgstAmount: parseFloat(sgstAmount.toFixed(2)),
+            igstRate: igstRate,
+            igstAmount: parseFloat(igstAmount.toFixed(2)),
+            total: parseFloat(total.toFixed(2))
+        };
+    });
+
+    const subtotal = invoiceData.subtotal !== undefined ? parseFloat(invoiceData.subtotal) : parseFloat(totalTaxable.toFixed(2));
+    const calcCGST = (invoiceData.totalCGST !== undefined && invoiceData.totalCGST > 0) ? parseFloat(invoiceData.totalCGST) : parseFloat(totalCGST.toFixed(2));
+    const calcSGST = (invoiceData.totalSGST !== undefined && invoiceData.totalSGST > 0) ? parseFloat(invoiceData.totalSGST) : parseFloat(totalSGST.toFixed(2));
+    const calcIGST = (invoiceData.totalIGST !== undefined && invoiceData.totalIGST > 0) ? parseFloat(invoiceData.totalIGST) : parseFloat(totalIGST.toFixed(2));
+    const taxAmount = (invoiceData.taxAmount !== undefined && invoiceData.taxAmount > 0) ? parseFloat(invoiceData.taxAmount) : parseFloat((calcCGST + calcSGST + calcIGST).toFixed(2));
+    const discount = parseFloat(invoiceData.discount) || 0;
+    const totalAmount = invoiceData.totalAmount !== undefined ? parseFloat(invoiceData.totalAmount) : parseFloat((subtotal + taxAmount - discount).toFixed(2));
+    const amountInWords = invoiceData.amountInWords || convertNumberToWords(totalAmount);
+
+    return {
+        customerName: invoiceData.customerName || 'Walk-in Customer',
+        customerPhone: invoiceData.customerPhone,
+        customerEmail: invoiceData.customerEmail,
+        customerAddress: invoiceData.customerAddress,
+        customerGST: invoiceData.customerGST,
+        subtotal,
+        taxAmount,
+        totalAmount,
+        discount,
+        items: normalizedItems,
+        invoiceDate: invoiceData.invoiceDate || new Date(),
+        dueDate: invoiceData.dueDate,
+        placeOfSupply: placeOfSupplyRaw,
+        stateCode: isIntrastate ? sellerStateCode : (invoiceData.stateCode || ''),
+        totalCGST: calcCGST,
+        totalSGST: calcSGST,
+        totalIGST: calcIGST,
+        amountInWords,
+        businessName: invoiceData.businessName || invoiceData.companyName || biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP',
+        businessGST: invoiceData.businessGST || invoiceData.companyGST || biz.gstNumber || '09AAFFW4253N1ZL',
+        businessPAN: invoiceData.businessPAN || biz.panNumber || 'AAFFW4253N',
+        businessAddress: invoiceData.businessAddress || invoiceData.companyAddress || biz.branchName || 'Shop No.3, INDAURABAG, BKT LUCKNOW - 226201',
+        bankDetails: {
+            accountHolderName: invoiceData.bankAccountName || invoiceData.bankDetails?.accountHolderName || biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP',
+            accountNumber: invoiceData.bankAccountNumber || invoiceData.bankDetails?.accountNumber || biz.accountNumber || '',
+            ifscCode: invoiceData.bankIFSC || invoiceData.bankDetails?.ifscCode || biz.ifscCode || '',
+            bankName: invoiceData.bankName || invoiceData.bankDetails?.bankName || biz.bankName || '',
+            branchName: invoiceData.bankBranch || invoiceData.bankDetails?.branchName || biz.branchName || '',
+            upiId: invoiceData.upiId || invoiceData.bankDetails?.upiId || biz.upiId || ''
+        }
+    };
+}
+
 // PUT: Update an existing invoice
 router.put('/:id', verifyToken, async (req, res) => {
     try {
@@ -50,9 +152,13 @@ router.put('/:id', verifyToken, async (req, res) => {
             return res.status(403).json({ message: 'Access denied' });
         }
         const invoiceData = req.body;
+        const isObjectId = mongoose.Types.ObjectId.isValid(req.params.id);
+        const query = isObjectId ? { $or: [{ _id: req.params.id }, { invoiceId: req.params.id }] } : { invoiceId: req.params.id };
+
+        const preparedData = await prepareManualInvoiceData(invoiceData);
         const updatedInvoice = await Invoice.findOneAndUpdate(
-            { invoiceId: req.params.id },
-            invoiceData,
+            query,
+            preparedData,
             { new: true }
         );
         if (!updatedInvoice) {
@@ -600,31 +706,21 @@ router.post('/manual', verifyToken, async (req, res) => {
         
         // Generate real invoice ID securely on the server
         const generatedInvoiceId = await generateInvoiceId();
+        const preparedData = await prepareManualInvoiceData(invoiceData);
 
         // Save to DB
         const invoice = new Invoice({
             invoiceId: generatedInvoiceId,
             isManual: true,
-            customerName: invoiceData.customerName || 'Walk-in Customer',
-            customerPhone: invoiceData.customerPhone,
-            customerEmail: invoiceData.customerEmail,
-            customerAddress: invoiceData.customerAddress,
-            customerGST: invoiceData.customerGST,
-            subtotal: invoiceData.subtotal,
-            taxAmount: invoiceData.taxAmount,
-            totalAmount: invoiceData.totalAmount,
-            discount: invoiceData.discount,
-            items: invoiceData.items || [],
-            invoiceDate: invoiceData.invoiceDate,
-            dueDate: invoiceData.dueDate,
-            placeOfSupply: invoiceData.placeOfSupply
+            ...preparedData
         });
 
         await invoice.save();
 
         res.status(201).json({ 
             message: 'Manual invoice saved successfully', 
-            invoiceId: invoice.invoiceId
+            invoiceId: invoice.invoiceId,
+            invoice
         });
     } catch (error) {
         console.error('Error saving manual invoice:', error);

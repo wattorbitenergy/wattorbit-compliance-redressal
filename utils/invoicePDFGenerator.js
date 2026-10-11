@@ -2,6 +2,8 @@ const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const Config = require('../models/Config');
+const { convertNumberToWords } = require('./numberToWords');
 
 const fetchImage = (url) => {
     return new Promise((resolve, reject) => {
@@ -76,11 +78,24 @@ const generateInvoicePDF = async (invoice, options = {}) => {
             doc.text('Place of Supply:', 30, gridY + 39);
             doc.text('Reverse Charge:', 30, gridY + 51);
 
+            // Determine state and tax orientation
+            const sellerStateCode = '09';
+            const placeOfSupplyRaw = (invoice.placeOfSupply || 'Uttar Pradesh').trim();
+            const isIntrastate = placeOfSupplyRaw.toLowerCase().includes('uttar pradesh') || 
+                                 placeOfSupplyRaw.toLowerCase().includes('u.p') || 
+                                 placeOfSupplyRaw.toLowerCase().includes('up') || 
+                                 placeOfSupplyRaw.includes('09') ||
+                                 invoice.stateCode === '09';
+
+            // Clean POS string (e.g. avoid duplicate "Uttar Pradesh (09) (09)")
+            const cleanPos = placeOfSupplyRaw.replace(/\s*\(\d+\)/g, '').trim();
+            const stateCode = invoice.stateCode || (isIntrastate ? sellerStateCode : '');
+
             doc.fillColor('#000000').font('Helvetica-Bold');
             doc.text(invoice.invoiceId, 100, gridY + 15);
             const dateStr = new Date(invoice.invoiceDate).toLocaleDateString('en-GB');
             doc.text(dateStr, 100, gridY + 27);
-            doc.text(`${invoice.placeOfSupply || 'Uttar Pradesh'} (${invoice.stateCode || '09'})`, 100, gridY + 39);
+            doc.text(`${cleanPos || 'Uttar Pradesh'}${stateCode ? ` (${stateCode})` : ''}`, 100, gridY + 39);
             doc.text('No', 100, gridY + 51);
 
             // Bill To (Right)
@@ -122,6 +137,10 @@ const generateInvoicePDF = async (invoice, options = {}) => {
             y += 25;
             doc.fillColor('#000000').font('Helvetica').fontSize(7);
 
+            let computedCGST = 0;
+            let computedSGST = 0;
+            let computedIGST = 0;
+
             invoice.items.forEach((item, index) => {
                 const rowHeight = Math.max(25, doc.heightOfString(item.description, { width: 130 }) + 10);
                 
@@ -135,10 +154,40 @@ const generateInvoicePDF = async (invoice, options = {}) => {
                 doc.text((item.discount || 0).toFixed(2), 275, y + 7, { width: 35, align: 'right' });
                 doc.text(item.taxableValue.toFixed(2), 310, y + 7, { width: 50, align: 'right' });
 
-                // GST Detail
-                const taxRateText = item.igstRate > 0 ? `IGST ${item.igstRate}%` : `C+S ${item.cgstRate + item.sgstRate}%`;
+                // GST Details with fallbacks
+                let igstRate = item.igstRate !== undefined && item.igstRate !== null ? item.igstRate : 0;
+                let cgstRate = item.cgstRate !== undefined && item.cgstRate !== null ? item.cgstRate : 0;
+                let sgstRate = item.sgstRate !== undefined && item.sgstRate !== null ? item.sgstRate : 0;
+                let taxAmount = item.taxAmount || 0;
+
+                if (!igstRate && !cgstRate && !sgstRate && (item.taxRate || 0) > 0) {
+                    if (isIntrastate) {
+                        cgstRate = (item.taxRate || 0) / 2;
+                        sgstRate = (item.taxRate || 0) / 2;
+                    } else {
+                        igstRate = item.taxRate || 0;
+                    }
+                }
+
+                if (!taxAmount) {
+                    if (item.total && item.taxableValue && item.total > item.taxableValue) {
+                        taxAmount = item.total - item.taxableValue;
+                    } else if (item.taxRate > 0) {
+                        taxAmount = (item.taxableValue || 0) * (item.taxRate || 0) / 100;
+                    }
+                }
+
+                if (igstRate > 0) {
+                    computedIGST += item.igstAmount || taxAmount;
+                } else {
+                    const half = item.cgstAmount || (taxAmount / 2);
+                    computedCGST += half;
+                    computedSGST += half;
+                }
+
+                const taxRateText = igstRate > 0 ? `IGST ${igstRate}%` : `C+S ${cgstRate + sgstRate}%`;
                 doc.text(taxRateText, 365, y + 7, { width: 50, align: 'center' });
-                doc.text(item.taxAmount.toFixed(2), 420, y + 7, { width: 50, align: 'right' });
+                doc.text(taxAmount.toFixed(2), 420, y + 7, { width: 50, align: 'right' });
 
                 doc.text(item.total.toFixed(2), 485, y + 7, { width: 75, align: 'right' });
 
@@ -161,16 +210,20 @@ const generateInvoicePDF = async (invoice, options = {}) => {
 
             const addSummaryRow = (label, value, isBold = false, color = '#000000') => {
                 doc.font(isBold ? 'Helvetica-Bold' : 'Helvetica').fillColor(color).text(label, summaryX, y, { width: 130, align: 'right' });
-                doc.text(`₹${value}`, valX, y, { width: 80, align: 'right' });
+                doc.text(`Rs. ${value}`, valX, y, { width: 80, align: 'right' });
                 y += 15;
             };
 
+            const finalCGST = (invoice.totalCGST !== undefined && invoice.totalCGST > 0) ? invoice.totalCGST : computedCGST;
+            const finalSGST = (invoice.totalSGST !== undefined && invoice.totalSGST > 0) ? invoice.totalSGST : computedSGST;
+            const finalIGST = (invoice.totalIGST !== undefined && invoice.totalIGST > 0) ? invoice.totalIGST : computedIGST;
+
             addSummaryRow('Total Taxable Value:', invoice.subtotal.toFixed(2));
-            if (invoice.totalIGST > 0) {
-                addSummaryRow('Integrated Tax (IGST):', invoice.totalIGST.toFixed(2));
+            if (finalIGST > 0) {
+                addSummaryRow('Integrated Tax (IGST):', finalIGST.toFixed(2));
             } else {
-                addSummaryRow('Central Tax (CGST):', invoice.totalCGST.toFixed(2));
-                addSummaryRow('State Tax (SGST):', invoice.totalSGST.toFixed(2));
+                addSummaryRow('Central Tax (CGST):', finalCGST.toFixed(2));
+                addSummaryRow('State Tax (SGST):', finalSGST.toFixed(2));
             }
             
             if (invoice.discount > 0) addSummaryRow('Less Discount:', invoice.discount.toFixed(2), false, '#ef4444');
@@ -178,12 +231,13 @@ const generateInvoicePDF = async (invoice, options = {}) => {
             doc.rect(350, y - 2, 215, 20).fill(primaryColor);
             doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9);
             doc.text('Total Invoice Value:', 360, y + 4);
-            doc.text(`₹${invoice.totalAmount.toFixed(2)}`, valX, y + 4, { width: 80, align: 'right' });
+            doc.text(`Rs. ${invoice.totalAmount.toFixed(2)}`, valX, y + 4, { width: 80, align: 'right' });
 
             // Amount in words
             y += 30;
+            const amountWords = invoice.amountInWords || convertNumberToWords(invoice.totalAmount);
             doc.fillColor('#000000').font('Helvetica-Bold').fontSize(8).text('Total Amount (in words):', 30, y);
-            doc.font('Helvetica').text(invoice.amountInWords || '', 30, y + 12);
+            doc.font('Helvetica').text(amountWords || 'Zero Rupees Only', 30, y + 12);
 
             // --- BANK & FOOTER ---
             y += 40;
@@ -196,10 +250,29 @@ const generateInvoicePDF = async (invoice, options = {}) => {
                 y += 30;
             }
 
+            // Fallback Bank Details if missing
+            let bank = invoice.bankDetails || {};
+            if (!bank.accountNumber || !bank.bankName) {
+                try {
+                    const bankConfig = await Config.findOne({ key: 'bank_details' });
+                    if (bankConfig?.value) {
+                        bank = {
+                            accountHolderName: bank.accountHolderName || bankConfig.value.accountHolderName,
+                            accountNumber: bank.accountNumber || bankConfig.value.accountNumber,
+                            bankName: bank.bankName || bankConfig.value.bankName,
+                            ifscCode: bank.ifscCode || bankConfig.value.ifscCode,
+                            branchName: bank.branchName || bankConfig.value.branchName,
+                            upiId: bank.upiId || bankConfig.value.upiId
+                        };
+                    }
+                } catch (e) {
+                    console.error('Error fetching bank config for PDF:', e);
+                }
+            }
+
             doc.rect(30, y, 220, 70).strokeColor(borderColor).stroke();
             doc.font('Helvetica-Bold').fontSize(8).fillColor('#000000').text('BANK DETAILS', 35, y + 5);
             doc.font('Helvetica').fontSize(7).fillColor(secondaryColor);
-            const bank = invoice.bankDetails || {};
             doc.text(`A/c Name: ${bank.accountHolderName || invoice.businessName}`, 35, y + 18);
             doc.text(`A/c No: ${bank.accountNumber || 'N/A'}`, 35, y + 28);
             doc.text(`Bank: ${bank.bankName || 'N/A'}`, 35, y + 38);

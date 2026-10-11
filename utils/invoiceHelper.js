@@ -65,38 +65,84 @@ async function autoGenerateInvoice(bookingId) {
             });
         }
 
-        const items = [
+        const sellerStateCode = '09';
+        const sellerState = 'Uttar Pradesh';
+        const buyerState = booking.addressId?.state || '';
+        const isIntrastate = buyerState.toLowerCase().includes(sellerState.toLowerCase()) || 
+                             buyerState.toLowerCase().includes('u.p') || 
+                             buyerState.toLowerCase().includes('up');
+
+        let totalTaxable = 0;
+        let totalCGST = 0;
+        let totalSGST = 0;
+        let totalIGST = 0;
+
+        const processAutoItem = (item) => {
+            const taxableValue = parseFloat((item.taxableValue || 0).toFixed(2));
+            const rate = parseFloat(item.taxRate || 0);
+            let cgst = 0, sgst = 0, igst = 0;
+
+            if (rate > 0) {
+                if (isIntrastate) {
+                    cgst = parseFloat((taxableValue * (rate / 2) / 100).toFixed(2));
+                    sgst = parseFloat((taxableValue * (rate / 2) / 100).toFixed(2));
+                } else {
+                    igst = parseFloat((taxableValue * rate / 100).toFixed(2));
+                }
+            }
+
+            totalTaxable += taxableValue;
+            totalCGST += cgst;
+            totalSGST += sgst;
+            totalIGST += igst;
+
+            return {
+                description: item.description,
+                hsnSac: item.hsnSac || '',
+                quantity: item.quantity || 1,
+                unitPrice: item.unitPrice,
+                taxableValue,
+                taxRate: rate,
+                cgstRate: isIntrastate ? rate / 2 : 0,
+                cgstAmount: cgst,
+                sgstRate: isIntrastate ? rate / 2 : 0,
+                sgstAmount: sgst,
+                igstRate: isIntrastate ? 0 : rate,
+                igstAmount: igst,
+                taxAmount: cgst + sgst + igst,
+                total: parseFloat((taxableValue + cgst + sgst + igst).toFixed(2))
+            };
+        };
+
+        const rawItems = [
             {
-                description: `${booking.serviceId.name} - ${booking.packageId.name} (Technician Fees)`,
+                description: `${booking.serviceId?.name || 'Service'} - ${booking.packageId?.name || ''} (Technician Fees)`,
+                hsnSac: booking.packageId?.sacCode || booking.serviceId?.sacCode || '998700',
                 quantity: 1,
                 unitPrice: baseTechFee,
                 taxableValue: baseTechFee,
-                taxRate: 0,
-                taxAmount: 0,
-                total: baseTechFee
+                taxRate: 0
             },
             {
-                description: `${booking.serviceId.name} - ${booking.packageId.name} (Platform Fees)`,
+                description: `${booking.serviceId?.name || 'Service'} - ${booking.packageId?.name || ''} (Platform Fees)`,
+                hsnSac: booking.packageId?.sacCode || booking.serviceId?.sacCode || '998700',
                 quantity: 1,
                 unitPrice: basePlatformFee,
                 taxableValue: basePlatformFee,
-                taxRate: 18,
-                taxAmount: booking.taxes || 0, // Use the pre-calculated taxes from booking
-                total: basePlatformFee + (booking.taxes || 0)
+                taxRate: 18
             }
         ];
 
         // 2. Add Dynamic Charges
         if (booking.appliedDynamicCharges && booking.appliedDynamicCharges.length > 0) {
             booking.appliedDynamicCharges.forEach(charge => {
-                items.push({
+                rawItems.push({
                     description: `Surcharge: ${charge.name}`,
+                    hsnSac: '998700',
                     quantity: 1,
                     unitPrice: charge.amount,
                     taxableValue: charge.amount,
-                    taxRate: charge.recipient === 'Technician' ? 0 : 18,
-                    taxAmount: 0, // Simplified for surcharges as they are usually small
-                    total: charge.amount
+                    taxRate: charge.recipient === 'Technician' ? 0 : 18
                 });
             });
         }
@@ -104,24 +150,27 @@ async function autoGenerateInvoice(bookingId) {
         // 3. Add Materials / Spares
         if (booking.materialsUsed && booking.materialsUsed.length > 0) {
             booking.materialsUsed.forEach(m => {
-                items.push({
-                    description: `Spare: ${m.name} [${m.make}]`,
-                    quantity: m.quantity,
+                rawItems.push({
+                    description: `Spare: ${m.name} [${m.make || ''}]`,
+                    hsnSac: m.hsnCode || '',
+                    quantity: m.quantity || 1,
                     unitPrice: m.sellingPrice,
                     taxableValue: m.taxableValue || (m.sellingPrice * m.quantity),
-                    taxRate: m.taxRate || 0,
-                    taxAmount: m.taxAmount || 0,
-                    total: m.totalLineAmount
+                    taxRate: m.taxRate || m.sellingTaxRate || 0
                 });
             });
         }
 
+        const items = rawItems.map(processAutoItem);
+
         // Format address
-        const addr = booking.addressId;
-        const customerAddress = `${addr.flatNo ? addr.flatNo + ', ' : ''}${addr.building ? addr.building + ', ' : ''}${addr.street}, ${addr.landmark ? addr.landmark + ', ' : ''}${addr.city}, ${addr.state} - ${addr.pincode}`;
+        const addr = booking.addressId || {};
+        const customerAddress = `${addr.flatNo ? addr.flatNo + ', ' : ''}${addr.building ? addr.building + ', ' : ''}${addr.street || ''}, ${addr.landmark ? addr.landmark + ', ' : ''}${addr.city || ''}, ${addr.state || ''} - ${addr.pincode || ''}`;
 
         const bankConfig = await Config.findOne({ key: 'bank_details' });
         const biz = bankConfig?.value || {};
+        const { convertNumberToWords } = require('./numberToWords');
+        const grandTotal = parseFloat((totalTaxable + totalCGST + totalSGST + totalIGST - (booking.discount || 0)).toFixed(2));
 
         const invoice = new Invoice({
             invoiceId,
@@ -130,13 +179,19 @@ async function autoGenerateInvoice(bookingId) {
             invoiceDate: new Date(),
             dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days due
             items,
-            subtotal: booking.basePrice + (booking.materialTotal || 0),
+            subtotal: parseFloat(totalTaxable.toFixed(2)),
             taxRate: 18,
-            taxAmount: (booking.taxes || 0) + (booking.materialTaxTotal || 0),
+            taxAmount: parseFloat((totalCGST + totalSGST + totalIGST).toFixed(2)),
             discount: booking.discount || 0,
-            totalAmount: booking.totalAmount,
+            totalAmount: grandTotal,
+            totalCGST: parseFloat(totalCGST.toFixed(2)),
+            totalSGST: parseFloat(totalSGST.toFixed(2)),
+            totalIGST: parseFloat(totalIGST.toFixed(2)),
+            amountInWords: convertNumberToWords(grandTotal),
+            placeOfSupply: buyerState || sellerState,
+            stateCode: isIntrastate ? sellerStateCode : '',
             paymentStatus: (payment && payment.status === 'Paid') || booking.paymentReceived ? 'Paid' : 'Unpaid',
-            paidAmount: (payment && payment.status === 'Paid') || booking.paymentReceived ? booking.totalAmount : 0,
+            paidAmount: (payment && payment.status === 'Paid') || booking.paymentReceived ? grandTotal : 0,
             paymentReference: (payment && payment.razorpayPaymentId) || booking.razorpayPaymentId || '',
             businessName: biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP',
             businessGST: biz.gstNumber || '09AAFFW4253N1ZL',
@@ -150,9 +205,9 @@ async function autoGenerateInvoice(bookingId) {
                 branchName: biz.branchName || '',
                 upiId: biz.upiId || ''
             },
-            customerName: booking.userId.name,
-            customerPhone: booking.userId.phone,
-            customerEmail: booking.userId.email,
+            customerName: booking.userId?.name || 'Customer',
+            customerPhone: booking.userId?.phone || '',
+            customerEmail: booking.userId?.email || '',
             customerAddress
         });
 
