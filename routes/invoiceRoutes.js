@@ -60,11 +60,26 @@ async function prepareManualInvoiceData(invoiceData) {
     let totalSGST = 0;
     let totalIGST = 0;
 
+    let totalLineDiscount = 0;
+
     const normalizedItems = (invoiceData.items || []).map(item => {
         const qty = parseFloat(item.quantity) || 1;
         const unitPrice = parseFloat(item.unitPrice) || 0;
-        const discount = parseFloat(item.discount) || 0;
-        const taxableVal = item.taxableValue !== undefined ? parseFloat(item.taxableValue) : (qty * unitPrice - discount);
+        const grossVal = qty * unitPrice;
+
+        let lineDiscRate = item.discountRate !== undefined ? parseFloat(item.discountRate) || 0 : 0;
+        let lineDiscount = item.discount !== undefined ? parseFloat(item.discount) || 0 : 0;
+
+        if (lineDiscRate > 0 && (!lineDiscount || lineDiscount === 0)) {
+            lineDiscount = parseFloat(((grossVal * lineDiscRate) / 100).toFixed(2));
+        } else if (lineDiscount > 0 && lineDiscRate === 0 && grossVal > 0) {
+            lineDiscRate = parseFloat(((lineDiscount / grossVal) * 100).toFixed(2));
+        }
+
+        // If taxableValue is provided, use it, else calculate (qty * unitPrice - lineDiscount)
+        const taxableVal = item.taxableValue !== undefined 
+            ? parseFloat(item.taxableValue) 
+            : Math.max(0, grossVal - lineDiscount);
         const taxRate = parseFloat(item.taxRate) || 0;
 
         let cgstRate = item.cgstRate !== undefined ? parseFloat(item.cgstRate) : (isIntrastate ? taxRate / 2 : 0);
@@ -82,13 +97,15 @@ async function prepareManualInvoiceData(invoiceData) {
         totalCGST += cgstAmount;
         totalSGST += sgstAmount;
         totalIGST += igstAmount;
+        totalLineDiscount += lineDiscount;
 
         return {
             description: item.description,
             hsnSac: item.hsnSac || '',
             quantity: qty,
             unitPrice: unitPrice,
-            discount: discount,
+            discountRate: lineDiscRate,
+            discount: parseFloat(lineDiscount.toFixed(2)),
             taxableValue: parseFloat(taxableVal.toFixed(2)),
             taxRate: taxRate,
             taxAmount: parseFloat(taxAmount.toFixed(2)),
@@ -107,8 +124,17 @@ async function prepareManualInvoiceData(invoiceData) {
     const calcSGST = (invoiceData.totalSGST !== undefined && invoiceData.totalSGST > 0) ? parseFloat(invoiceData.totalSGST) : parseFloat(totalSGST.toFixed(2));
     const calcIGST = (invoiceData.totalIGST !== undefined && invoiceData.totalIGST > 0) ? parseFloat(invoiceData.totalIGST) : parseFloat(totalIGST.toFixed(2));
     const taxAmount = (invoiceData.taxAmount !== undefined && invoiceData.taxAmount > 0) ? parseFloat(invoiceData.taxAmount) : parseFloat((calcCGST + calcSGST + calcIGST).toFixed(2));
-    const discount = parseFloat(invoiceData.discount) || 0;
-    const totalAmount = invoiceData.totalAmount !== undefined ? parseFloat(invoiceData.totalAmount) : parseFloat((subtotal + taxAmount - discount).toFixed(2));
+    
+    // Overall discount: if user passed discount > 0, use it, else use total line discounts
+    const discount = invoiceData.discount !== undefined && parseFloat(invoiceData.discount) > 0 
+        ? parseFloat(invoiceData.discount) 
+        : totalLineDiscount;
+
+    // If an overall bottom discount was applied beyond line item discounts:
+    const extraDiscount = (discount > totalLineDiscount) ? (discount - totalLineDiscount) : 0;
+    const totalAmount = invoiceData.totalAmount !== undefined 
+        ? parseFloat(invoiceData.totalAmount) 
+        : Math.max(0, parseFloat((subtotal + taxAmount - extraDiscount).toFixed(2)));
     const amountInWords = invoiceData.amountInWords || convertNumberToWords(totalAmount);
 
     return {

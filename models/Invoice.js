@@ -43,6 +43,8 @@ const invoiceSchema = new mongoose.Schema({
         hsnSac: { type: String, trim: true },
         quantity: { type: Number, default: 1 },
         unitPrice: { type: Number, required: true },
+        discountRate: { type: Number, default: 0 }, // Discount % e.g. 5, 10
+        discount: { type: Number, default: 0 }, // Discount amount in ₹
         taxableValue: { type: Number, required: true },
         taxRate: { type: Number, default: 0 },
         taxAmount: { type: Number, default: 0 },

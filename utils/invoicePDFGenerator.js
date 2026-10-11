@@ -115,7 +115,7 @@ const generateInvoicePDF = async (invoice, options = {}) => {
                 { label: 'HSN/SAC', x: 170, w: 40 },
                 { label: 'Qty', x: 210, w: 25 },
                 { label: 'Rate', x: 235, w: 40 },
-                { label: 'Disc', x: 275, w: 35 },
+                { label: 'Disc (%)', x: 275, w: 35 },
                 { label: 'Taxable Val', x: 310, w: 50 },
                 { label: 'GST', x: 360, w: 120 }, // Combined for nested info
                 { label: 'Total', x: 480, w: 85 }
@@ -150,8 +150,24 @@ const generateInvoicePDF = async (invoice, options = {}) => {
                 doc.text(item.description, 35, y + 7, { width: 130 });
                 doc.text(item.hsnSac || '', 170, y + 7, { width: 40, align: 'center' });
                 doc.text(item.quantity, 210, y + 7, { width: 25, align: 'center' });
+
+                // Calculate discount rate % and amount
+                const grossVal = (item.quantity || 1) * (item.unitPrice || 0);
+                let lineDiscAmount = (item.discount !== undefined && item.discount > 0)
+                    ? item.discount
+                    : ((grossVal > (item.taxableValue || 0)) ? (grossVal - (item.taxableValue || 0)) : 0);
+
+                let lineDiscRate = (item.discountRate !== undefined && item.discountRate > 0)
+                    ? item.discountRate
+                    : (grossVal > 0 && lineDiscAmount > 0 ? parseFloat(((lineDiscAmount / grossVal) * 100).toFixed(2)) : 0);
+
                 doc.text(item.unitPrice.toFixed(2), 235, y + 7, { width: 40, align: 'right' });
-                doc.text((item.discount || 0).toFixed(2), 275, y + 7, { width: 35, align: 'right' });
+
+                // Format discount text: e.g. "5% (20)" or just "5%"
+                const discText = lineDiscRate > 0 
+                    ? `${lineDiscRate}%` 
+                    : (lineDiscAmount > 0 ? `${lineDiscAmount.toFixed(1)}` : '0%');
+                doc.text(discText, 275, y + 7, { width: 35, align: 'right' });
                 doc.text(item.taxableValue.toFixed(2), 310, y + 7, { width: 50, align: 'right' });
 
                 // GST Details with fallbacks
