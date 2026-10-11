@@ -7,12 +7,19 @@ const User = require('../models/User');
  * This ensures that if a role is changed, the physical session is invalidated.
  */
 const verifyToken = async (req, res, next) => {
+    let token = null;
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'Authorization header missing or invalid' });
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+    } else if (req.query && req.query.token) {
+        token = req.query.token;
+    } else if (req.cookies && req.cookies.token) {
+        token = req.cookies.token;
     }
 
-    const token = authHeader.split(' ')[1];
+    if (!token) {
+        return res.status(401).json({ message: 'Authorization header or token missing' });
+    }
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         

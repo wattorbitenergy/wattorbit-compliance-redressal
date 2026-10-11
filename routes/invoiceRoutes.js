@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Invoice = require('../models/Invoice');
 const Booking = require('../models/Booking');
 const Payment = require('../models/Payment');
@@ -454,7 +455,12 @@ router.post('/generate-order', verifyToken, async (req, res) => {
 // GET: Get invoice details
 router.get('/:id', verifyToken, async (req, res) => {
     try {
-        const invoice = await Invoice.findById(req.params.id)
+        const isObjectId = mongoose.Types.ObjectId.isValid(req.params.id);
+        const query = isObjectId
+            ? { $or: [{ _id: req.params.id }, { invoiceId: req.params.id }] }
+            : { invoiceId: req.params.id };
+
+        const invoice = await Invoice.findOne(query)
             .populate('bookingId')
             .populate('userId', 'name phone email');
 
@@ -464,6 +470,7 @@ router.get('/:id', verifyToken, async (req, res) => {
 
         // Check access: user themselves, admin, employee, engineer, or their organisation
         if (
+            invoice.userId &&
             invoice.userId._id.toString() !== req.user.id &&
             !['admin', 'employee', 'engineer'].includes(req.user.role) &&
             !(req.user.role === 'organisation' && invoice.bookingId?.organisationId?.toString() === req.user.id)
@@ -548,7 +555,12 @@ router.get('/:id/download', verifyToken, async (req, res) => {
     try {
         const { generateInvoicePDF } = require('../utils/invoicePDFGenerator');
 
-        const invoice = await Invoice.findById(req.params.id)
+        const isObjectId = mongoose.Types.ObjectId.isValid(req.params.id);
+        const query = isObjectId
+            ? { $or: [{ _id: req.params.id }, { invoiceId: req.params.id }] }
+            : { invoiceId: req.params.id };
+
+        const invoice = await Invoice.findOne(query)
             .populate('bookingId')
             .populate('userId', 'name phone email');
 
@@ -558,6 +570,7 @@ router.get('/:id/download', verifyToken, async (req, res) => {
 
         // Check access: user themselves, admin, employee, engineer, or their organisation
         if (
+            invoice.userId &&
             invoice.userId._id.toString() !== req.user.id &&
             !['admin', 'employee', 'engineer'].includes(req.user.role) &&
             !(req.user.role === 'organisation' && invoice.bookingId?.organisationId?.toString() === req.user.id)
