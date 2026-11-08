@@ -244,6 +244,7 @@ app.use('/api/sellers', require('./routes/sellerRoutes'));
 app.use('/api/orders', require('./routes/orderRoutes'));
 app.use('/api/logistics', require('./routes/logisticsRoutes'));
 app.use('/api/payouts', require('./routes/payoutRoutes'));
+app.use('/api/emi', require('./routes/emiRoutes'));
 
 if (process.env.NODE_ENV !== 'production') {
   app.use('/api/test-notification', require('./routes/testNotificationRoutes'));

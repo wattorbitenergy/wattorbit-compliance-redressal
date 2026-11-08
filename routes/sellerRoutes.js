@@ -5,6 +5,7 @@ const Material = require('../models/Material');
 const Order = require('../models/Order');
 const SellerSettlement = require('../models/SellerSettlement');
 const { round } = require('../utils/mathUtils');
+const { verifyGSTINWithGovt } = require('../utils/govtVerificationGateway');
 const { verifyToken } = require('../middleware/authMiddleware');
 const multer = require('multer');
 const path = require('path');
@@ -51,6 +52,37 @@ const upload = multer({ storage, limits: { fileSize: 3 * 1024 * 1024 } }); // 3M
 ======================================================== */
 
 // POST /api/sellers/register - Upgrade an existing user or onboard as a seller
+
+// POST /api/sellers/verify-gstin - Automated Government GSTIN & Business Entity Verification
+router.post('/verify-gstin', verifyToken, async (req, res) => {
+    try {
+        const { gstin } = req.body;
+        if (!gstin) {
+            return res.status(400).json({ success: false, message: 'GSTIN is required' });
+        }
+
+        const result = await verifyGSTINWithGovt(gstin);
+
+        if (!result.success) {
+            return res.status(400).json({
+                success: false,
+                verified: false,
+                message: result.message || 'GSTIN verification failed'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            verified: true,
+            source: result.source,
+            business: result.data
+        });
+    } catch (err) {
+        console.error('[GSTIN Verification Error]:', err);
+        res.status(500).json({ success: false, message: 'Server error during GST verification' });
+    }
+});
+
 router.post('/register', verifyToken, async (req, res) => {
     try {
         const userId = req.user.id || req.user._id;
