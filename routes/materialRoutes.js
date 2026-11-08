@@ -34,7 +34,7 @@ const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 } }); // 2M
 // GET: List all materials (Public access)
 router.get('/', async (req, res) => {
     try {
-        let selectFields = 'name make description materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity images mrp isActive';
+        let selectFields = 'name make description materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity images mrp isActive sellerId listingType';
         
         // If logged in, we might provide more info
         // Use ignoreExpiration so that admin/employee tokens still reveal purchase fields
@@ -45,12 +45,12 @@ router.get('/', async (req, res) => {
                 const token = authHeader.split(' ')[1];
                 const decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
                 if (['admin', 'employee', 'technician'].includes(decoded.role)) {
-                    selectFields = 'name make description hsnCode materialCode unit purchasePrice purchaseTaxRate purchaseTaxAmount sellingPrice sellingTaxRate sellingTaxAmount stockQuantity reorderLevel warrantyMonths manufacturerCode images mrp isActive';
+                    selectFields = 'name make description hsnCode materialCode unit purchasePrice purchaseTaxRate purchaseTaxAmount sellingPrice sellingTaxRate sellingTaxAmount stockQuantity reorderLevel warrantyMonths manufacturerCode images mrp isActive sellerId listingType approvalStatus';
                 }
             } catch (e) {}
         }
 
-        const materials = await Material.find({ isActive: true }).select(selectFields).sort({ name: 1 });
+        const materials = await Material.find({ isActive: true, approvalStatus: { $ne: 'rejected' } }).select(selectFields).populate('sellerId', 'name sellerProfile.storeName').sort({ name: 1 });
         res.json(materials);
     } catch (err) {
         res.status(500).json({ message: 'Error fetching materials', error: err.message });
@@ -148,7 +148,7 @@ router.get('/reports/usage', verifyToken, canManageInventory, async (req, res) =
 // GET: Single material (Public access)
 router.get('/:id', async (req, res) => {
     try {
-        let selectFields = 'name make description materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity images mrp isActive';
+        let selectFields = 'name make description materialCode unit sellingPrice sellingTaxRate sellingTaxAmount stockQuantity images mrp isActive sellerId listingType specifications';
 
         // Use ignoreExpiration so admin/employee tokens still reveal purchase fields
         const authHeader = req.headers.authorization;
@@ -157,12 +157,12 @@ router.get('/:id', async (req, res) => {
                 const token = authHeader.split(' ')[1];
                 const decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
                 if (['admin', 'employee', 'technician'].includes(decoded.role)) {
-                    selectFields = 'name make description hsnCode materialCode unit purchasePrice purchaseTaxRate purchaseTaxAmount sellingPrice sellingTaxRate sellingTaxAmount stockQuantity reorderLevel warrantyMonths manufacturerCode images mrp isActive';
+                    selectFields = 'name make description hsnCode materialCode unit purchasePrice purchaseTaxRate purchaseTaxAmount sellingPrice sellingTaxRate sellingTaxAmount stockQuantity reorderLevel warrantyMonths manufacturerCode images mrp isActive sellerId listingType specifications';
                 }
             } catch (e) {}
         }
         
-        const material = await Material.findById(req.params.id).select(selectFields);
+        const material = await Material.findById(req.params.id).select(selectFields).populate('sellerId', 'name email phone sellerProfile');
         if (!material) return res.status(404).json({ message: 'Material not found' });
         res.json(material);
     } catch (err) {

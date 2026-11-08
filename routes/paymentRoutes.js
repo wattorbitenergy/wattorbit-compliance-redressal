@@ -57,7 +57,7 @@ router.post('/create-order', verifyToken, async (req, res) => {
         const options = {
             amount: Math.round(booking.totalAmount * 100), // Razorpay amount is in paise
             currency: 'INR',
-            receipt: booking.bookingId,
+            receipt: (booking.bookingId || ("rcpt_" + String(booking._id).slice(-10))).slice(0, 40),
             notes: {
                 bookingId: booking._id.toString(),
                 userId: req.user.id

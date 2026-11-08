@@ -15,6 +15,7 @@ const Invoice = require('../models/Invoice');
 const { generateInvoiceId } = require('../utils/idGenerator');
 const { convertNumberToWords } = require('../utils/numberToWords');
 const { generateInvoicePDF } = require('../utils/invoicePDFGenerator');
+const { verifyAndEnrichInvoiceCompliance } = require('../utils/complianceEngine');
 const { uploadToCloudinary } = require('../utils/cloudinaryHelper');
 const { createShipment, trackShipment, cancelShipment } = require('../services/delhiveryService');
 const LogisticsConfig = require('../models/LogisticsConfig');
@@ -766,7 +767,23 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
                     const addr = fullOrder.addressId;
                     const customerAddress = `${addr?.flatNo ? addr.flatNo + ', ' : ''}${addr?.building ? addr.building + ', ' : ''}${addr?.street || ''}, ${addr?.landmark ? addr.landmark + ', ' : ''}${addr?.city || ''}, ${addr?.state || ''} - ${addr?.pincode || ''}`;
 
-                    const invoice = new Invoice({
+                    // Check if order items belong to an external seller
+                    let primarySeller = null;
+                    if (fullOrder.items && fullOrder.items.length > 0 && fullOrder.items[0].materialId) {
+                        try {
+                            const firstMat = await Material.findById(fullOrder.items[0].materialId).populate('sellerId');
+                            if (firstMat && firstMat.sellerId && firstMat.sellerId.sellerProfile?.gstin) {
+                                primarySeller = firstMat.sellerId;
+                            }
+                        } catch (e) {
+                            console.warn('[Auto-Invoice] Could not check seller attribution:', e.message);
+                        }
+                    }
+
+                    const isMarketplace = Boolean(primarySeller);
+                    const sellerProf = primarySeller?.sellerProfile || {};
+
+                    const invoicePayload = {
                         invoiceId: generatedInvoiceId,
                         orderRefId: order._id,
                         userId: fullOrder.userId._id,
@@ -785,15 +802,17 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
                         paymentStatus: fullOrder.paymentStatus === 'Paid' ? 'Paid' : 'Unpaid',
                         paidAmount: fullOrder.paymentStatus === 'Paid' ? grandTotal : 0,
                         paymentReference: order.razorpayPaymentId || order.razorpayOrderId || fullOrder?.razorpayPaymentId || fullOrder?.razorpayOrderId || '',
-                        businessName: biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP',
-                        businessGST: biz.gstNumber || '09AAFFW4253N1ZL',
-                        businessPAN: biz.panNumber || 'AAFFW4253N',
-                        businessAddress: biz.branchName || 'Shop No.3, INDAURABAG, BKT LUCKNOW - 226201',
+                        invoiceType: isMarketplace ? 'marketplace_seller' : 'direct_product',
+                        sellerId: primarySeller ? primarySeller._id : null,
+                        businessName: isMarketplace ? (sellerProf.storeName || primarySeller.name) : (biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP'),
+                        businessGST: isMarketplace ? sellerProf.gstin : (biz.gstNumber || '09AAFFW4253N1ZL'),
+                        businessPAN: isMarketplace ? sellerProf.pan : (biz.panNumber || 'AAFFW4253N'),
+                        businessAddress: isMarketplace ? (sellerProf.pickupAddress?.addressLine || 'Registered Seller Facility') : (biz.branchName || 'Shop No.3, INDAURABAG, BKT LUCKNOW - 226201'),
                         bankDetails: {
-                            accountHolderName: biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP',
-                            accountNumber: biz.accountNumber || '',
-                            ifscCode: biz.ifscCode || '',
-                            bankName: biz.bankName || '',
+                            accountHolderName: isMarketplace ? (sellerProf.bankDetails?.beneficiaryName || sellerProf.storeName) : (biz.accountHolderName || 'WATTORBIT ENERGY SOLUTIONS LLP'),
+                            accountNumber: isMarketplace ? sellerProf.bankDetails?.accountNumber : (biz.accountNumber || ''),
+                            ifscCode: isMarketplace ? sellerProf.bankDetails?.ifscCode : (biz.ifscCode || ''),
+                            bankName: isMarketplace ? sellerProf.bankDetails?.bankName : (biz.bankName || ''),
                             branchName: biz.branchName || '',
                             upiId: biz.upiId || ''
                         },
@@ -801,7 +820,11 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
                         customerPhone: fullOrder.userId.phone,
                         customerEmail: fullOrder.userId.email,
                         customerAddress
-                    });
+                    };
+
+                    // Execute Pre-Flight Compliance Verification & Set-off
+                    const compliantInvoiceData = verifyAndEnrichInvoiceCompliance(invoicePayload, { isMarketplace });
+                    const invoice = new Invoice(compliantInvoiceData);
                     await invoice.save();
 
                     // Generate PDF buffer and upload to Cloudinary
@@ -822,6 +845,59 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
                     }
 
                     console.log(`[Auto-Invoice] Generated invoice ${generatedInvoiceId} for order ${order.orderId}`);
+                    
+                    // Auto-trigger Seller Settlement Calculation
+                    try {
+                        const axios = require('axios');
+                        const SellerSettlement = require('../models/SellerSettlement');
+                        const { round } = require('../utils/mathUtils');
+                        
+                        // Check if order has seller products and calculate settlement
+                        for (const itm of (fullOrder.items || [])) {
+                            if (itm.materialId) {
+                                const mDoc = await Material.findById(itm.materialId).populate('sellerId');
+                                if (mDoc && mDoc.sellerId) {
+                                    const sId = mDoc.sellerId._id;
+                                    const sExists = await SellerSettlement.findOne({ orderId: order._id, sellerId: sId });
+                                    if (!sExists) {
+                                        const sProfile = mDoc.sellerId.sellerProfile || {};
+                                        const cRate = Number(sProfile.commissionRate || 10);
+                                        const lineTaxable = round((itm.sellingPrice || 0) * (itm.quantity || 1));
+                                        const lineGST = round((itm.sellingTaxAmount || 0) * (itm.quantity || 1));
+                                        const lineGross = itm.totalLineAmount || (lineTaxable + lineGST);
+                                        const comm = round((lineTaxable * cRate) / 100);
+                                        const commTax = round(comm * 0.18);
+                                        const tcs = round((lineTaxable * 1) / 100);
+                                        const gw = round(lineGross * 0.02);
+                                        const payout = round(lineGross - (comm + commTax + tcs + gw));
+
+                                        const newStl = new SellerSettlement({
+                                            settlementId: 'STL-' + Date.now().toString().slice(-6) + '-' + Math.floor(100 + Math.random() * 900),
+                                            sellerId: sId,
+                                            orderId: order._id,
+                                            orderCode: order.orderId || ('ORD-' + String(order._id).slice(-6)),
+                                            grossSaleAmount: lineGross,
+                                            taxableSaleAmount: lineTaxable,
+                                            productGSTAmount: lineGST,
+                                            commissionRate: cRate,
+                                            commissionAmount: comm,
+                                            commissionGSTAmount: commTax,
+                                            tcsRate: 1,
+                                            tcsAmount: tcs,
+                                            gatewayFeeAmount: gw,
+                                            netPayoutAmount: payout,
+                                            status: 'ready_for_payout',
+                                            settlementDueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+                                        });
+                                        await newStl.save();
+                                        console.log(`[Auto-Settlement] Created settlement ${newStl.settlementId} for seller ${sId}`);
+                                    }
+                                }
+                            }
+                        }
+                    } catch (settleErr) {
+                        console.error('[Auto-Settlement] Error generating settlement:', settleErr.message);
+                    }
                 }
             } catch (invoiceErr) {
                 console.error('[Auto-Invoice] Error generating invoice:', invoiceErr);

@@ -127,7 +127,32 @@ const materialSchema = new mongoose.Schema({
     isActive: {
         type: Boolean,
         default: true
-    }
+    },
+    // Marketplace / Multi-Seller attribution
+    sellerId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null,
+        comment: 'Null indicates in-house WattOrbit inventory'
+    },
+    listingType: {
+        type: String,
+        enum: ['in_house', 'seller'],
+        default: 'in_house'
+    },
+    approvalStatus: {
+        type: String,
+        enum: ['draft', 'pending_approval', 'approved', 'rejected'],
+        default: 'approved'
+    },
+    rejectionReason: {
+        type: String,
+        default: ''
+    },
+    specifications: [{
+        key: { type: String, trim: true },
+        value: { type: String, trim: true }
+    }]
 }, { timestamps: true });
 
 const { round } = require('../utils/mathUtils');

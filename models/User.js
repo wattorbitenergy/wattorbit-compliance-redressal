@@ -25,7 +25,7 @@ const userSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['user', 'admin', 'technician', 'engineer', 'organisation', 'employee'],
+        enum: ['user', 'admin', 'technician', 'engineer', 'organisation', 'employee', 'seller'],
         default: 'user'
     },
     organisationId: {
@@ -109,6 +109,30 @@ const userSchema = new mongoose.Schema({
     backupCodes: {
         type: [String],
         select: false
+    },
+    // Seller Profile Details
+    sellerProfile: {
+        storeName: { type: String, trim: true },
+        businessType: { type: String, enum: ['Individual', 'Proprietorship', 'Partnership', 'Pvt Ltd', 'LLP', ''], default: '' },
+        gstin: { type: String, trim: true, uppercase: true },
+        pan: { type: String, trim: true, uppercase: true },
+        pickupAddress: {
+            addressLine: String,
+            city: String,
+            state: String,
+            pincode: String,
+            coordinates: { lat: Number, lng: Number }
+        },
+        bankDetails: {
+            accountNumber: String,
+            ifscCode: String,
+            beneficiaryName: String,
+            bankName: String
+        },
+        commissionRate: { type: Number, default: 10, min: 0, max: 100 },
+        kycStatus: { type: String, enum: ['pending', 'submitted', 'verified', 'rejected'], default: 'pending' },
+        kycRejectionReason: String,
+        isActiveSeller: { type: Boolean, default: false }
     }
 }, { timestamps: true });
 

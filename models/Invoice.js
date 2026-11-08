@@ -105,6 +105,36 @@ const invoiceSchema = new mongoose.Schema({
     customerEmail: { type: String },
     customerAddress: { type: String, required: true },
     customerGST: { type: String }, // For B2B
+
+    // Statutory Compliance & Multi-Seller Extensions (Non-breaking)
+    invoiceType: {
+        type: String,
+        enum: ['direct_service', 'direct_product', 'marketplace_seller'],
+        default: 'direct_service'
+    },
+    sellerId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+    },
+    // Input Tax Credit & Set-Off tracking
+    itcEligible: { type: Boolean, default: true },
+    itcAmount: { type: Number, default: 0 },
+    netTaxPayable: { type: Number, default: 0 }, // Output Tax - ITC
+
+    // E-Commerce Operator (ECO) TCS under Section 52
+    tcsRate: { type: Number, default: 0 }, // E.g., 1 for 1% TCS
+    tcsAmount: { type: Number, default: 0 },
+
+    // Pre-Flight Double Check & Audit Verification
+    complianceAudit: {
+        isMathValid: { type: Boolean, default: true },
+        isIntraState: { type: Boolean, default: true },
+        hasValidHsn: { type: Boolean, default: true },
+        hasValidGSTIN: { type: Boolean, default: true },
+        verifiedAt: { type: Date, default: Date.now },
+        discrepancyNotes: { type: [String], default: [] }
+    }
 }, { timestamps: true });
 
 // Indexes for efficient queries

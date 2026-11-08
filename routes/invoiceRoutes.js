@@ -754,4 +754,169 @@ router.post('/manual', verifyToken, async (req, res) => {
     }
 });
 
+
+// GET /api/invoices/compliance/report - Audit & GST Set-Off Report
+router.get('/compliance/report', verifyToken, async (req, res) => {
+    try {
+        if (!['admin', 'employee'].includes(req.user.role)) {
+            return res.status(403).json({ message: 'Access denied: Requires Admin or Employee role' });
+        }
+
+        const { startDate, endDate } = req.query;
+        let dateQuery = {};
+        if (startDate || endDate) {
+            dateQuery.invoiceDate = {};
+            if (startDate) dateQuery.invoiceDate.$gte = new Date(startDate);
+            if (endDate) dateQuery.invoiceDate.$lte = new Date(endDate + 'T23:59:59Z');
+        }
+
+        const invoices = await Invoice.find(dateQuery)
+            .populate('sellerId', 'name sellerProfile')
+            .sort({ invoiceDate: -1 })
+            .lean();
+
+        let totalTaxableValue = 0;
+        let totalOutputTax = 0;
+        let totalCGST = 0;
+        let totalSGST = 0;
+        let totalIGST = 0;
+        let totalITC = 0;
+        let totalTCSCollected = 0; // Section 52 ECO TCS
+        let directServiceTax = 0;
+        let marketplaceTax = 0;
+        let discrepancies = [];
+
+        invoices.forEach(inv => {
+            const taxable = Number(inv.subtotal || 0);
+            const tax = Number(inv.taxAmount || 0);
+            const cgst = Number(inv.totalCGST || 0);
+            const sgst = Number(inv.totalSGST || 0);
+            const igst = Number(inv.totalIGST || 0);
+            const itc = Number(inv.itcAmount || 0);
+            const tcs = Number(inv.tcsAmount || 0);
+
+            totalTaxableValue += taxable;
+            totalOutputTax += tax;
+            totalCGST += cgst;
+            totalSGST += sgst;
+            totalIGST += igst;
+            totalITC += itc;
+            totalTCSCollected += tcs;
+
+            if (inv.invoiceType === 'marketplace_seller') {
+                marketplaceTax += tax;
+            } else {
+                directServiceTax += tax;
+            }
+
+            // Collect compliance issues
+            if (inv.complianceAudit && Array.isArray(inv.complianceAudit.discrepancyNotes) && inv.complianceAudit.discrepancyNotes.length > 0) {
+                discrepancies.push({
+                    invoiceId: inv.invoiceId,
+                    date: inv.invoiceDate,
+                    notes: inv.complianceAudit.discrepancyNotes,
+                    customer: inv.customerName,
+                    amount: inv.totalAmount
+                });
+            }
+        });
+
+        // Set-off calculation
+        const netWattOrbitLiability = Math.max(0, directServiceTax - totalITC);
+
+        res.status(200).json({
+            success: true,
+            summary: {
+                totalInvoices: invoices.length,
+                totalTaxableValue: Math.round(totalTaxableValue),
+                totalOutputTax: Math.round(totalOutputTax),
+                totalCGST: Math.round(totalCGST),
+                totalSGST: Math.round(totalSGST),
+                totalIGST: Math.round(totalIGST),
+                totalITC: Math.round(totalITC),
+                totalTCSCollected: Math.round(totalTCSCollected),
+                directServiceTax: Math.round(directServiceTax),
+                marketplaceSellerTax: Math.round(marketplaceTax),
+                netWattOrbitPayable: Math.round(netWattOrbitLiability)
+            },
+            discrepancies,
+            invoices: invoices.slice(0, 100) // latest 100
+        });
+    } catch (err) {
+        console.error('[Compliance Report Error]:', err);
+        res.status(500).json({ success: false, message: 'Failed to generate compliance report', error: err.message });
+    }
+});
+
+
+// GET /api/invoices/compliance/gstr8-export - Statutory GSTR-8 CSV Export for ECO Section 52
+router.get('/compliance/gstr8-export', verifyToken, async (req, res) => {
+    try {
+        if (!['admin', 'employee'].includes(req.user.role)) {
+            return res.status(403).json({ message: 'Access denied: Requires Admin or Employee role' });
+        }
+
+        const { startDate, endDate } = req.query;
+        let dateQuery = { invoiceType: 'marketplace_seller' };
+        if (startDate || endDate) {
+            dateQuery.invoiceDate = {};
+            if (startDate) dateQuery.invoiceDate.$gte = new Date(startDate);
+            if (endDate) dateQuery.invoiceDate.$lte = new Date(endDate + 'T23:59:59Z');
+        }
+
+        const invoices = await Invoice.find(dateQuery)
+            .populate('sellerId', 'name sellerProfile')
+            .sort({ invoiceDate: -1 })
+            .lean();
+
+        // Aggregate by Seller GSTIN (Table 4 of Form GSTR-8: Supplies made through E-Commerce Operator)
+        const sellerMap = {};
+
+        invoices.forEach(inv => {
+            const sellerGstin = (inv.businessGST || inv.sellerId?.sellerProfile?.gstin || 'UNREGISTERED').trim().toUpperCase();
+            if (!sellerMap[sellerGstin]) {
+                sellerMap[sellerGstin] = {
+                    gstin: sellerGstin,
+                    merchantTradeName: inv.businessName || inv.sellerId?.sellerProfile?.storeName || 'Vendor',
+                    grossValue: 0,
+                    returnsValue: 0,
+                    netTaxableValue: 0,
+                    igst: 0,
+                    cgst: 0,
+                    sgst: 0
+                };
+            }
+
+            const taxable = Number(inv.subtotal || 0);
+            const isIntra = inv.complianceAudit?.isIntraState ?? true;
+
+            sellerMap[sellerGstin].grossValue += Number(inv.totalAmount || 0);
+            sellerMap[sellerGstin].netTaxableValue += taxable;
+
+            // 1% TCS breakdown (0.5% CGST + 0.5% SGST for Intra, 1% IGST for Inter)
+            if (isIntra) {
+                const half = parseFloat(((taxable * 0.5) / 100).toFixed(2));
+                sellerMap[sellerGstin].cgst += half;
+                sellerMap[sellerGstin].sgst += half;
+            } else {
+                sellerMap[sellerGstin].igst += parseFloat(((taxable * 1.0) / 100).toFixed(2));
+            }
+        });
+
+        // Generate CSV rows matching GST Portal Offline Utility Table 4
+        let csvContent = 'GSTIN of Supplier,Trade Name,Gross Value of Supplies (Rs),Value of Supplies Returned (Rs),Net Value of Supplies (Rs),Integrated Tax (Rs),Central Tax (Rs),State/UT Tax (Rs)\n';
+
+        Object.values(sellerMap).forEach(row => {
+            csvContent += `"${row.gstin}","${row.merchantTradeName.replace(/"/g, '""')}",${row.grossValue.toFixed(2)},${row.returnsValue.toFixed(2)},${row.netTaxableValue.toFixed(2)},${row.igst.toFixed(2)},${row.cgst.toFixed(2)},${row.sgst.toFixed(2)}\n`;
+        });
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename=GSTR8_${Date.now()}.csv`);
+        res.status(200).send(csvContent);
+    } catch (err) {
+        console.error('[GSTR-8 Export Error]:', err);
+        res.status(500).json({ success: false, message: 'Failed to export GSTR-8 CSV' });
+    }
+});
+
 module.exports = router;

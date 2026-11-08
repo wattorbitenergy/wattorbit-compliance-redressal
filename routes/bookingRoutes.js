@@ -203,10 +203,10 @@ router.post('/', verifyToken, async (req, res) => {
 
         const totalAmount = Math.max(0, round(basePrice + taxes - discount - pointsToUse));
 
-        // For Online payments: defer bookingId generation until payment is verified.
-        // For COD/Wallet: generate bookingId immediately.
+        // Industry standard: generate human-readable bookingId immediately for all payment methods.
+        // For Online payments: paymentStatus is 'unpaid' and status stays 'Pending' until verified.
         const isOnlinePayment = paymentMethod === 'Online';
-        const bookingId = isOnlinePayment ? undefined : await generateBookingId();
+        const bookingId = await generateBookingId();
 
         // 🆕 AUTO-ASSIGNMENT LOGIC via Notes (Controlled by Feature Flag)
         let autoAssignedTech = null;
