@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
 const Order = require('../models/Order');
@@ -8,7 +9,7 @@ const User = require('../models/User');
 const Address = require('../models/Address');
 const { verifyToken } = require('../middleware/authMiddleware');
 const { updateUniversalLedger } = require('../utils/technicianFinanceHelper');
-const { sendUserNotification, sendTopicNotification } = require('../utils/notificationHelper');
+const { sendUserNotification, sendTopicNotification, sendOrderLifecycleNotification } = require('../utils/notificationHelper');
 const { sendMail } = require('./mailer');
 const Config = require('../models/Config');
 const Invoice = require('../models/Invoice');
@@ -28,6 +29,17 @@ const razorpay = new Razorpay({
     key_secret: process.env.RAZORPAY_KEY_SECRET
 });
 
+// Helper to find order by Mongo _id OR custom orderId (e.g. ORD-2611-1002)
+const getOrderByIdOrOrderId = async (id, populateOptions = []) => {
+    if (!id) return null;
+    const isObjectId = mongoose.Types.ObjectId.isValid(id);
+    let query = Order.findOne(isObjectId ? { $or: [{ _id: id }, { orderId: id }] } : { orderId: id });
+    for (const pop of populateOptions) {
+        query = query.populate(pop);
+    }
+    return await query;
+};
+
 // POST: Create Pending Order (Razorpay ID Generation)
 router.post('/create', verifyToken, async (req, res) => {
     try {
@@ -35,8 +47,14 @@ router.post('/create', verifyToken, async (req, res) => {
         deliveryFee = Number(deliveryFee) || 0;
         couponDiscount = Number(couponDiscount) || 0;
         
-        if (paymentMethod && paymentMethod.toLowerCase() === 'online') paymentMethod = 'Online';
-        if (paymentMethod && paymentMethod.toLowerCase() === 'cod') paymentMethod = 'COD';
+        if (paymentMethod) {
+            const pm = paymentMethod.toString().trim().toLowerCase();
+            if (['online', 'upi', 'card', 'netbanking'].includes(pm)) {
+                paymentMethod = 'Online';
+            } else if (pm === 'cod') {
+                paymentMethod = 'COD';
+            }
+        }
 
         if (!items || !items.length || !addressId) {
             return res.status(400).json({ message: 'Items and delivery address are required' });
@@ -143,10 +161,36 @@ router.post('/create', verifyToken, async (req, res) => {
 
             await order.save();
 
-            // Deduct Stock
+            // Deduct Stock with atomic conditional update & rollback on insufficient inventory
+            const deductedItems = [];
+            let stockFailed = false;
+            let failedItemName = '';
+
             for (const item of order.items) {
-                await Material.findByIdAndUpdate(item.materialId, {
-                    $inc: { stockQuantity: -item.quantity }
+                const updated = await Material.findOneAndUpdate(
+                    { _id: item.materialId, stockQuantity: { $gte: item.quantity } },
+                    { $inc: { stockQuantity: -item.quantity } },
+                    { new: true }
+                );
+
+                if (!updated) {
+                    stockFailed = true;
+                    failedItemName = item.name;
+                    break;
+                }
+                deductedItems.push({ materialId: item.materialId, quantity: item.quantity });
+            }
+
+            if (stockFailed) {
+                // Rollback any stock that was decremented
+                for (const rollback of deductedItems) {
+                    await Material.findByIdAndUpdate(rollback.materialId, {
+                        $inc: { stockQuantity: rollback.quantity }
+                    });
+                }
+                await Order.findByIdAndDelete(order._id);
+                return res.status(400).json({ 
+                    message: `Item "${failedItemName}" ran out of stock. Order could not be placed.` 
                 });
             }
 
@@ -230,11 +274,12 @@ router.post('/verify', verifyToken, async (req, res) => {
         order.razorpayPaymentId = razorpay_payment_id;
         await order.save();
 
-        // 2. Deduct Stock for each item
+        // 2. Deduct Stock for each item (Atomic decrement)
         for (const item of order.items) {
-            await Material.findByIdAndUpdate(item.materialId, {
-                $inc: { stockQuantity: -item.quantity }
-            });
+            await Material.findOneAndUpdate(
+                { _id: item.materialId },
+                { $inc: { stockQuantity: -item.quantity } }
+            );
         }
 
         // 3. Record in Financial Ledger
@@ -347,7 +392,7 @@ router.get('/delivery/my-assignments', verifyToken, async (req, res) => {
     }
 });
 
-// GET: Check Pincode Serviceability
+// GET: Check Pincode Serviceability (Automated City-Wise Coverage Engine)
 router.get('/check-pincode', async (req, res) => {
     try {
         const { pincode } = req.query;
@@ -355,24 +400,9 @@ router.get('/check-pincode', async (req, res) => {
             return res.status(400).json({ available: false, message: 'Invalid PIN code. Must be a 6-digit number.' });
         }
 
-        const config = await Config.findOne({ key: 'serviceable_pincodes' });
-        if (!config || !config.value) {
-            return res.json({ available: false, message: 'Delivery service is currently unavailable.' });
-        }
-
-        let pincodeList = [];
-        try {
-            pincodeList = typeof config.value === 'string' ? JSON.parse(config.value) : config.value;
-        } catch (e) {
-            // Fallback for comma-separated old format
-            pincodeList = config.value.split(',').map(p => ({ code: p.trim(), isActive: true }));
-        }
-
-        const match = pincodeList.find(p => p.code === pincode && p.isActive !== false);
-        if (match) {
-            return res.json({ available: true, message: `Delivery available to ${match.desc || pincode}` });
-        }
-        return res.json({ available: false, message: 'Delivery is not available to this PIN code yet.' });
+        const { checkServiceability } = require('../services/pincodeService');
+        const result = await checkServiceability(pincode);
+        return res.json(result);
     } catch (err) {
         console.error('[Check Pincode] Error:', err);
         res.status(500).json({ available: false, message: 'Error checking PIN code' });
@@ -388,7 +418,7 @@ router.post('/:id/assign-delivery', verifyToken, async (req, res) => {
         }
 
         const { deliveryType, assignedTo } = req.body;
-        const order = await Order.findById(req.params.id).populate('addressId').populate('userId');
+        const order = await getOrderByIdOrOrderId(req.params.id, ['addressId', 'userId']);
         if (!order) return res.status(404).json({ message: 'Order not found' });
 
         if (deliveryType === 'internal') {
@@ -415,6 +445,11 @@ router.post('/:id/assign-delivery', verifyToken, async (req, res) => {
                 `Order #${order.orderId} has been assigned to you.`,
                 { type: 'DELIVERY_ASSIGNED', orderId: order._id.toString() }
             );
+
+            // Notify customer of order processing
+            sendOrderLifecycleNotification(order, 'ORDER_PROCESSING', {
+                partner: assignedUser.name
+            }).catch(e => console.error('[Internal Delivery Notification] Error:', e.message));
 
             return res.json({ message: 'Delivery assigned to internal partner', order });
         } 
@@ -465,12 +500,10 @@ router.post('/:id/assign-delivery', verifyToken, async (req, res) => {
                     await order.save();
 
                     // Notify customer
-                    await sendUserNotification(
-                        order.userId._id,
-                        'Order Dispatched!',
-                        `Your order #${order.orderId} has been dispatched via Delhivery. AWB: ${result.awb}`,
-                        { type: 'ORDER_DISPATCHED', orderId: order._id.toString() }
-                    );
+                    sendOrderLifecycleNotification(order, 'ORDER_DISPATCHED', {
+                        partner: 'Delhivery',
+                        trackingId: result.awb
+                    }).catch(e => console.error('[Delhivery Notification] Error:', e.message));
 
                     return res.json({ message: 'Shipment booked on Delhivery', order, awb: result.awb });
                 } else {
@@ -480,8 +513,42 @@ router.post('/:id/assign-delivery', verifyToken, async (req, res) => {
                 return res.status(500).json({ message: apiError.message });
             }
         }
+        else if (['custom', 'manual', 'porter', 'external'].includes(deliveryType)) {
+            const { partnerName, trackingId, partnerPhone, notes } = req.body;
+            if (!partnerName && !req.body.deliveryPartner) {
+                return res.status(400).json({ message: 'Courier / Partner name is required' });
+            }
+
+            const chosenPartner = (partnerName || req.body.deliveryPartner || 'Custom Courier').trim();
+            const chosenTracking = (trackingId || '').trim();
+            const chosenPhone = (partnerPhone || '').trim();
+
+            order.deliveryType = deliveryType;
+            order.deliveryPartner = chosenPartner;
+            if (chosenTracking) order.trackingId = chosenTracking;
+            if (chosenPhone) order.deliveryPartnerContact = chosenPhone;
+            order.status = 'Dispatched';
+            
+            order.trackingHistory.push({
+                status: 'Dispatched',
+                message: `Assigned & dispatched via ${chosenPartner}${chosenTracking ? ` (Tracking: ${chosenTracking})` : ''}${notes ? `. ${notes}` : ''}`,
+                location: 'Warehouse / Fulfillment Hub',
+                timestamp: new Date()
+            });
+
+            await order.save();
+
+            // Notify customer via App, SMS, and Email
+            sendOrderLifecycleNotification(order, 'ORDER_DISPATCHED', {
+                partner: chosenPartner,
+                trackingId: chosenTracking,
+                partnerPhone: chosenPhone
+            }).catch(e => console.error('[Assign Delivery Notification] Error:', e.message));
+
+            return res.json({ message: `Order assigned and dispatched via ${chosenPartner}`, order });
+        }
         else {
-            return res.status(400).json({ message: 'Invalid delivery type' });
+            return res.status(400).json({ message: 'Invalid delivery type. Must be internal, delhivery, or custom/porter/manual' });
         }
     } catch (err) {
         console.error('[Assign Delivery] Error:', err);
@@ -492,7 +559,7 @@ router.post('/:id/assign-delivery', verifyToken, async (req, res) => {
 // GET: Track Order
 router.get('/:id/track', verifyToken, async (req, res) => {
     try {
-        const order = await Order.findById(req.params.id);
+        const order = await getOrderByIdOrOrderId(req.params.id);
         if (!order) return res.status(404).json({ message: 'Order not found' });
 
         // Auth check: owner, admin, employee, or assigned delivery person
@@ -517,83 +584,14 @@ router.get('/:id/track', verifyToken, async (req, res) => {
     }
 });
 
-
-// POST: Regenerate invoice for an order
-router.post('/:id/regenerate-invoice', verifyToken, async (req, res) => {
-    try {
-        const Order = require('../models/Order');
-        const order = await Order.findOne({ orderId: req.params.id }).populate('userId').populate('addressId');
-        if (!order) return res.status(404).json({ message: 'Order not found' });
-        
-        // Find existing invoice and preserve its ID
-        const Invoice = require('../models/Invoice');
-        const existingInvoice = await Invoice.findOne({ orderRefId: order._id });
-        let invoiceIdToUse;
-        if (existingInvoice) {
-            invoiceIdToUse = existingInvoice.invoiceId;
-            await Invoice.findOneAndDelete({ orderRefId: order._id });
-        } else {
-            const { generateInvoiceId } = require('../utils/idGenerator');
-            invoiceIdToUse = await generateInvoiceId();
-        }
-        
-        const { convertNumberToWords } = require('../utils/numberToWords');
-        const Config = require('../models/Config');
-        const bizConfig = await Config.findOne({ key: 'bank_details' });
-        const biz = bizConfig && bizConfig.value ? (typeof bizConfig.value === 'string' ? JSON.parse(bizConfig.value) : bizConfig.value) : {};
-
-        let invoiceItems = [];
-        let totalTaxable = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0;
-        
-        const sellerStateCode = '09';
-        const sellerState = 'Uttar Pradesh';
-        const buyerState = order.addressId?.state || '';
-        const isIntrastate = buyerState.toLowerCase().includes(sellerState.toLowerCase()) || 
-                             buyerState.toLowerCase().includes('u.p') || 
-                             buyerState.toLowerCase().includes('up') || 
-                             !buyerState;
-
-        order.items.forEach(item => {
-            const qty = item.quantity || 1;
-            const sp = item.sellingPrice || 0;
-            const taxRate = item.taxRate || 18;
-            
-            const preTax = sp;
-            const totalPreTax = preTax * qty;
-            const totalTax = totalPreTax * (taxRate / 100);
-            
-            let cgst = 0, sgst = 0, igst = 0;
-            if (isIntrastate) {
-                cgst = totalTax / 2;
-                sgst = totalTax / 2;
-            } else {
-                igst = totalTax;
-            }
-
-            invoiceItems.push({
-                description: `${item.name} [${item.make || 'N/A'}]`,
-                quantity: qty,
-                unitPrice: preTax,
-                taxableValue: totalPreTax,
-                taxRate,
-                cgstRate: isIntrastate ? taxRate / 2 : 0,
-                cgstAmount: parseFloat(cgst.toFixed(2)),
-                sgstRate: isIntrastate ? taxRate / 2 : 0,
-                sgstAmount: parseFloat(sgst.toFixed(2)),
-                igstRate: !isIntrastate ? taxRate : 0,
-                igstAmount: parseFloat(igst.toFixed(2)),
-                taxAmount: parseFloat(totalTax.toFixed(2)),
-                total: parseFloat((sp * qty + totalTax).toFixed(2))
-            });
-
-
 // GET: Fetch Single Order by ID
 router.get('/:id', verifyToken, async (req, res) => {
     try {
-        const order = await Order.findById(req.params.id)
-            .populate('items.materialId', 'imageUrl unit name make')
-            .populate('userId', 'name phone email')
-            .populate('addressId');
+        const order = await getOrderByIdOrOrderId(req.params.id, [
+            { path: 'items.materialId', select: 'imageUrl unit name make' },
+            { path: 'userId', select: 'name phone email' },
+            'addressId'
+        ]);
             
         if (!order) {
             return res.status(404).json({ message: 'Order not found' });
@@ -614,7 +612,7 @@ router.get('/:id', verifyToken, async (req, res) => {
 // PATCH: Cancel Order (User or Admin)
 router.patch('/:id/cancel', verifyToken, async (req, res) => {
     try {
-        const order = await Order.findById(req.params.id);
+        const order = await getOrderByIdOrOrderId(req.params.id);
         if (!order) return res.status(404).json({ message: 'Order not found' });
 
         // Authorization: Must be the order owner, or admin/employee
@@ -679,7 +677,7 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
         }
 
         const { status, trackingId, deliveryPartner } = req.body;
-        const order = await Order.findById(req.params.id);
+        const order = await getOrderByIdOrOrderId(req.params.id);
         
         if (!order) return res.status(404).json({ message: 'Order not found' });
 
@@ -905,14 +903,29 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
             }
         }
 
-        // Notify user of status change
+        // Notify user of status change via multi-channel notification engine (Push, SMS, Email)
         if (status) {
+            const eventMap = {
+                'Processing': 'ORDER_PROCESSING',
+                'Dispatched': 'ORDER_DISPATCHED',
+                'Out for Delivery': 'OUT_FOR_DELIVERY',
+                'Delivered': 'ORDER_DELIVERED',
+                'Cancelled': 'ORDER_CANCELLED'
+            };
+            const eventType = eventMap[status] || 'ORDER_STATUS_UPDATE';
+
+            sendOrderLifecycleNotification(order, eventType, {
+                partner: deliveryPartner || order.deliveryPartner,
+                trackingId: trackingId || order.trackingId,
+                partnerPhone: order.deliveryPartnerContact
+            }).catch(e => console.error('[Order Lifecycle Notification] Status update error:', e.message));
+
             await sendUserNotification(
                 order.userId,
                 `Order ${status}!`,
                 `Your order #${order.orderId} status has been updated to ${status}.`,
                 { type: 'ORDER_STATUS_UPDATE', orderId: order._id.toString(), status }
-            );
+            ).catch(console.error);
 
             const user = await User.findById(order.userId);
             if (user?.email) {
@@ -942,6 +955,68 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
         res.status(500).json({ message: 'Error updating order', error: err.message });
     }
 });
+
+// POST: Regenerate invoice for an order
+router.post('/:id/regenerate-invoice', verifyToken, async (req, res) => {
+    try {
+        const order = await getOrderByIdOrOrderId(req.params.id, ['userId', 'addressId']);
+        if (!order) return res.status(404).json({ message: 'Order not found' });
+        
+        const existingInvoice = await Invoice.findOne({ orderRefId: order._id });
+        let invoiceIdToUse;
+        if (existingInvoice) {
+            invoiceIdToUse = existingInvoice.invoiceId;
+            await Invoice.findOneAndDelete({ orderRefId: order._id });
+        } else {
+            invoiceIdToUse = await generateInvoiceId();
+        }
+        
+        const bizConfig = await Config.findOne({ key: 'bank_details' });
+        const biz = bizConfig && bizConfig.value ? (typeof bizConfig.value === 'string' ? JSON.parse(bizConfig.value) : bizConfig.value) : {};
+
+        let invoiceItems = [];
+        let totalTaxable = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0;
+        
+        const sellerStateCode = '09';
+        const sellerState = 'Uttar Pradesh';
+        const buyerState = order.addressId?.state || '';
+        const isIntrastate = buyerState.toLowerCase().includes(sellerState.toLowerCase()) || 
+                             buyerState.toLowerCase().includes('u.p') || 
+                             buyerState.toLowerCase().includes('up') || 
+                             !buyerState;
+
+        order.items.forEach(item => {
+            const qty = item.quantity || 1;
+            const sp = item.sellingPrice || 0;
+            const taxRate = item.taxRate || 18;
+            
+            const preTax = sp;
+            const totalPreTax = preTax * qty;
+            const totalTax = totalPreTax * (taxRate / 100);
+            
+            let cgst = 0, sgst = 0, igst = 0;
+            if (isIntrastate) {
+                cgst = totalTax / 2;
+                sgst = totalTax / 2;
+            } else {
+                igst = totalTax;
+            }
+
+            invoiceItems.push({
+                description: `${item.name} [${item.make || 'N/A'}]`,
+                quantity: qty,
+                unitPrice: preTax,
+                taxableValue: totalPreTax,
+                taxRate,
+                cgstRate: isIntrastate ? taxRate / 2 : 0,
+                cgstAmount: parseFloat(cgst.toFixed(2)),
+                sgstRate: isIntrastate ? taxRate / 2 : 0,
+                sgstAmount: parseFloat(sgst.toFixed(2)),
+                igstRate: !isIntrastate ? taxRate : 0,
+                igstAmount: parseFloat(igst.toFixed(2)),
+                taxAmount: parseFloat(totalTax.toFixed(2)),
+                total: parseFloat((sp * qty + totalTax).toFixed(2))
+            });
 
             totalTaxable += totalPreTax;
             totalCGST += cgst;

@@ -141,18 +141,52 @@ router.post('/send-weekly-summary', verifyToken, async (req, res) => {
     }
 });
 
+const PUBLIC_CONFIG_KEYS = [
+    'social_wa', 'social_fb', 'social_insta', 'social_yt', 'social_x', 'social_li', 'social_email',
+    'enable_social_links', 'enable_mobile_work_permit', 'enable_curations', 'enable_onboarding', 'new_home_hero',
+    'app_version', 'enable_version_check', 'newuserdasboard', 'category_card_style', 'enable_google_maps_booking', 'enable_live_tracking',
+    'shipping_rate_per_kg', 'volumetric_divisor', 'base_delivery_charge', 'free_delivery_threshold',
+    'enable_delivery_promo_codes', 'enable_tiered_delivery', 'tiered_delivery_threshold', 'tiered_delivery_discount_percent',
+    'enable_vip_delivery', 'vip_delivery_discount_percent'
+];
+
+/* =================================================================
+   GET: BATCH PUBLIC CONFIG (1 SINGLE HTTP REQUEST INSTEAD OF 10+)
+   ================================================================= */
+router.get('/config-bundle/public', async (req, res) => {
+    try {
+        const cached = cache.get('public_config_bundle');
+        if (cached) {
+            return res.json(cached);
+        }
+
+        const configs = await Config.find({ key: { $in: PUBLIC_CONFIG_KEYS } }).lean();
+        const map = {};
+        PUBLIC_CONFIG_KEYS.forEach(k => { map[k] = null; });
+        configs.forEach(c => {
+            let val = c.value;
+            if (typeof val === 'string') {
+                if (val === 'true') val = true;
+                else if (val === 'false') val = false;
+                else if (!isNaN(val) && val.trim() !== '') val = Number(val);
+            }
+            map[c.key] = val;
+        });
+
+        const responseData = { configs: map, timestamp: new Date().toISOString() };
+        cache.set('public_config_bundle', responseData, 120); // 2 minute cache
+        res.json(responseData);
+    } catch (err) {
+        console.error('[Config Bundle] Error:', err);
+        res.status(500).json({ message: 'Failed to fetch config bundle', error: err.message });
+    }
+});
+
 /* =================================================================
    GET/SET CONFIG (ADMIN ONLY)
    ================================================================= */
 router.get('/config/:key', async (req, res) => {
-    const publicKeys = [
-        'social_wa', 'social_fb', 'social_insta', 'social_yt', 'social_x', 'social_li', 'social_email',
-        'enable_social_links', 'enable_mobile_work_permit', 'enable_curations', 'enable_onboarding', 'new_home_hero',
-        'app_version', 'enable_version_check', 'newuserdasboard', 'category_card_style', 'enable_google_maps_booking', 'enable_live_tracking',
-        'shipping_rate_per_kg', 'volumetric_divisor', 'base_delivery_charge', 'free_delivery_threshold',
-        'enable_delivery_promo_codes', 'enable_tiered_delivery', 'tiered_delivery_threshold', 'tiered_delivery_discount_percent',
-        'enable_vip_delivery', 'vip_delivery_discount_percent'
-    ];
+    const publicKeys = PUBLIC_CONFIG_KEYS;
 
     // If key is not in whitelist, require verification
     if (!publicKeys.includes(req.params.key)) {
@@ -189,6 +223,7 @@ router.post('/config', verifyToken, async (req, res) => {
             { value },
             { upsert: true, new: true }
         );
+        cache.del('public_config_bundle');
         res.json(config);
     } catch (err) {
         res.status(500).json({ message: 'Failed to update config' });
@@ -422,6 +457,29 @@ router.put('/bank-details', verifyToken, async (req, res) => {
     } catch (err) {
         console.error('Update bank details error:', err);
         res.status(500).json({ message: 'Failed to update bank details' });
+    }
+});
+
+// GET: Users (Admin / Staff list)
+router.get('/users', verifyToken, async (req, res) => {
+    try {
+        if (!['admin', 'organisation', 'engineer', 'employee'].includes(req.user.role)) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+        let query = {};
+        if (req.user.role === 'organisation' || req.user.role === 'engineer') {
+            const myOrgId = req.user.organisationId || (req.user.role === 'organisation' ? req.user.id : null);
+            if (myOrgId) {
+                query = { organisationId: myOrgId };
+            } else if (req.user.role === 'engineer') {
+                query = { organisationId: { $exists: false } };
+            }
+        }
+        const users = await User.find(query).select('-password').sort({ createdAt: -1 }).lean();
+        res.json(users);
+    } catch (err) {
+        console.error('[Admin Users] Error:', err);
+        res.status(500).json({ message: 'Error fetching users', error: err.message });
     }
 });
 

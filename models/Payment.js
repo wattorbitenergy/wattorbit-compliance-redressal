@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { PAYMENT_METHODS_LIST, PAYMENT_STATUSES_LIST } = require('../constants/finance');
 
 const paymentSchema = new mongoose.Schema({
     paymentId: {
@@ -24,13 +25,13 @@ const paymentSchema = new mongoose.Schema({
     },
     paymentMethod: {
         type: String,
-        enum: ['COD', 'Online', 'Card', 'UPI', 'Wallet'],
+        enum: PAYMENT_METHODS_LIST,
         default: 'COD'
     },
 
     status: {
         type: String,
-        enum: ['Pending', 'Paid', 'Failed', 'Refunded'],
+        enum: PAYMENT_STATUSES_LIST,
         default: 'Pending'
     },
 

@@ -152,7 +152,11 @@ const materialSchema = new mongoose.Schema({
     specifications: [{
         key: { type: String, trim: true },
         value: { type: String, trim: true }
-    }]
+    }],
+    availableCities: {
+        type: [String],
+        default: ['All']
+    }
 }, { timestamps: true });
 
 const { round } = require('../utils/mathUtils');

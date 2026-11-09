@@ -6,7 +6,9 @@ const CitySchema = new mongoose.Schema({
     supportContact: { type: String }, // Phone number for city-specific support
     technicianName: { type: String }, // Offline technician name
     technicianPhone: { type: String },
-    isOfflineSupportAvailable: { type: Boolean, default: true }
+    isOfflineSupportAvailable: { type: Boolean, default: true },
+    isServiceableForDelivery: { type: Boolean, default: true },
+    pincodePrefixes: { type: [String], default: [] }
 });
 
 module.exports = mongoose.model('City', CitySchema);

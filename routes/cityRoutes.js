@@ -59,9 +59,66 @@ router.post('/', async (req, res) => {
 
   try {
     const newCity = await city.save();
+    const cache = require('../utils/cache');
+    cache.del('active_serviceable_cities');
     res.status(201).json(newCity);
   } catch (err) {
     res.status(400).json({ message: err.message });
+  }
+});
+
+// GET: All Cities with delivery coverage status (Admin / Logistics View)
+router.get('/admin/all', async (req, res) => {
+  try {
+    const { CITY_PREFIX_MAP } = require('../services/pincodeService');
+    const dbCities = await City.find({}).lean();
+    
+    // Ensure all default cities exist in list
+    const cityList = defaultCities.map(def => {
+      const existing = dbCities.find(c => c.name.toLowerCase().trim() === def.name.toLowerCase().trim());
+      const prefixes = existing?.pincodePrefixes?.length > 0 
+        ? existing.pincodePrefixes 
+        : (CITY_PREFIX_MAP[def.name.toLowerCase().trim()]?.prefixes || []);
+
+      return {
+        _id: existing?._id,
+        name: def.name,
+        state: def.state,
+        isServiceableForDelivery: existing ? (existing.isServiceableForDelivery !== false) : true,
+        pincodePrefixes: prefixes,
+        coverageLabel: prefixes.length > 0 ? `All ${prefixes.join(', ')}xxx PINs` : 'All City PINs'
+      };
+    });
+
+    res.json(cityList);
+  } catch (err) {
+    console.error('[Admin Cities] Error:', err);
+    res.status(500).json({ message: 'Failed to fetch cities list' });
+  }
+});
+
+// PATCH: Toggle City Delivery Coverage
+router.patch('/:name/toggle-delivery', async (req, res) => {
+  try {
+    const cityName = req.params.name.trim();
+    const { isServiceableForDelivery } = req.body;
+    const cache = require('../utils/cache');
+
+    const updated = await City.findOneAndUpdate(
+      { name: new RegExp(`^${cityName}$`, 'i') },
+      { 
+        $set: { 
+          isServiceableForDelivery: Boolean(isServiceableForDelivery),
+          name: cityName
+        } 
+      },
+      { upsert: true, new: true }
+    );
+
+    cache.del('active_serviceable_cities');
+    res.json({ message: `Delivery coverage for ${cityName} updated`, city: updated });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to update city delivery status', error: err.message });
   }
 });
 

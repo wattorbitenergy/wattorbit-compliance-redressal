@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { PAYMENT_METHODS_LIST, ORDER_STATUSES_LIST, PAYMENT_STATUSES_LIST } = require('../constants/finance');
 
 const orderSchema = new mongoose.Schema({
     orderId: {
@@ -41,7 +42,7 @@ const orderSchema = new mongoose.Schema({
     paymentMethod: {
         type: String,
         default: 'Online',
-        enum: ['Online', 'COD'] // Standalone orders can be prepaid or Cash on Delivery
+        enum: PAYMENT_METHODS_LIST
     },
     codCharge: {
         type: Number,
@@ -53,14 +54,14 @@ const orderSchema = new mongoose.Schema({
     },
     paymentStatus: {
         type: String,
-        enum: ['Pending', 'Paid', 'Failed', 'Refunded'],
+        enum: PAYMENT_STATUSES_LIST,
         default: 'Pending'
     },
     razorpayOrderId: String,
     razorpayPaymentId: String,
     status: {
         type: String,
-        enum: ['Confirmed', 'Processing', 'Dispatched', 'Delivered', 'Cancelled'],
+        enum: ORDER_STATUSES_LIST,
         default: 'Confirmed'
     },
     deliveryPartner: String,
@@ -79,9 +80,10 @@ const orderSchema = new mongoose.Schema({
     },
     deliveryType: {
         type: String,
-        enum: ['internal', 'delhivery', 'manual'],
+        enum: ['internal', 'delhivery', 'porter', 'manual', 'custom', 'external'],
         default: 'manual'
     },
+    deliveryPartnerContact: String,
     assignedTo: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'

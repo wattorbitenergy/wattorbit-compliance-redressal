@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { LEDGER_TYPES_LIST } = require('../constants/finance');
 
 const financialLedgerSchema = new mongoose.Schema({
     userId: {
@@ -9,7 +10,7 @@ const financialLedgerSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['EARNING', 'REFUND', 'PAYOUT', 'ADJUSTMENT', 'TRANSFER', 'COMMISSION_DEDUCTION', 'PAYMENT'],
+        enum: LEDGER_TYPES_LIST,
         required: true
     },
     amount: {
